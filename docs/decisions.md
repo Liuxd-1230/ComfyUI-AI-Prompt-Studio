@@ -4,7 +4,8 @@
 
 ## D1. 仓库与版本控制
 
-- 仓库名 `ComfyUI-AI-Prompt-Studio`（沿用目录名），**私有**（gh repo create --private），owner `Liuxd-1230`。
+- 仓库名 `ComfyUI-AI-Prompt-Studio`（沿用目录名），**公开**（用户指定：gh repo create 后已改为 public），owner `Liuxd-1230`。
+- 公开仓库安全前提：密钥/本地配置/版权手册副本均被 .gitignore 排除，工作流 JSON 只存 profile_id，代码不含任何真实密钥。
 - 分支 `master`（与全局 git 配置 `init.defaultbranch=master` 一致）。
 - 每个 Phase 结束自动 commit + push。
 - `docs/sources/*.html`（MiniMax 官方手册副本）**不提交**（版权边界，见 licenses-and-sources.md）。
