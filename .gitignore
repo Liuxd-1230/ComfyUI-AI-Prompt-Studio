@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+
+# Tooling / local state
+.zcode/
+.idea/
+.vscode/
+*.log
+
+# 第三方版权文档：官方 MiniMax H3 手册本地副本不提交（见 docs/licenses-and-sources.md）
+docs/sources/*.html
+
+# 密钥与本地配置（绝不提交）
+*.key
+.env
+config.local.json

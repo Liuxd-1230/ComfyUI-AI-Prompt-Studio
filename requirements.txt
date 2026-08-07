@@ -1,0 +1,2 @@
+# 运行依赖：requests 已在 ComfyUI venv 中，这里仅为文档化/独立安装使用
+requests>=2.31
