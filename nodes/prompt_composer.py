@@ -54,6 +54,7 @@ class APS_PromptComposer:
         }, "optional": {
             "story_item": (types.STORY_ITEM,),
             "character_bible": (types.CHARACTER_BIBLE,),
+            "character_book": (types.CHARACTER_BOOK,),
             "reference_manifest": (types.REFERENCE_MANIFEST,),
             "skill": ("STRING", {"default": "anima_expand", "multiline": False,
                                  "tooltip": "custom_skill / LLM 操作使用的 Skill id（内置：anima_expand/anima_rewrite/anima_repair/translate_en）"}),
@@ -69,7 +70,8 @@ class APS_PromptComposer:
 
     def compose(self, AI_PROFILE, text, target, operation, prompt_mode, negative,
                 content_tier="safe", story_item=None, character_bible=None,
-                reference_manifest=None, skill="anima_expand", lora_triggers=""):
+                character_book=None, reference_manifest=None,
+                skill="anima_expand", lora_triggers=""):
         family, variant = _split_target(target)
         profile = AIProfile.from_json(AI_PROFILE or {})
         if not profile.profile_id:
@@ -77,7 +79,13 @@ class APS_PromptComposer:
         prof = resolve_profile(profile.profile_id)
         api_key = require_api_key(prof)
 
+        from ..schemas.character import CharacterBook
+
+        book = CharacterBook.from_json(character_book) if character_book else None
         bible = CharacterBible.from_json(character_bible) if character_bible else None
+        if bible is None and book is not None:
+            bible = book.first_bible()  # 兼容：单人物工作流取容器内档案
+        book_context = book.context_text() if book is not None else ""
         base_text = _base_text(story_item, text)
         if not base_text.strip() and operation not in ("audit",):
             raise ValueError("text 与 story_item 均为空，请至少提供一个")
@@ -88,7 +96,7 @@ class APS_PromptComposer:
         if family == "anima":
             positive, neg, tags, warnings, gprofile = self._anima(
                 prof, api_key, base_text, variant, operation, prompt_mode,
-                negative, content_tier, bible, lora)
+                negative, content_tier, bible, lora, book_context)
             validation = validate_anima(positive, neg, variant=variant,
                                         prompt_mode=prompt_mode)
         elif family == "custom_skill":
@@ -100,7 +108,7 @@ class APS_PromptComposer:
         else:
             positive, neg, tags, warnings, gprofile = self._generic(
                 prof, api_key, base_text, family, variant, operation,
-                prompt_mode, negative, bible)
+                prompt_mode, negative, bible, book_context)
             validation = empty_report()
 
         plan = PromptPlan(target_family=family, target_variant=variant,
@@ -114,7 +122,7 @@ class APS_PromptComposer:
 
     # ------------------------------------------------------------ ANIMA
     def _anima(self, prof, api_key, text, variant, operation, prompt_mode,
-               negative, content_tier, bible, lora):
+               negative, content_tier, bible, lora, book_context=""):
         if operation == "audit":
             # 审计：不修改输入，只校验
             from ..renderers.anima import (
@@ -141,12 +149,14 @@ class APS_PromptComposer:
             return self._llm_render(prof, api_key, skill_id, text, prompt_mode,
                                     negative, bible, lora, family="anima",
                                     variant=variant, content_tier=content_tier,
-                                    repair_issues=repair_issues)
+                                    repair_issues=repair_issues,
+                                    book_context=book_context)
         if operation == "generate" and prompt_mode != "tags":
             # ANIMA 默认自然语言：LLM 转换用户意图（产品决策 D16）
             return self._llm_render(prof, api_key, "anima_expand", text, prompt_mode,
                                     negative, bible, lora, family="anima",
-                                    variant=variant, content_tier=content_tier)
+                                    variant=variant, content_tier=content_tier,
+                                    book_context=book_context)
         # generate(tags) / convert：确定性渲染
         out = _as_dict(render_anima(text, variant=variant, prompt_mode=prompt_mode,
                                     content_tier=content_tier, bible=bible,
@@ -167,7 +177,8 @@ class APS_PromptComposer:
                                                prompt_mode=prompt_mode).as_text()
             out = self._llm_render(prof, api_key, skill_id, text, prompt_mode,
                                    negative, bible, [], family=family,
-                                   variant=variant, repair_issues=repair_issues)
+                                   variant=variant, repair_issues=repair_issues,
+                                   book_context=book_context)
         else:
             out = render_generic(text, family=family, variant=variant,
                                  prompt_mode=prompt_mode, bible=bible,
@@ -189,9 +200,11 @@ class APS_PromptComposer:
     # ------------------------------------------------------------ LLM + 渲染
     def _llm_render(self, prof, api_key, skill_id, text, prompt_mode, negative,
                     bible, lora, family, variant, content_tier="safe",
-                    repair_issues=""):
+                    repair_issues="", book_context=""):
         skill = get_skill(skill_id)
         user = text.strip()
+        if book_context and book_context.strip():
+            user = f"[角色表]\n{book_context.strip()}\n[任务]\n{user}"
         if repair_issues and repair_issues.strip():
             user = f"[校验问题]\n{repair_issues.strip()}\n[待修复提示词]\n{user}"
         req = GenerateRequest(system=skill.system_prompt,

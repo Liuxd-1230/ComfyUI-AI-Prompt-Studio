@@ -2,6 +2,7 @@
 
 
 import dataclasses
+import re
 import time
 from typing import List, Optional
 
@@ -11,6 +12,8 @@ from .base import Schema
 TRAIT_CATEGORIES = ["stable", "variable", "current", "uncertain"]
 
 MERGE_STRATEGIES = ["manual_priority", "text_priority", "image_priority", "consensus", "fill_missing_only"]
+
+_SPEAKER_ID_RE = re.compile(r"S\d+")
 
 
 @dataclasses.dataclass
@@ -86,8 +89,8 @@ class CharacterBible(Schema):
 
         if not self.character_id:
             self.character_id = "char_" + uuid.uuid4().hex[:8]
-        if not self.speaker_id:
-            self.speaker_id = "S1"
+        # 注意：speaker_id 不在这里默认成 S1（曾导致所有人物撞号）。
+        # 唯一 Speaker ID 由 CharacterBook.assign_speaker_ids() 统一分配。
         now = time.strftime("%Y-%m-%dT%H:%M:%S")
         if not self.created_at:
             self.created_at = now
@@ -137,7 +140,112 @@ class CharacterBible(Schema):
 
 @dataclasses.dataclass
 class CharacterBook(Schema):
-    """多个 CharacterBible 的容器（同一工作流多人物场景）。"""
+    """多个 CharacterBible 的容器（同一工作流多人物场景）。
+
+    职责（docs/decisions.md D17）：
+    - 按 character_id 去重（同一人物只存一份）；
+    - 统一分配唯一 Speaker ID（char_01→S1, char_02→S2...）；
+    - 已存在 Speaker ID 保持稳定；删除人物不改动他人 ID；
+      新人物取下一个可用 ID；冲突修复并记 warning。
+    """
 
     characters: List[CharacterBible] = dataclasses.field(default_factory=list)
     default_character_id: str = ""
+
+    def get_character(self, character_id: str) -> Optional[CharacterBible]:
+        for c in self.characters:
+            if c.character_id == character_id:
+                return c
+        return None
+
+    def find_by_name(self, name: str) -> Optional[CharacterBible]:
+        """按人物名查找（更新路径：同名人物复用其 character_id 与 Speaker ID）。"""
+        for c in self.characters:
+            if c.name and c.name == name:
+                return c
+        return None
+
+    def speaker_id_for(self, character_id: str) -> str:
+        c = self.get_character(character_id)
+        return (c.speaker_id or "") if c else ""
+
+    def used_speaker_ids(self) -> List[str]:
+        seen = []
+        for c in self.characters:
+            sid = (c.speaker_id or "").strip()
+            if sid and sid not in seen:
+                seen.append(sid)
+        return seen
+
+    def next_free_speaker_id_for(self, used: dict) -> str:
+        i = 1
+        while f"S{i}" in used:
+            i += 1
+        return f"S{i}"
+
+    def assign_speaker_ids(self) -> List[str]:
+        """统一分配唯一 Speaker ID（保持稳定；冲突修复）。返回 warning 列表。"""
+        warnings: List[str] = []
+        used: dict = {}  # speaker_id -> character_id
+        for c in self.characters:
+            sid = (c.speaker_id or "").strip()
+            if not sid or not _SPEAKER_ID_RE.fullmatch(sid):
+                if sid:
+                    warnings.append(
+                        f"{c.character_id}: Speaker ID {sid!r} 非法，已改为自动分配")
+                c.speaker_id = self.next_free_speaker_id_for(used)
+                used[c.speaker_id] = c.character_id
+            elif sid in used:
+                fixed = self.next_free_speaker_id_for(used)
+                warnings.append(
+                    f"{c.character_id}: Speaker ID {sid} 与 {used[sid]} 冲突，已改为 {fixed}")
+                c.speaker_id = fixed
+                used[c.speaker_id] = c.character_id
+            else:
+                used[c.speaker_id] = c.character_id
+        return warnings
+
+    def upsert_character(self, bible: CharacterBible) -> List[str]:
+        """按 character_id 添加或更新人物（不重复添加）。返回 warning 列表。"""
+        warnings: List[str] = []
+        if not bible.character_id:
+            raise ValueError("CharacterBible 缺少 character_id，无法加入 CharacterBook")
+        existing = self.get_character(bible.character_id)
+        if existing is not None:
+            # 更新：保留已分配的 Speaker ID（稳定），其余以新档案为准
+            if existing.speaker_id and not bible.speaker_id:
+                bible.speaker_id = existing.speaker_id
+            self.characters = [c for c in self.characters
+                               if c.character_id != bible.character_id]
+        self.characters.append(bible)
+        return warnings
+
+    def first_bible(self) -> Optional[CharacterBible]:
+        """兼容视图：取默认或第一个档案（单人物工作流）。"""
+        c = self.get_character(self.default_character_id) or (
+            self.characters[0] if self.characters else None)
+        return c
+
+    def to_payload(self) -> dict:
+        return self.to_json()
+
+    @classmethod
+    def from_bible(cls, bible: CharacterBible) -> "CharacterBook":
+        book = CharacterBook()
+        if bible and bible.character_id:
+            book.characters.append(bible)
+            book.default_character_id = bible.character_id
+        return book
+
+    def context_text(self) -> str:
+        """供 LLM 提示词使用的紧凑角色表（含 Speaker ID 与稳定特征）。"""
+        lines = []
+        for c in self.characters:
+            stable = [t.value for t in c.stable_traits() if t.value]
+            sid = c.speaker_id or self.speaker_id_for(c.character_id) or "?"
+            name = c.name or c.character_id
+            if stable:
+                lines.append(f"{c.character_id} ({sid}, {name}): {', '.join(stable)}")
+            else:
+                lines.append(f"{c.character_id} ({sid}, {name})")
+        return "\n".join(lines) or "（无角色）"

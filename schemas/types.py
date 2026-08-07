@@ -10,6 +10,7 @@ REFERENCE_ANALYSIS = "REFERENCE_ANALYSIS"
 CHARACTER_CANDIDATE = "CHARACTER_CANDIDATE"
 REFERENCE_MANIFEST = "REFERENCE_MANIFEST"
 CHARACTER_BIBLE = "CHARACTER_BIBLE"
+CHARACTER_BOOK = "CHARACTER_BOOK"
 STORYBOARD = "STORYBOARD"
 STORY_ITEM = "STORY_ITEM"
 STORY_ITEM_LIST = "STORY_ITEM_LIST"
@@ -26,6 +27,7 @@ _SCHEMA_IMPORTS = {
     CHARACTER_CANDIDATE: (".character", "CharacterCandidate"),
     REFERENCE_MANIFEST: (".references", "ReferenceManifest"),
     CHARACTER_BIBLE: (".character", "CharacterBible"),
+    CHARACTER_BOOK: (".character", "CharacterBook"),
     STORYBOARD: (".storyboard", "Storyboard"),
     STORY_ITEM: (".storyboard", "StoryItem"),
     STORY_ITEM_LIST: (".storyboard", "StoryItemList"),

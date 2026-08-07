@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from typing import List, Optional
 
-from ..schemas.character import CharacterBible
+from ..schemas.character import CharacterBible, CharacterBook
 from ..schemas.h3 import (
     H3Asset,
     H3AudioField,
@@ -43,13 +43,16 @@ def build_plan_prompt(
     *,
     storyboard: Optional[Storyboard] = None,
     bible: Optional[CharacterBible] = None,
+    book: Optional[CharacterBook] = None,
     manifest: Optional[ReferenceManifest] = None,
     image_count: int = 0,
     repair_issues: str = "",
 ) -> str:
     """构造 H3 计划生成指令（要求输出 H3PromptPlan 对应的 JSON）。"""
     ctx = []
-    if bible is not None and bible.character_prompt():
+    if book is not None and book.characters:
+        ctx.append(f"[角色表（Speaker ID 必须沿用，禁止自行发明 S 号）]\n{book.context_text()}")
+    elif bible is not None and bible.character_prompt():
         ctx.append(f"[人物设定] {bible.character_prompt()}")
     if image_count:
         ctx.append(f"[参考图] 本模式提供 {image_count} 张参考图，按 <Picture 1..{image_count}> 引用。")
@@ -189,8 +192,13 @@ def parse_plan_json(raw: str, mode: str, duration: float,
 # ---------------------------------------------------------------- 转换
 
 def convert_storyboard(sb: Storyboard, mode: str, duration: float,
-                       manifest: Optional[ReferenceManifest] = None) -> H3PromptPlan:
-    """把模型无关分镜转为 H3PromptPlan（结构映射；画面描述留给后续 LLM）。"""
+                       manifest: Optional[ReferenceManifest] = None,
+                       book: Optional[CharacterBook] = None) -> H3PromptPlan:
+    """把模型无关分镜转为 H3PromptPlan（结构映射；画面描述留给后续 LLM）。
+
+    Speaker ID：有 CharacterBook 时沿用其稳定 ID（char→Sx 映射），
+    否则按人物出现顺序自动 S1..Sn。
+    """
     plan = H3PromptPlan(mode=mode, duration_seconds=duration,
                         storyboard_id=sb.story_id)
     plan.summary = f"[reference generation] {sb.summary or sb.title or ''}".strip()
@@ -208,30 +216,39 @@ def convert_storyboard(sb: Storyboard, mode: str, duration: float,
                                                   max(duration - 0.001, 0))
             plan.shots.append(H3Shot(
                 index=shot_no, start_time=start,
-                description=[_en(sh.summary or sh.action or sc.title or "")],
-                camera=_en(sh.camera),
+                description=[_clean(sh.summary or sh.action or sc.title or "")],
+                camera=_clean(sh.camera),
                 characters=list(sh.characters),
                 audio_notes=""))
 
-    # 人物 → 说话人
+    # 人物 → 说话人（优先沿用 CharacterBook 的稳定 Speaker ID）
+    auto_no = 0
     for i, cid in enumerate(sb.all_character_ids(), start=1):
-        plan.speakers.append(H3Speaker(speaker_id=f"S{i}", character_id=cid,
-                                       name=cid))
+        speaker_id = book.speaker_id_for(cid) if book is not None else ""
+        if not speaker_id:
+            auto_no += 1
+            speaker_id = f"S{auto_no}"
+        name = book.get_character(cid).name if (book is not None and book.get_character(cid)) else cid
+        plan.speakers.append(H3Speaker(speaker_id=speaker_id, character_id=cid,
+                                       name=name))
 
     # manifest → subjects/assets/retention
     if manifest is not None:
         for i, subj in enumerate(manifest.subjects, start=1):
             plan.subjects.append(H3Subject(label=f"Subject {i}",
                                            kind=subj.kind,
-                                           definition=_en(subj.definition),
+                                           definition=_clean(subj.definition),
                                            source_assets=list(subj.source_assets)))
-        for i, asset in enumerate(manifest.assets, start=1):
+        # 图片/视频/音频按各自类型独立编号（官方规则）
+        kind_counter = {"picture": 0, "video": 0, "audio": 0}
+        for asset in manifest.assets:
             kind = "picture" if asset.asset_type == "image" else asset.asset_type
-            if kind not in ("picture", "video", "audio"):
+            if kind not in kind_counter:
                 kind = "picture"
-            plan.assets.append(H3Asset(label=f"{kind.capitalize()} {i}",
+            kind_counter[kind] += 1
+            plan.assets.append(H3Asset(label=f"{kind.capitalize()} {kind_counter[kind]}",
                                        kind=kind,
-                                       source=asset.path_or_ref,
+                                       source=asset.asset_id or asset.path_or_ref or "",
                                        note=asset.note))
         for i, subj in enumerate(manifest.subjects, start=1):
             plan.retention.append(H3Retention(
@@ -240,8 +257,23 @@ def convert_storyboard(sb: Storyboard, mode: str, duration: float,
     return plan
 
 
-def map_image_assets(plan: H3PromptPlan, image_count: int, mode: str) -> None:
-    """把输入图片映射为 Picture 资产（I2VA 首帧 / FL2VA 首尾 / L2VA 尾帧）。"""
+def map_image_assets(plan: H3PromptPlan, image_count: int, mode: str) -> List[str]:
+    """把输入图片映射为 Picture 资产（I2VA 首帧 / FL2VA 首尾 / L2VA 尾帧）。
+
+    同时按模式校验资产约束（docs/decisions.md D18）：
+    T2VA=0 图；I2VA=1（首帧）；FL2VA=2（首尾帧）；L2VA=1（尾帧）；R2V 不限。
+    返回 warning 列表；约束不满足时给出明确 warning/error，不生成错误引用。
+    """
+    warnings: List[str] = []
+    if mode == "T2VA" and image_count:
+        warnings.append(f"T2VA 为纯文本模式，传入的 {image_count} 张图片将被忽略")
+    if mode == "I2VA" and image_count != 1:
+        warnings.append(f"I2VA 需要 1 张首帧参考图，实际 {image_count}（缺失则不应引用 <Picture 1>）")
+    if mode == "FL2VA" and image_count != 2:
+        warnings.append(f"FL2VA 需要 2 张参考图（首帧+尾帧），实际 {image_count}")
+    if mode == "L2VA" and image_count != 1:
+        warnings.append(f"L2VA 需要 1 张尾帧参考图，实际 {image_count}")
+
     existing = {a.label for a in plan.assets}
     for i in range(1, image_count + 1):
         label = f"Picture {i}"
@@ -262,6 +294,41 @@ def map_image_assets(plan: H3PromptPlan, image_count: int, mode: str) -> None:
                 alignment_time=plan.duration_seconds))
         else:
             plan.assets.append(H3Asset(label=label, kind="picture"))
+    return warnings
+
+
+MEDIA_LABEL_RE = re.compile(r"^(Picture|Video|Audio)\s(\d+)$")
+
+
+def normalize_media_labels(plan: H3PromptPlan) -> None:
+    """把 Picture/Video/Audio 编号重排为按类型独立、1 起始连续（官方规则）。
+
+    LLM 可能产出混合编号（如 Video 2 没有 Video 1）；渲染前由 Python 确定性修正，
+    并同步 retention/参考里的引用。
+    """
+    kind_counter = {"Picture": 0, "Video": 0, "Audio": 0}
+    mapping: dict = {}
+    for asset in plan.assets:
+        m = MEDIA_LABEL_RE.match(asset.label or "")
+        if not m:
+            continue
+        kind, _ = m.group(1), m.group(2)
+        kind_counter[kind] += 1
+        new_label = f"{kind} {kind_counter[kind]}"
+        if new_label != asset.label:
+            mapping[asset.label] = new_label
+            asset.label = new_label
+
+    if not mapping:
+        return
+    for retention in plan.retention:
+        if retention.label in mapping:
+            retention.label = mapping[retention.label]
+    for subject in plan.subjects:
+        subject.source_assets = [mapping.get(a, a) for a in subject.source_assets]
+    for shot in plan.shots:
+        shot.references = [mapping.get(r, r) for r in shot.references]
+    # 首行对齐指令中的 Picture 引用由 renderer 依据 assets 生成，无需改写
 
 
 # ---------------------------------------------------------------- 工具
@@ -289,7 +356,8 @@ def _empty_shot():
     return Shot(summary="")
 
 
-def _en(text: str) -> str:
+def _clean(text: str) -> str:
+    """去除首尾空白。不做假装翻译（R2V 英文由 LLM/修复循环负责）。"""
     return (text or "").strip()
 
 

@@ -207,3 +207,41 @@ def test_map_image_assets_skips_existing():
                                alignment_time=0.0))
     map_image_assets(plan, 1, "I2VA")
     assert len(plan.assets) == 1
+
+
+# ---------------------------------------------------------------- 媒体独立编号
+
+def test_normalize_media_labels_per_kind():
+    from aps.schemas.h3 import H3Asset, H3Retention
+    from aps.services.h3_plan import normalize_media_labels
+
+    plan = H3PromptPlan(mode="R2V", duration_seconds=10.0)
+    plan.assets = [
+        H3Asset(label="Picture 1", kind="picture"),
+        H3Asset(label="Video 2", kind="video"),
+        H3Asset(label="Audio 3", kind="audio"),
+        H3Asset(label="Video 5", kind="video"),
+        H3Asset(label="Picture 4", kind="picture"),
+    ]
+    plan.retention = [H3Retention(label="Video 5", marker="fully_copy", notes="x"),
+                      H3Retention(label="Picture 4", marker="fully_preserved", notes="y")]
+    normalize_media_labels(plan)
+    labels = [a.label for a in plan.assets]
+    assert labels == ["Picture 1", "Video 1", "Audio 1", "Video 2", "Picture 2"]
+    # retention 引用同步改写
+    assert plan.retention[0].label == "Video 2"
+    assert plan.retention[1].label == "Picture 2"
+
+
+def test_map_image_assets_mode_constraints_warnings():
+    from aps.services.h3_plan import map_image_assets
+
+    plan = H3PromptPlan(mode="I2VA", duration_seconds=8.0)
+    warnings = map_image_assets(plan, 0, "I2VA")
+    assert any("I2VA" in w for w in warnings)
+    plan2 = H3PromptPlan(mode="FL2VA", duration_seconds=8.0)
+    warnings2 = map_image_assets(plan2, 1, "FL2VA")
+    assert any("FL2VA" in w for w in warnings2)
+    plan3 = H3PromptPlan(mode="T2VA", duration_seconds=8.0)
+    warnings3 = map_image_assets(plan3, 2, "T2VA")
+    assert any("T2VA" in w for w in warnings3)

@@ -55,6 +55,11 @@ def validate_h3(prompt: str, mode: str = "T2VA") -> ValidationReport:
         _check_r2v_style_opening(report, prompt)
         _check_retention_markers(report, prompt)
         _check_summary_prefix(report, prompt)
+        bad = r2v_english_issue(prompt)
+        if bad:
+            report.add("warning", "h3_r2v_english",
+                       f"R2V 语义段 {bad!r} 含大量非英语内容（官方要求英文正文；"
+                       f"对白/歌词/画面文字除外）；节点会自动尝试一次翻译修复")
     else:
         _check_section_order(report, prompt, FOUR_MODE_FIELDS, "h3_field")
         _check_alignment_instruction(report, prompt, mode)
@@ -282,3 +287,34 @@ def _check_summary_prefix(report, prompt) -> None:
     if summary and not summary.startswith("["):
         report.add("error", "h3_summary_prefix",
                    "R2V summary 必须以方括号任务类型前缀开头，如 [reference generation]")
+
+
+# ---------------------------------------------------------------- R2V 英文
+
+_NON_ASCII_RE = re.compile(r"[^\x00-\x7f]")
+
+
+def r2v_english_issue(prompt: str) -> Optional[str]:
+    """检测 R2V 语义段是否包含大量非英语内容（<d> 对白与引号内画面文字除外）。
+
+    返回首个违规段名；都合规返回 None。不伪造翻译，只报告。
+    """
+    import re as _re
+
+    semantic = ["subject_definitions", "summary", "retention_analysis",
+                "detailed_description", "overall_soundscape", "non_diegetic_music"]
+    for heading in semantic:
+        body = _section_text(prompt, heading)
+        if not body:
+            continue
+        # 剔除 <d>...</d>（对白/歌词保留原语言）
+        body = _re.sub(r"<d>.*?</d>", "", body, flags=_re.S)
+        # 剔除双引号内的画面文字（按官方规则保留原文字）
+        body = _re.sub(r'"[^"]*"', "", body)
+        chars = [c for c in body if not c.isspace()]
+        if not chars:
+            continue
+        non_ascii = len([c for c in chars if _NON_ASCII_RE.match(c)])
+        if non_ascii / len(chars) > 0.25:
+            return heading
+    return None

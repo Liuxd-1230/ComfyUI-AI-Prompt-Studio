@@ -6,7 +6,7 @@ import pytest
 
 import aps.nodes.reference_analyzer as ra_mod
 import aps.nodes.character_bible as cb_mod
-from aps.schemas.character import CharacterBible, CharacterCandidate
+from aps.schemas.character import CharacterBible, CharacterBook, CharacterCandidate
 from aps.schemas.references import ReferenceManifest
 from aps.schemas.results import LLMResult
 
@@ -131,7 +131,7 @@ def test_bible_merge_with_lock(store):
     node = cb_mod.APS_CharacterBible()
     existing = CharacterBible(name="少女")
     existing.traits.append(__trait("hair", "black", sources=["text_anchor"]))
-    _, prompt, json_out, conflicts, uncertainty = node.merge(
+    _, prompt, json_out, conflicts, uncertainty, book_json, warnings = node.merge(
         merge_strategy="image_priority",
         character_candidate=CharacterCandidate(
             traits=[__trait("hair", "blonde", sources=["image:0"])]).to_json(),
@@ -144,6 +144,8 @@ def test_bible_merge_with_lock(store):
     assert bible.trait_map()["hair"].value == "black"
     assert any(t.value == "蓝裙子" for t in bible.traits)  # 锚点片段追加
     assert "hair" in conflicts  # 锁定字段与候选冲突被记录
+    book = CharacterBook.from_json(book_json)
+    assert len(book.characters) == 1
 
 
 def test_bible_text_priority(store):
@@ -151,7 +153,7 @@ def test_bible_text_priority(store):
     candidate = CharacterCandidate(traits=[__trait("hair", "blonde", sources=["image:0"])])
     existing = CharacterBible(name="t")
     existing.traits.append(__trait("hair", "black", sources=["text_anchor"]))
-    _, prompt, json_out, conflicts, _ = node.merge(
+    _, prompt, json_out, conflicts, _, book_json, _ = node.merge(
         merge_strategy="text_priority",
         character_candidate=candidate.to_json(),
         existing_bible=existing.to_json(), text_anchor="", lock_fields="",
@@ -161,8 +163,9 @@ def test_bible_text_priority(store):
 
 
 def test_bible_speaker_id_auto():
+    # 独立 CharacterBible 不默认 S1（避免多人物撞号）；唯一 ID 由 CharacterBook 分配
     b = CharacterBible(character_id="c1")
-    assert b.speaker_id == "S1"
+    assert b.speaker_id == ""
     b2 = CharacterBible(character_id="c2", speaker_id="S2")
     assert b2.speaker_id == "S2"
 

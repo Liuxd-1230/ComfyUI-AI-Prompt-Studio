@@ -37,6 +37,7 @@ class APS_StoryboardBuilder:
                                  "tooltip": "风格描述（如：Cinematic, live-action）"}),
         }, "optional": {
             "character_bible": (types.CHARACTER_BIBLE,),
+            "character_book": (types.CHARACTER_BOOK,),
             "reference_manifest": (types.REFERENCE_MANIFEST,),
         }}
 
@@ -47,7 +48,7 @@ class APS_StoryboardBuilder:
     DESCRIPTION = "把故事拆成模型无关的结构化分镜（保持人物/场景连续性，不写目标模型格式）。"
 
     def build(self, AI_PROFILE, story_text, split_mode, target_duration, max_scenes, style,
-              character_bible=None, reference_manifest=None):
+              character_bible=None, character_book=None, reference_manifest=None):
         profile = AIProfile.from_json(AI_PROFILE or {})
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
@@ -56,10 +57,18 @@ class APS_StoryboardBuilder:
         prof = resolve_profile(profile.profile_id)
         api_key = require_api_key(prof)
 
+        from ..schemas.character import CharacterBook
+        from ..schemas.references import ReferenceManifest
+
         bible = CharacterBible.from_json(character_bible) if character_bible else None
+        book = CharacterBook.from_json(character_book) if character_book else None
+        if book is None and bible is not None:
+            book = CharacterBook.from_bible(bible)
+        manifest = ReferenceManifest.from_json(reference_manifest) if reference_manifest else None
         prompt = build_storyboard_prompt(story_text.strip(), split_mode,
                                          float(target_duration or 0),
-                                         int(max_scenes or 12), style or "", bible)
+                                         int(max_scenes or 12), style or "",
+                                         bible, book, manifest)
         req = GenerateRequest(
             system="You are a professional storyboard artist. Output only JSON.",
             messages=[_msg(prompt)],

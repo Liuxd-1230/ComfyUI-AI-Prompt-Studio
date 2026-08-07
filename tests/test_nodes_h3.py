@@ -246,3 +246,128 @@ def test_missing_api_key(store):
     node = h3_mod.APS_MiniMaxH3Director()
     with pytest.raises(ValueError, match="API Key"):
         node.direct(**node_payload(AI_PROFILE=payload, text="x", mode="T2VA"))
+
+
+# ---------------------------------------------------------------- auto_repair / R2V 英文 / 资产约束
+
+class ScriptedGateway:
+    """按调用次数依次返回预设文本（用于修复循环测试）。"""
+
+    def __init__(self, texts):
+        self.texts = list(texts)
+        self.calls = 0
+
+    def generate(self, profile, api_key, req):
+        text = self.texts[min(self.calls, len(self.texts) - 1)]
+        self.calls += 1
+        return LLMResult(text=text)
+
+
+CHINESE_R2V_PLAN = dict(R2V_PLAN_JSON)
+CHINESE_R2V_PLAN["summary"] = "[reference generation] 一个女孩走进咖啡馆。"
+CHINESE_R2V_PLAN["soundscape"] = "咖啡馆里轻轻响着说话声。"
+ENGLISH_R2V_PLAN = dict(R2V_PLAN_JSON)
+ENGLISH_R2V_PLAN["summary"] = "[reference generation] A girl enters a cafe."
+ENGLISH_R2V_PLAN["soundscape"] = "The cafe hums softly."
+
+
+def test_auto_repair_fixes_r2v_english(monkeypatch, store):
+    payload = setup_profile(store)
+    # 同一个 gateway 实例跨调用共享 calls 计数：第 1 次中文 → 触发修复 → 第 2 次英文
+    gw = ScriptedGateway([json.dumps(CHINESE_R2V_PLAN),
+                          json.dumps(ENGLISH_R2V_PLAN)])
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: gw)
+    node = h3_mod.APS_MiniMaxH3Director()
+    prompt, _, _, validation, warnings = node.direct(
+        **node_payload(AI_PROFILE=payload, text="少女走进咖啡馆", mode="R2V",
+                       operation="generate", duration=10.0))
+    assert "A girl enters a cafe." in prompt     # 修复后为英文
+    assert "自动修复" in warnings
+    assert "通过" in validation
+
+
+def test_r2v_english_marks_error_when_repair_fails(monkeypatch, store):
+    payload = setup_profile(store)
+    # 修复一次后仍是中文 → 校验错误，不伪造翻译
+    monkeypatch.setattr(h3_mod, "Gateway",
+                        lambda: ScriptedGateway([json.dumps(CHINESE_R2V_PLAN)]))
+    node = h3_mod.APS_MiniMaxH3Director()
+    _, _, _, validation, _ = node.direct(
+        **node_payload(AI_PROFILE=payload, text="少女走进咖啡馆", mode="R2V",
+                       operation="generate", duration=10.0))
+    assert "h3_r2v_english" in validation
+
+
+def test_auto_repair_off_keeps_error(monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: ScriptedGateway([json.dumps(CHINESE_R2V_PLAN)]))
+    node = h3_mod.APS_MiniMaxH3Director()
+    _, _, _, validation, _ = node.direct(
+        **node_payload(AI_PROFILE=payload, text="少女走进咖啡馆", mode="R2V",
+                       operation="generate", duration=10.0, auto_repair=False))
+    assert "h3_r2v_english" in validation
+
+
+def test_mode_asset_error_i2va_without_image(monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway",
+                        lambda: ScriptedGateway([json.dumps(PLAN_JSON)]))
+    node = h3_mod.APS_MiniMaxH3Director()
+    _, _, _, validation, _ = node.direct(
+        **node_payload(AI_PROFILE=payload, text="少女走进咖啡馆", mode="I2VA",
+                       operation="generate", duration=10.0))
+    assert "h3_asset_mode" in validation     # I2VA 需要 1 张参考图
+
+
+def test_character_book_speakers_flow(monkeypatch, store):
+    """LLM 成功路径沿用 LLM 计划的 Speaker；确定性回退路径必须沿用 Book 稳定 ID。"""
+    from aps.schemas.character import CharacterBible, CharacterBook
+
+    payload = setup_profile(store)
+    book = CharacterBook()
+    book.upsert_character(CharacterBible(character_id="c1", name="A",
+                                         speaker_id="S5"))
+    book.upsert_character(CharacterBible(character_id="c2", name="B"))
+    book.assign_speaker_ids()
+    assert book.speaker_id_for("c2") == "S1"     # c2 取下一个可用 ID，不抢占 S5
+    sb = Storyboard(title="t", characters=["c1", "c2"],
+                    scenes=[Scene(title="s1", characters=["c1", "c2"],
+                                  shots=[Shot(summary="both walk in")])])
+    # LLM 返回非 JSON → 回退到 convert_storyboard（确定性路径，使用 Book 的 Speaker ID）
+    monkeypatch.setattr(h3_mod, "Gateway",
+                        lambda: FakeGateway("不是 JSON"))
+    node = h3_mod.APS_MiniMaxH3Director()
+    _, plan_json, _, _, warnings = node.direct(
+        **node_payload(AI_PROFILE=payload, text="分镜文本", mode="T2VA",
+                       operation="convert_storyboard", duration=5.0,
+                       storyboard=sb.to_json(), character_book=book.to_json()))
+    plan = H3PromptPlan.from_json(plan_json)
+    by_cid = {s.character_id: s.speaker_id for s in plan.speakers}
+    assert by_cid.get("c1") == "S5"              # 沿用 Book 的稳定 Speaker ID
+    assert by_cid.get("c2") == "S1"
+    assert "回退" in warnings
+
+
+def test_plan_prompt_includes_book_role_table(monkeypatch, store):
+    """角色表（含稳定 Speaker ID）必须进入 LLM 计划指令，禁止模型自造 S 号。"""
+    from aps.schemas.character import CharacterBible, CharacterBook
+
+    payload = setup_profile(store)
+    book = CharacterBook()
+    book.upsert_character(CharacterBible(character_id="c1", name="A",
+                                         speaker_id="S5"))
+    book.assign_speaker_ids()
+    sb = Storyboard(title="t", characters=["c1"],
+                    scenes=[Scene(title="s1", characters=["c1"],
+                                  shots=[Shot(summary="walk in")])])
+    monkeypatch.setattr(h3_mod, "Gateway",
+                        lambda: FakeGateway(json.dumps(PLAN_JSON)))
+    node = h3_mod.APS_MiniMaxH3Director()
+    node.direct(**node_payload(AI_PROFILE=payload, text="分镜文本", mode="T2VA",
+                               operation="convert_storyboard", duration=5.0,
+                               storyboard=sb.to_json(),
+                               character_book=book.to_json()))
+    sent = FakeGateway.last_req.messages[0].content
+    assert "角色表" in sent
+    assert "c1 (S5, A)" in sent                  # 稳定 Speaker ID 传给了 LLM
+    assert "禁止自行发明" in sent
