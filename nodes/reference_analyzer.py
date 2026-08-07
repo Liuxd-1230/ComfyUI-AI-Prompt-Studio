@@ -130,6 +130,9 @@ class APS_ReferenceAnalyzer:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
         prof = resolve_profile(profile.profile_id)
         api_key = require_api_key(prof)
+        # 视觉/文本 Profile 解耦（P1/D）：vision_profile_id 指向另一档案时，视觉用该档案
+        vision_prof = vision_svc.resolve_vision_profile(prof)
+        vision_key = require_api_key(vision_prof) if vision_prof is not prof else api_key
 
         analysis = ReferenceAnalysis(mode=analysis_mode, profile_id=prof.profile_id)
         base_prompt = MODE_PROMPTS.get(analysis_mode) or custom_prompt
@@ -162,7 +165,7 @@ class APS_ReferenceAnalyzer:
         for i, img in enumerate(image_list):
             data_url = vision_svc.image_to_data_url(img)
             res = vision_svc.call_vision(
-                prof, api_key,
+                vision_prof, vision_key,
                 vision_svc.build_vision_messages(base_prompt, [data_url]))
             if not res["ok"]:
                 raise ValueError(res["error"].as_text)
@@ -180,14 +183,23 @@ class APS_ReferenceAnalyzer:
             return (analysis.to_json(), candidate.to_json(), manifest.to_json(),
                     "", "0.0", analysis.raw, images)
 
-        # 3) 多图共识
+        # 3) 多图身份判断 + 共识（P1：多图是否同一主体）
         image_consensus = None
         if len(image_candidates) == 1:
             image_consensus = image_candidates[0]
         elif len(image_candidates) > 1:
-            image_consensus = reference_svc.consensus_of(image_candidates)
-            analysis.warnings.append(
-                f"多图共识：{len(image_candidates)} 张图合并，冲突已标记 uncertain")
+            verdict = reference_svc.judge_identity(image_candidates)
+            if verdict["same_subject"]:
+                image_consensus = reference_svc.identity_consensus(image_candidates)
+                analysis.warnings.append(
+                    f"多图共识：{len(image_candidates)} 张图指向同一主体"
+                    f"（身份一致度 {verdict['confidence']:.2f}），冲突已标记 uncertain")
+            else:
+                image_consensus = reference_svc.identity_consensus(image_candidates)
+                analysis.warnings.append(
+                    f"多图身份判断：{len(image_candidates)} 张图指向"
+                    f"{verdict['clusters']} 个不同主体；已取最高一致度分组合并，"
+                    f"其余图未并入该人物（防跨主体串绑）")
             for conflict in image_consensus.conflicts:
                 analysis.warnings.append(
                     f"特征冲突 {conflict.trait_name}: "

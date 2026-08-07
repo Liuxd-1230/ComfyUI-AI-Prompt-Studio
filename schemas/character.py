@@ -56,6 +56,9 @@ class CharacterCandidate(Schema):
     conflicts: List[CharacterConflict] = dataclasses.field(default_factory=list)
     analysis_mode: str = "character_full"
     sources: List[str] = dataclasses.field(default_factory=list)   # 资产引用或文字锚点
+    subject_id: str = ""            # 多图身份聚类后归属的 subject（空=未聚类）
+    same_subject: Optional[bool] = None   # 多图身份判断：图像是否指向同一主体
+    identity_confidence: float = 0.0      # 身份一致度 0-1（多图时才有意义）
     confidence: float = 0.5
     raw: str = ""                   # 模型原始输出
     created_at: str = ""

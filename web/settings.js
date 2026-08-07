@@ -109,6 +109,10 @@ function buildPanel() {
     el("h3", { text: t("log") }),
     el("div", { id: "aps-log" }),
   ]));
+  bottom.appendChild(el("div", { class: "aps-section" }, [
+    el("h3", { text: t("skills") }),
+    el("div", { id: "aps-skills" }),
+  ]));
   body.appendChild(bottom);
   overlay.appendChild(body);
   return overlay;
@@ -129,6 +133,7 @@ async function refreshAll() {
   }
   renderRuntime();
   renderLog();
+  renderSkills();
   if (currentProfileId) renderEditor(currentProfileId);
 }
 
@@ -205,6 +210,7 @@ function buildEditorForm(p) {
   const unload = selectInput(UNLOAD, p.unload_policy);
   const visionUrl = textInput(p.vision_base_url, "");
   const visionModel = textInput(p.vision_model, "");
+  const visionProfileId = textInput(p.vision_profile_id, "");
   const timeout = textInput(p.timeout != null ? String(p.timeout) : "120", "120");
   // 高级采样参数（D19）：留空 = 不发送该字段，交给 provider 默认值
   const temperature = textInput(p.temperature != null ? String(p.temperature) : "", "空=默认");
@@ -227,6 +233,7 @@ function buildEditorForm(p) {
   wrap.appendChild(inputRow("unload_policy", unload, "本地模型卸载策略"));
   wrap.appendChild(inputRow("vision_base_url", visionUrl, "视觉端点根地址（OpenAI 兼容，可选）"));
   wrap.appendChild(inputRow("vision_model", visionModel, "视觉模型名（可选，如 qwen-vl-max）"));
+  wrap.appendChild(inputRow("vision_profile_id", visionProfileId, "视觉/文本 Profile 解耦：填写另一个档案的 profile_id 时，视觉分析使用该档案的视觉配置与密钥（留空 = 用本档案 vision_* 字段）"));
   wrap.appendChild(inputRow("timeout", timeout, "请求超时（秒）"));
 
   // 高级采样区（不进普通节点 UI）
@@ -279,6 +286,7 @@ function buildEditorForm(p) {
       model: model.value, protocol: protocol.value, reasoning: reasoning.value,
       web_search: webSearch.value, unload_policy: unload.value,
       vision_base_url: visionUrl.value, vision_model: visionModel.value,
+      vision_profile_id: visionProfileId.value.trim(),
       timeout: parseFloat(timeout.value) || 120,
       temperature: parseOptFloat(temperature.value),
       top_p: parseOptFloat(topP.value),
@@ -415,6 +423,62 @@ function renderLog() {
         ]));
       }
       box.appendChild(table);
+    })
+    .catch(() => {});
+}
+
+// ---------------- Prompt Skill 管理 ----------------
+
+function renderSkills() {
+  const box = document.querySelector("#aps-skills");
+  if (!box) return;
+  api("/skills")
+    .then(({ skills }) => {
+      box.innerHTML = "";
+      const table = el("table", { class: "aps-table" });
+      table.appendChild(el("tr", {}, [
+        el("th", { text: "id" }), el("th", { text: "version" }),
+        el("th", { text: "source" }), el("th", { text: "enabled" }),
+        el("th", { text: "renderer" }), el("th", { text: "ops" }),
+      ]));
+      for (const s of skills) {
+        const ops = el("td", {});
+        if (s.source === "builtin") {
+          ops.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: "复制", onClick: async () => {
+            try {
+              await api("/skills", { method: "POST", body: JSON.stringify({ copy_from: s.id }) });
+              toast(t("save_ok"));
+              renderSkills();
+            } catch (e) { toast(t("error") + ": " + e.message, true); }
+          } }));
+        } else {
+          const del = el("button", { class: "aps-btn aps-btn-mini aps-btn-danger", text: "删除", onClick: async () => {
+            if (!confirm("删除自定义技能 " + s.id + "？")) return;
+            try {
+              await api("/skills/" + encodeURIComponent(s.id), { method: "DELETE" });
+              toast(t("save_ok"));
+              renderSkills();
+            } catch (e) { toast(t("error") + ": " + e.message, true); }
+          } });
+          const toggle = el("button", { class: "aps-btn aps-btn-mini", text: s.enabled ? "停用" : "启用", onClick: async () => {
+            try {
+              await api("/skills/" + encodeURIComponent(s.id) + "/enabled", {
+                method: "POST", body: JSON.stringify({ enabled: !s.enabled }),
+              });
+              renderSkills();
+            } catch (e) { toast(t("error") + ": " + e.message, true); }
+          } });
+          ops.appendChild(toggle);
+          ops.appendChild(del);
+        }
+        table.appendChild(el("tr", {}, [
+          el("td", { text: s.id }), el("td", { text: s.version }),
+          el("td", { text: s.source }), el("td", { text: s.enabled ? "✓" : "✗" }),
+          el("td", { text: s.renderer }), ops,
+        ]));
+      }
+      box.appendChild(table);
+      box.appendChild(el("p", { class: "aps-muted", text: "内置技能只读；复制为自定义后可编辑/停用/删除。" }));
     })
     .catch(() => {});
 }

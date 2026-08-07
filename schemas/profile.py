@@ -47,6 +47,10 @@ class AIProfile(Schema):
     # ---- 附件能力（D20）：用户断言端点支持时手动开启（覆盖能力探测的保守判定）----
     supports_vision: bool = False
     supports_files: bool = False
+    # ---- 视觉/文本 Profile 解耦（P1/D）：视觉分析可指向另一档案 ----
+    # 留空 = 用本档案的 vision_base_url/vision_model；填写 = 用该档案的
+    # vision_base_url/vision_model/api_key（文本生成仍用本档案 base_url/model）。
+    vision_profile_id: str = ""
     # ---- 外部搜索后端（C4）：无原生 web_search 时经该端点注入联网结果 ----
     search_url: str = ""
     created_at: str = ""

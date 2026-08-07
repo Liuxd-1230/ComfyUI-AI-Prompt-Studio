@@ -93,6 +93,30 @@ def require_vision(profile: AIProfile) -> str:
     return base
 
 
+def resolve_vision_profile(profile: AIProfile) -> AIProfile:
+    """视觉/文本 Profile 解耦：返回实际用于视觉分析的档案。
+
+    profile.vision_profile_id 非空 → 视觉使用该档案（其 vision_* 配置与 api_key）；
+    留空 → 使用本档案自身的 vision_* 配置。
+    仅做字段回填，不改动原档案；返回 None 表示需要外部解析（未找到目标档案时
+    由调用方报错，避免本模块依赖 ConfigStore 造成循环导入）。
+    """
+    if not (profile.vision_profile_id or "").strip():
+        return profile
+    # 延迟导入避免循环依赖
+    try:
+        from ..server.config_store import get_store
+        store = get_store()
+    except Exception:  # noqa: BLE001
+        return profile
+    target = store.get_profile(profile.vision_profile_id.strip())
+    if target is None:
+        raise VisionUnavailable(
+            f"vision_profile_id={profile.vision_profile_id!r} 指向的档案不存在，"
+            "请在设置面板检查")
+    return target
+
+
 def call_vision(profile: AIProfile, api_key: str, messages: List[Dict[str, Any]],
                 *, timeout: float = 120.0) -> Dict[str, Any]:
     """调用视觉端点，返回 {ok, text, error}。

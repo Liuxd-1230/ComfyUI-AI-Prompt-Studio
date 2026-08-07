@@ -64,8 +64,13 @@ def test_analyzer_images_consensus_and_passthrough(monkeypatch, store):
                        custom_prompt="")
     analysis, candidate, manifest, caption, conf, raw, images = out
     cand = CharacterCandidate.from_json(candidate)
-    # 两图值冲突 → consensus 标记 uncertain
-    assert cand.traits[0].category == "uncertain"
+    # 两图 stable 特征值冲突 → 身份判断为不同主体：不跨主体串绑特征，
+    # 只取最高一致度分组；身份冲突以 warning + __subject_identity__ conflict 记录
+    assert cand.same_subject is False
+    assert any(c.trait_name == "__subject_identity__" for c in cand.conflicts)
+    assert cand.traits[0].category == "stable"      # 未混合成 uncertain
+    anl = analysis if isinstance(analysis, dict) else json.loads(analysis)
+    assert any("不同主体" in w for w in anl["warnings"])
     assert images is imgs  # IMAGE 原样透传（同对象）
     manf = ReferenceManifest.from_json(manifest)
     assert len(manf.assets) == 2

@@ -176,6 +176,44 @@ def handle_runtime(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any
     )
 
 
+# ---------------------------------------------------------------- Prompt Skill 管理
+
+def handle_skills_list(store: ConfigStore) -> Dict[str, Any]:
+    from ..services import skills as skills_svc
+    return {"skills": skills_svc.list_skill_records()}
+
+
+def handle_skill_get(skill_id: str, store: ConfigStore) -> Dict[str, Any]:
+    from ..services import skills as skills_svc
+    rec = skills_svc.get_skill_record(skill_id)
+    if rec is None:
+        raise KeyError(f"技能不存在: {skill_id}")
+    return rec
+
+
+def handle_skill_create(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    from ..services import skills as skills_svc
+    if payload.get("copy_from"):
+        return skills_svc.copy_builtin_to_custom(str(payload["copy_from"]))
+    return skills_svc.create_custom_skill(dict(payload or {}))
+
+
+def handle_skill_update(skill_id: str, payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    from ..services import skills as skills_svc
+    return skills_svc.update_custom_skill(skill_id, dict(payload or {}))
+
+
+def handle_skill_delete(skill_id: str, store: ConfigStore) -> Dict[str, Any]:
+    from ..services import skills as skills_svc
+    skills_svc.delete_custom_skill(skill_id)
+    return {"ok": True, "skill_id": skill_id}
+
+
+def handle_skill_set_enabled(skill_id: str, payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    from ..services import skills as skills_svc
+    return skills_svc.set_skill_enabled(skill_id, bool(payload.get("enabled", True)))
+
+
 # ---------------------------------------------------------------- aiohttp 注册
 
 def _send(data: Any, status: int = 200):
@@ -275,6 +313,28 @@ def register_routes() -> None:
     async def r_runtime(request):
         return await _run(request, lambda req, payload, st: handle_runtime(payload, st))
 
+    async def r_skills_list(request):
+        return await _run(request, lambda req, payload, st: handle_skills_list(st))
+
+    async def r_skill_get(request):
+        sid = request.match_info["skill_id"]
+        return await _run(request, lambda req, payload, st: handle_skill_get(sid, st))
+
+    async def r_skill_create(request):
+        return await _run(request, lambda req, payload, st: handle_skill_create(payload, st))
+
+    async def r_skill_update(request):
+        sid = request.match_info["skill_id"]
+        return await _run(request, lambda req, payload, st: handle_skill_update(sid, payload, st))
+
+    async def r_skill_delete(request):
+        sid = request.match_info["skill_id"]
+        return await _run(request, lambda req, payload, st: handle_skill_delete(sid, st))
+
+    async def r_skill_enable(request):
+        sid = request.match_info["skill_id"]
+        return await _run(request, lambda req, payload, st: handle_skill_set_enabled(sid, payload, st))
+
     routes.get(f"{API_PREFIX}/status")(r_status)
     routes.get(f"{API_PREFIX}/profiles")(r_profiles_list)
     routes.get(f"{API_PREFIX}/profiles/{{profile_id}}")(r_profiles_get)
@@ -290,5 +350,11 @@ def register_routes() -> None:
     routes.get(f"{API_PREFIX}/settings")(r_settings_get)
     routes.post(f"{API_PREFIX}/settings")(r_settings_set)
     routes.post(f"{API_PREFIX}/runtime")(r_runtime)
+    routes.get(f"{API_PREFIX}/skills")(r_skills_list)
+    routes.get(f"{API_PREFIX}/skills/{{skill_id}}")(r_skill_get)
+    routes.post(f"{API_PREFIX}/skills")(r_skill_create)
+    routes.put(f"{API_PREFIX}/skills/{{skill_id}}")(r_skill_update)
+    routes.delete(f"{API_PREFIX}/skills/{{skill_id}}")(r_skill_delete)
+    routes.post(f"{API_PREFIX}/skills/{{skill_id}}/enabled")(r_skill_enable)
 
     logger.info("AI Prompt Studio: 路由已注册（%s）", API_PREFIX)

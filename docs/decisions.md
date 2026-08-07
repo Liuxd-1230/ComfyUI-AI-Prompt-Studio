@@ -124,3 +124,17 @@
 ## D21. 结构化输出（2026-08-07）
 
 - Gateway `output_schema`：能力允许（非 DeepSeek 且 caps.structured_output=True）→ 协议层 schema（Responses `text.format` json_schema / Chat `response_format.json_schema`）；否则降级为提示词约束 + 解析校验（DeepSeek 未文档化 json_schema，不发送该参数）。
+
+## D22. Batch C：共享运行时服务层 / 外部搜索 / 工具循环 / 卸载策略（2026-08-07）
+
+- Settings `/runtime` 与 Runtime Control 节点共用 `services/runtime/control.run_runtime_action`（同一服务层，杜绝两处实现漂移）；`custom` 是真实适配器（status 走 `GET /v1/models`，load/unload 走 `POST /models/{load,unload}` body `{"model": ...}`），非摆设选项。
+- 外部搜索后端：无原生 web_search 且档案配置 `search_url` 时，网关把 `POST {query} → {results:[{title,url,snippet}]}` 的结果块注入最后一条 user 消息；失败 → 明确警告并离线执行，绝不伪造结果。
+- 函数工具循环：`MAX_TOOL_ROUNDS=4`（不暴露到节点 UI）；工具注册表（`now`/`search`）；执行失败把错误文本回给模型继续，不抛异常；达到上限仍有 tool_calls → 截断警告不静默丢弃。
+- 本地运行时卸载策略：`unload_policy` 仅对 `provider=local` 生效；`after_request`=请求结束即卸载（无论成败），`after_success`=仅成功时卸载；卸载失败只追加 warning，不影响请求结果。
+
+## D23. Batch D：多图身份判断 / 视觉文本 Profile 解耦 / Manifest 消费 / Skill 管理（2026-08-07）
+
+- 多图身份判断：`identity_agreement`（stable 特征名与值一致比例）→ `cluster_by_identity` 贪心聚类 → `judge_identity` 判定 `same_subject`；多主体时只合并最高一致度分组（防跨主体串绑），其余图记 `__subject_identity__` 冲突。
+- 视觉/文本 Profile 解耦：`AIProfile.vision_profile_id` 指向另一档案时，视觉分析使用该档案的 vision_* 配置与密钥；留空用本档案。文本生成始终用本档案 base_url/model。
+- Storyboard 消费 Manifest：character 类 Subject 补成 `[角色表（来自参考清单）]` 并沿用真实 subject_id；已有 CharacterBook 时以 book 为准不重复注入；其余资产/主体进 `[可用参考资产]`。
+- Prompt Skill 管理：内置（仓库 skills/，只读）+ 自定义（用户配置目录 skills/，可增删改/启停/复制内置）；字段白名单 + renderer/family 枚举校验 + hash 审计；新增 `/skills` 路由（list/get/create/update/delete/enabled）。

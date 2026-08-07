@@ -79,6 +79,47 @@ def test_build_prompt_with_bible():
     assert "c1" in p
 
 
+def test_build_prompt_with_manifest_character_table():
+    """Manifest 的 character 类 Subject 应补成角色表并沿用真实 subject_id。"""
+    from aps.schemas.references import AssetRef, ReferenceManifest, SubjectRef
+
+    m = ReferenceManifest()
+    m.add_asset(AssetRef(asset_id="img_0", asset_type="image", path_or_ref="ref0"))
+    m.subjects.append(SubjectRef(subject_id="Subject 1", kind="character",
+                                 definition="young woman, red hair"))
+    m.subjects.append(SubjectRef(subject_id="Subject 2", kind="scene",
+                                 definition="street at night"))
+    p = build_storyboard_prompt("故事", "scene", 5, 3, "", None, None, m)
+    assert "Subject 1" in p
+    assert "角色表（来自参考清单" in p
+    assert "young woman, red hair" in p
+    assert "img_0" in p and "street at night" in p   # 非人物 Subject 仍进参考资产块
+
+
+def test_build_prompt_manifest_with_book_prefers_book_table():
+    """已有 CharacterBook 时角色表以 book 为准，Manifest 人物不再重复注入。"""
+    from aps.schemas.character import CharacterBook
+    from aps.schemas.references import ReferenceManifest, SubjectRef
+
+    book = CharacterBook()
+    book.upsert_character(__bible("c1", "red hair"))
+    m = ReferenceManifest()
+    m.subjects.append(SubjectRef(subject_id="Subject 1", kind="character",
+                                 definition="blonde hair"))
+    p = build_storyboard_prompt("故事", "scene", 5, 3, "", None, book, m)
+    assert "角色表（ID 与稳定特征" in p          # book 的角色表
+    assert "角色表（来自参考清单" not in p         # 不重复注入
+    assert "blonde hair" not in p
+
+
+def __bible(cid, hair):
+    from aps.schemas.character import CharacterBible
+
+    b = CharacterBible(character_id=cid, name=cid)
+    b.traits.append(__trait("hair", hair))
+    return b
+
+
 def __trait(name, value):
     from aps.schemas.character import CharacterTrait
 

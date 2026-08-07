@@ -32,6 +32,12 @@ EXPECTED_ROUTE_PATHS = {
     ("GET", "/ai_prompt_studio/settings"),
     ("POST", "/ai_prompt_studio/settings"),
     ("POST", "/ai_prompt_studio/runtime"),
+    ("GET", "/ai_prompt_studio/skills"),
+    ("GET", "/ai_prompt_studio/skills/{skill_id}"),
+    ("POST", "/ai_prompt_studio/skills"),
+    ("PUT", "/ai_prompt_studio/skills/{skill_id}"),
+    ("DELETE", "/ai_prompt_studio/skills/{skill_id}"),
+    ("POST", "/ai_prompt_studio/skills/{skill_id}/enabled"),
 }
 
 
@@ -65,6 +71,11 @@ async def _http_roundtrip(table, store):
     base = f"http://127.0.0.1:{port}"
 
     import aiohttp
+    from aps.services import skills as skills_svc
+
+    # 自定义技能目录重定向到测试临时目录（避免污染真实用户配置）
+    skills_svc.reset_cache()
+    skills_svc.custom_skills_dir = lambda: store.base_dir / "skills"
 
     async with aiohttp.ClientSession() as client:
         # 状态
@@ -119,6 +130,55 @@ async def _http_roundtrip(table, store):
             assert resp.status == 200
         async with client.get(f"{base}/ai_prompt_studio/settings") as resp:
             assert (await resp.json())["settings"]["lang"] == "zh"
+
+        # Prompt Skill：列表（内置只读）→ 复制为自定义 → 修改 → 停用 → 删除
+        from aps.services import skills as skills_svc
+
+        skills_svc.reset_cache()
+        try:
+            async with client.get(f"{base}/ai_prompt_studio/skills") as resp:
+                assert resp.status == 200
+                skills = (await resp.json())["skills"]
+                assert any(s["id"] == "anima_expand" and s["source"] == "builtin"
+                           for s in skills)
+
+            async with client.post(
+                f"{base}/ai_prompt_studio/skills",
+                json={"copy_from": "anima_expand"},
+            ) as resp:
+                assert resp.status == 200
+                rec = await resp.json()
+                assert rec["id"] == "anima_expand" and rec["source"] == "custom"
+
+            async with client.put(
+                f"{base}/ai_prompt_studio/skills/anima_expand",
+                json={"id": "anima_expand", "version": "9.9",
+                      "target_family": "anima", "renderer": "anima_plan",
+                      "system_prompt": "modified"},
+            ) as resp:
+                assert resp.status == 200
+                assert (await resp.json())["version"] == "9.9"
+
+            async with client.post(
+                f"{base}/ai_prompt_studio/skills/anima_expand/enabled",
+                json={"enabled": False},
+            ) as resp:
+                assert resp.status == 200
+                assert (await resp.json())["enabled"] is False
+
+            # 内置技能不允许删除 → 400（ValueError）
+            async with client.delete(f"{base}/ai_prompt_studio/skills/nonexistent") as resp:
+                assert resp.status == 404
+
+            async with client.delete(
+                f"{base}/ai_prompt_studio/skills/anima_expand") as resp:
+                assert resp.status == 200
+
+            async with client.get(
+                f"{base}/ai_prompt_studio/skills/nope") as resp:
+                assert resp.status == 404
+        finally:
+            skills_svc.reset_cache()
 
     await runner.cleanup()
 

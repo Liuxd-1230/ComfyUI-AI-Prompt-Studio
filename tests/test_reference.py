@@ -66,6 +66,73 @@ def test_consensus_conflict_marks_uncertain():
     assert merged.traits[0].category == "uncertain"
 
 
+# ------------------------------------------------------------------ 多图身份判断
+
+def _trait(name, value, category="stable"):
+    return CharacterTrait(name=name, value=value, category=category)
+
+
+def test_identity_agreement_shared_stable():
+    a = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "brown")])
+    b = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "blue")])
+    assert reference.identity_agreement(a, b) == 0.5
+
+
+def test_identity_agreement_no_shared_stable_zero():
+    a = CharacterCandidate(traits=[_trait("hair", "black", "variable")])
+    b = CharacterCandidate(traits=[_trait("hair", "blonde", "variable")])
+    # 只有 variable 特征：不算身份证据
+    assert reference.identity_agreement(a, b) == 0.0
+
+
+def test_cluster_by_identity_separates_subjects():
+    a = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "brown")])
+    b = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "brown")])
+    c = CharacterCandidate(traits=[_trait("hair", "blonde"), _trait("eyes", "blue")])
+    clusters = reference.cluster_by_identity([a, b, c])
+    assert len(clusters) == 2
+    assert len(clusters[0]) + len(clusters[1]) == 3
+
+
+def test_judge_identity_single_true():
+    v = reference.judge_identity([CharacterCandidate()])
+    assert v["same_subject"] is True and v["clusters"] == 1
+
+
+def test_judge_identity_multiple_subjects_false():
+    a = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "brown")])
+    c = CharacterCandidate(traits=[_trait("hair", "blonde"), _trait("eyes", "blue")])
+    v = reference.judge_identity([a, c])
+    assert v["same_subject"] is False
+    assert v["clusters"] == 2
+
+
+def test_identity_consensus_merges_same_subject_only():
+    """多主体：只合并最高一致度分组，其余图不串绑进同一个人物。"""
+    a = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "brown")],
+                           sources=["image:0"])
+    b = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "brown")],
+                           sources=["image:1"])
+    c = CharacterCandidate(traits=[_trait("hair", "blonde"), _trait("eyes", "blue")],
+                           sources=["image:2"])
+    merged = reference.identity_consensus([a, b, c])
+    assert merged.same_subject is False
+    assert merged.identity_confidence == 0.0
+    assert any(c.trait_name == "__subject_identity__" for c in merged.conflicts)
+    # 不把不同主体的特征混入
+    hair = [t for t in merged.traits if t.name == "hair"]
+    assert hair and hair[0].value == "black"
+
+
+def test_identity_consensus_all_same_subject():
+    a = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "brown")])
+    b = CharacterCandidate(traits=[_trait("hair", "black"), _trait("eyes", "brown")])
+    merged = reference.identity_consensus([a, b])
+    assert merged.same_subject is True
+    assert merged.identity_confidence > 0
+    assert not [c for c in merged.conflicts if c.trait_name == "__subject_identity__"]
+
+
 # ------------------------------------------------------------------ 合并策略
 
 def _bible_with(traits, locked=None):

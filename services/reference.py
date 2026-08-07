@@ -127,6 +127,100 @@ def consensus_of(candidates: List[CharacterCandidate]) -> CharacterCandidate:
     return merged
 
 
+# ------------------------------------------------------------------ 多图身份判断
+
+def identity_agreement(a: CharacterCandidate, b: CharacterCandidate) -> float:
+    """两个候选的身份一致度：stable 特征名与值完全一致的比例（0-1）。
+
+    只比较 stable 类别（身份特征）；无共享 stable 特征 → 0（证据不足不算一致）。
+    """
+    sa = {t.name: t.value for t in a.traits if t.category == "stable" and t.value}
+    sb = {t.name: t.value for t in b.traits if t.category == "stable" and t.value}
+    shared = set(sa) & set(sb)
+    if not shared:
+        return 0.0
+    agree = sum(1 for n in shared if sa[n] == sb[n])
+    return agree / len(shared)
+
+
+def cluster_by_identity(candidates: List[CharacterCandidate],
+                        threshold: float = 0.5) -> List[List[CharacterCandidate]]:
+    """按身份一致度把多图候选聚类（贪心：每个候选并入首个一致度达阈值的组）。
+
+    返回分组列表；每组代表「同一主体」的图片推断。阈值以下视为不同主体。
+    """
+    clusters: List[List[CharacterCandidate]] = []
+    for cand in candidates:
+        placed = False
+        for cl in clusters:
+            if any(identity_agreement(cand, other) >= threshold for other in cl):
+                cl.append(cand)
+                placed = True
+                break
+        if not placed:
+            clusters.append([cand])
+    return clusters
+
+
+def judge_identity(candidates: List[CharacterCandidate]) -> Dict[str, Any]:
+    """多图身份判断：这些图片是否指向同一主体。
+
+    返回 {same_subject: bool, confidence: float, clusters: int, reason: str}
+    - 1 张图 → same_subject=True（单一来源无从否定）；
+    - 聚类后仍为 1 组 → same_subject=True，confidence=组内两两一致度均值；
+    - 多组 → same_subject=False（证据指向多个不同主体）。
+    """
+    if not candidates:
+        return {"same_subject": True, "confidence": 1.0, "clusters": 0,
+                "reason": "empty"}
+    if len(candidates) == 1:
+        return {"same_subject": True, "confidence": 1.0, "clusters": 1,
+                "reason": "single"}
+    clusters = cluster_by_identity(candidates)
+    if len(clusters) == 1:
+        group = clusters[0]
+        pairs = [(group[i], group[j]) for i in range(len(group))
+                 for j in range(i + 1, len(group))]
+        conf = (sum(identity_agreement(a, b) for a, b in pairs) / len(pairs)
+                if pairs else 1.0)
+        return {"same_subject": True, "confidence": conf, "clusters": 1,
+                "reason": "clustered"}
+    return {"same_subject": False, "confidence": 0.0, "clusters": len(clusters),
+            "reason": "multiple_subjects"}
+
+
+def identity_consensus(candidates: List[CharacterCandidate]) -> CharacterCandidate:
+    """多图共识 + 身份判断：合并为单一候选，标注 same_subject 与置信度。
+
+    多主体时：按组内一致度取最高置信度分组做共识，其余组作为冲突记录；
+    不把不同主体的特征混合进同一个人物（P0 防串绑）。
+    """
+    if not candidates:
+        return CharacterCandidate(analysis_mode="consensus")
+    clusters = cluster_by_identity(candidates)
+    primary = max(clusters, key=lambda cl: (
+        sum(identity_agreement(a, b) for a in cl for b in cl if a is not b),
+        len(cl)))
+    merged = consensus_of(primary)
+    merged.sources = []
+    for c in primary:
+        merged.sources.extend(s for s in c.sources if s not in merged.sources)
+    verdict = judge_identity(candidates)
+    merged.same_subject = verdict["same_subject"]
+    merged.identity_confidence = verdict["confidence"]
+    # 整体置信度 = 身份一致度（多图时更有意义；单图保持 0.5 默认）
+    merged.confidence = verdict["confidence"] if verdict["clusters"] > 1 else 0.5
+    if len(clusters) > 1:
+        others = [c for cl in clusters if cl is not primary for c in cl]
+        merged.conflicts.append(CharacterConflict(
+            trait_name="__subject_identity__",
+            values=[f"主体 {len(clusters)} 个"],
+            reason=f"多图身份判断：{len(clusters)} 张图指向 {len(clusters)} 个不同主体，"
+                   f"已取最高一致度分组（{len(primary)} 张）；其余 {len(others)} 张未并入",
+            resolution_hint="请按主体分别分析，或在图中框选同一人物"))
+    return merged
+
+
 # ------------------------------------------------------------------ Bible 合并
 
 def _sources_match(trait: CharacterTrait, prefix: str) -> bool:

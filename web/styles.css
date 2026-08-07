@@ -139,6 +139,11 @@
 .aps-btn-close {
   padding: 2px 8px;
 }
+.aps-btn-mini {
+  padding: 2px 6px;
+  font-size: 11px;
+  margin-right: 4px;
+}
 .aps-btn-row {
   display: flex;
   flex-wrap: wrap;

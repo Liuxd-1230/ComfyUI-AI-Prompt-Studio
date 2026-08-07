@@ -34,13 +34,27 @@ def build_storyboard_prompt(
     elif bible is not None and bible.character_prompt():
         context = f"\n[已知人物设定] {bible.character_prompt()}（人物 ID 尽量沿用 {bible.character_id}）"
 
+    # Manifest 消费（P1/D）：character 类 Subject 补成角色表，场景沿用真实 subject_id；
+    # 其他资产/主体注入为参考块
     if manifest is not None and (manifest.assets or manifest.subjects):
-        lines = []
-        for a in manifest.assets:
-            lines.append(f"- {a.asset_id} ({a.asset_type}): {a.path_or_ref or a.note}")
-        for s in manifest.subjects:
-            lines.append(f"- {s.subject_id} ({s.kind}): {s.definition}")
-        context += f"\n[可用参考资产]\n" + "\n".join(lines)
+        char_subjects = [s for s in manifest.subjects
+                         if s.kind == "character" and s.subject_id]
+        if char_subjects and not (book is not None and book.characters):
+            lines = []
+            for s in char_subjects:
+                definition = s.definition or f"（{s.subject_id}，无文字定义，请仅按图描述可观察外观）"
+                lines.append(f"{s.subject_id} ({s.kind}): {definition}")
+            context += ("\n[角色表（来自参考清单，ID 必须沿用）]\n"
+                        + "\n".join(lines))
+        non_char = [s for s in manifest.subjects
+                    if not (s.kind == "character" and s.subject_id)]
+        if manifest.assets or non_char:
+            lines = []
+            for a in manifest.assets:
+                lines.append(f"- {a.asset_id} ({a.asset_type}): {a.path_or_ref or a.note}")
+            for s in non_char:
+                lines.append(f"- {s.subject_id} ({s.kind}): {s.definition}")
+            context += "\n[可用参考资产]\n" + "\n".join(lines)
 
     return (
         "你是影视分镜师。把故事拆成模型无关的结构化分镜，只输出 JSON，不要其他文本。\n"
