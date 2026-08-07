@@ -131,13 +131,18 @@ class ResponsesAdapter:
         temperature: Optional[float],
         attachments: Optional[List] = None,
         output_schema: Optional[Dict[str, Any]] = None,
+        tool_defs: Optional[List[Dict[str, Any]]] = None,
         stop_event: Optional[Any] = None,
         timeout: float = 120.0,
     ) -> LLMResult:
         base = (profile.base_url or "https://api.deepseek.com").rstrip("/")
         url = f"{base}/responses"
 
-        tools = [{"type": "web_search"}] if web_search else []
+        tools: List[Dict[str, Any]] = []
+        if web_search:
+            tools.append({"type": "web_search"})
+        for td in tool_defs or []:
+            tools.append({"type": "function", **td})
         body: Dict[str, Any] = {
             "model": profile.model,
             "instructions": system or "You are a helpful assistant.",
@@ -204,9 +209,33 @@ class ResponsesAdapter:
 
 
 def _input_from_messages(messages) -> List[Dict[str, Any]]:
-    """ChatMessage 列表 → Responses input 数组（content 只接受纯文本）。"""
+    """ChatMessage 列表 → Responses input 数组（工具续轮按官方结构编码）。
+
+    官方结构（api-docs.deepseek.com，2026-08-07 查证）：
+    - 助手消息携带 function_call：{"role": "assistant", "output":
+      [{"type": "function_call", "call_id": ..., "name": ..., "arguments": ...}]}
+    - 工具结果：{"type": "function_call_output", "call_id": ..., "output": ...}
+    - 普通消息：content 只接受纯文本 input_text part
+    """
     result = []
     for m in messages:
+        if m.role == "tool":
+            result.append({"type": "function_call_output",
+                           "call_id": m.tool_call_id or "",
+                           "output": m.content})
+            continue
+        if m.role == "assistant" and m.tool_calls:
+            item: Dict[str, Any] = {"role": "assistant",
+                                    "content": [{"type": "input_text",
+                                                 "text": m.content}]
+                                    if m.content else []}
+            item["output"] = [{"type": "function_call",
+                               "call_id": tc.id or f"call_{i}",
+                               "name": tc.name,
+                               "arguments": tc.arguments}
+                              for i, tc in enumerate(m.tool_calls)]
+            result.append(item)
+            continue
         if not m.content:
             continue
         result.append({"role": m.role,

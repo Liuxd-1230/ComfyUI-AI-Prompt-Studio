@@ -47,6 +47,8 @@ class AIProfile(Schema):
     # ---- 附件能力（D20）：用户断言端点支持时手动开启（覆盖能力探测的保守判定）----
     supports_vision: bool = False
     supports_files: bool = False
+    # ---- 外部搜索后端（C4）：无原生 web_search 时经该端点注入联网结果 ----
+    search_url: str = ""
     created_at: str = ""
     updated_at: str = ""
     notes: str = ""

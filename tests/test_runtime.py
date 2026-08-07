@@ -155,3 +155,80 @@ def test_create_backend_default_urls():
     assert create_backend("ollama").base_url == "http://127.0.0.1:11434"
     assert create_backend("llamacpp").base_url == "http://127.0.0.1:8080"
     assert create_backend("lmstudio").base_url == "http://127.0.0.1:1234"
+
+
+# ------------------------------------------------------------------ Settings /runtime 路由（P0：必须调用同一服务层并真实执行）
+
+def test_runtime_route_status_executes_service(monkeypatch, store):
+    """/runtime 处理器真实调用共享服务层并执行 mock 运行时（非 stub）。"""
+    from aps.server import routes
+    calls = make_request_fake(
+        monkeypatch,
+        responder=lambda m, u, **k: FakeResp(
+            200, {"models": [{"name": "llama3"}, {"name": "qwen2"}]}))
+    res = routes.handle_runtime({"backend": "ollama", "action": "status",
+                                 "url": "", "model": ""}, store)
+    assert res["ok"] is True
+    assert res["models"] == ["llama3", "qwen2"]
+    assert calls[0]["url"].endswith("/api/ps")     # 真实走了 Ollama 后端
+    assert res["action"] == "status"
+
+
+def test_runtime_route_load_executes_service(monkeypatch, store):
+    from aps.server import routes
+    calls = make_request_fake(monkeypatch)
+    res = routes.handle_runtime({"backend": "ollama", "action": "load",
+                                 "url": "", "model": "llama3"}, store)
+    assert res["ok"] is True
+    assert res["result"]["ok"] is True
+    assert calls[0]["kwargs"]["json"]["model"] == "llama3"
+    assert calls[0]["kwargs"]["json"]["keep_alive"] == "5m"
+
+
+def test_runtime_route_unload_all_executes_service(monkeypatch, store):
+    from aps.server import routes
+    make_request_fake(
+        monkeypatch,
+        responder=lambda m, u, **k: FakeResp(
+            200, {"models": [{"name": "m1"}]})
+        if u.endswith("/api/ps") else FakeResp(200, {}))
+    res = routes.handle_runtime({"backend": "ollama", "action": "unload_all",
+                                 "url": "", "model": ""}, store)
+    assert res["ok"] is True
+    assert res["unloaded"] == ["m1"]
+
+
+def test_runtime_route_unknown_backend_readable(store):
+    from aps.server import routes
+    res = routes.handle_runtime({"backend": "bogus", "action": "status"}, store)
+    assert res["ok"] is False
+    assert "未知运行时后端" in res["error"]
+
+
+# ------------------------------------------------------------------ 自定义兼容后端（真实适配器，非摆设选项）
+
+def test_custom_backend_status_and_load(monkeypatch):
+    calls = make_request_fake(
+        monkeypatch,
+        responder=lambda m, u, **k: FakeResp(
+            200, {"data": [{"id": "q4.gguf"}]})
+        if u.endswith("/v1/models") else FakeResp(200, {}))
+    backend = create_backend("custom", "http://127.0.0.1:9999")
+    st = backend.status()
+    assert st["available"] is True
+    assert st["models"] == ["q4.gguf"]
+    res = backend.load("q4.gguf")
+    assert res["ok"] is True
+    assert calls[1]["url"] == "http://127.0.0.1:9999/models/load"
+    assert calls[1]["kwargs"]["json"] == {"model": "q4.gguf"}
+
+
+def test_custom_backend_unsupported_op_clear_error(monkeypatch):
+    def resp(m, u, **k):
+        return FakeResp(404, text="not found")
+
+    make_request_fake(monkeypatch, responder=resp)
+    backend = create_backend("custom", "http://127.0.0.1:9999")
+    res = backend.load("m")
+    assert res["ok"] is False
+    assert "不支持 load 操作" in res["error"]     # 明确报错，不伪装成功

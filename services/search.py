@@ -1,19 +1,24 @@
-"""联网搜索策略（降级链 v1，docs/decisions.md D7）。
+"""联网搜索策略（降级链，docs/decisions.md D7 + P1 外部后端）。
 
-降级链：Responses 原生 web_search →（可插拔外部后端）→ 离线 + 明确警告。
+降级链：Responses 原生 web_search → 外部 HTTP 搜索后端（档案 search_url）→
+离线 + 明确警告。
 - 401/402/403/429/5xx/网络失败绝不降级（由 gateway/adapter 硬失败）；
-- 只有「接口不支持」（ProtocolUnsupported）触发协议降级；
-- v1 只实现 DeepSeek Responses 原生 + 离线警告；外部搜索后端留可插拔接口。
+- 外部后端契约：POST {query} → {"results": [{"title","url","snippet"}]}；
+  响应不符合契约 → 明确失败 + 离线警告，不伪造结果。
 """
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+import requests
 
 from ..schemas.profile import AIProfile
 
+EXTERNAL_TIMEOUT = 15.0
+
 
 class SearchBackend:
-    """外部搜索后端插槽（v1 不实现；未来可挂 Brave/Tavily 等）。"""
+    """外部搜索后端基类（可插拔）。"""
 
     name = "external"
 
@@ -48,14 +53,64 @@ def resolve_search_strategy(
                 "warning": "联网能力未探测（将尝试原生 web_search，失败自动降级）",
                 "reason": "native_unknown"}
 
-    # 明确不支持原生（外部后端未配置）→ 离线 + 警告
+    # 明确不支持原生：有外部后端则走外部，否则离线 + 警告
+    if profile.search_url and profile.search_url.strip():
+        return {"enabled": True, "native": False,
+                "warning": "", "reason": "external"}
     return {
         "enabled": True,
         "native": False,
-        "warning": "当前端点不支持原生联网搜索，且未配置外部搜索后端；"
+        "warning": "当前端点不支持原生联网搜索，且未配置外部搜索后端（档案 search_url）；"
                    "本请求将不带联网搜索执行（结果可能不含最新信息）。",
         "reason": "offline_degraded",
     }
+
+
+def search_external(url: str, query: str, api_key: str = "",
+                    timeout: float = EXTERNAL_TIMEOUT) -> Dict[str, Any]:
+    """调用外部 HTTP 搜索后端。
+
+    契约：POST {query: str} → 200 {"results": [{"title": str, "url": str,
+    "snippet": str}]}。响应不符合契约时明确失败（不伪造）。
+    """
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        resp = requests.post((url or "").strip(), headers=headers,
+                             json={"query": query}, timeout=timeout)
+    except requests.Timeout:
+        return {"ok": False, "error": f"外部搜索后端超时：{url}"}
+    except requests.RequestException as exc:
+        return {"ok": False, "error": f"无法连接外部搜索后端 {url}：{exc.__class__.__name__}"}
+    if resp.status_code != 200:
+        return {"ok": False, "error": f"外部搜索后端 HTTP {resp.status_code}"}
+    try:
+        data = resp.json()
+    except Exception:  # noqa: BLE001
+        return {"ok": False, "error": "外部搜索后端返回非 JSON"}
+    results = data.get("results") or data.get("items") or []
+    cleaned: List[Dict[str, str]] = []
+    for r in results:
+        if not isinstance(r, dict):
+            continue
+        cleaned.append({
+            "title": str(r.get("title", "") or ""),
+            "url": str(r.get("url", "") or ""),
+            "snippet": str(r.get("snippet", "") or r.get("text", "") or ""),
+        })
+    return {"ok": True, "results": cleaned, "error": ""}
+
+
+def format_results(results: List[Dict[str, str]]) -> str:
+    lines = []
+    for i, r in enumerate(results, start=1):
+        lines.append(f"{i}. {r.get('title') or r.get('url')}")
+        if r.get("snippet"):
+            lines.append(f"   {r['snippet']}")
+        if r.get("url"):
+            lines.append(f"   {r['url']}")
+    return "\n".join(lines) or "（无结果）"
 
 
 def offline_result(profile_id: str, query: str) -> Dict[str, Any]:

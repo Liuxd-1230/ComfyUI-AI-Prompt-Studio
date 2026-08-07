@@ -165,11 +165,15 @@ def handle_settings_set(payload: Dict[str, Any], store: ConfigStore) -> Dict[str
 
 
 def handle_runtime(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
-    """本地运行时操作（Phase 2 完整实现）。"""
-    return {
-        "ok": False,
-        "error": "本地运行时控制将在 Phase 2 提供（Ollama / llama.cpp / LM Studio）",
-    }
+    """本地运行时操作：调用与 Runtime Control 节点相同的服务层
+    （services/runtime/control.run_runtime_action），Settings /runtime 与节点共用实现。"""
+    from ..services.runtime.control import run_runtime_action
+    return run_runtime_action(
+        str(payload.get("backend", "")),
+        str(payload.get("action", "status")),
+        str(payload.get("url", "")),
+        str(payload.get("model", "")),
+    )
 
 
 # ---------------------------------------------------------------- aiohttp 注册

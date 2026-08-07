@@ -106,6 +106,7 @@ class ChatCompletionsAdapter:
         json_mode: bool = False,
         attachments: Optional[List] = None,
         output_schema: Optional[Dict[str, Any]] = None,
+        tool_defs: Optional[List[Dict[str, Any]]] = None,
         stop_event: Optional[Any] = None,
         timeout: float = 120.0,
     ) -> LLMResult:
@@ -116,6 +117,21 @@ class ChatCompletionsAdapter:
         if system:
             api_messages.append({"role": "system", "content": system})
         for m in messages:
+            if m.role == "tool":
+                api_messages.append({"role": "tool",
+                                     "tool_call_id": m.tool_call_id or "",
+                                     "content": m.content})
+                continue
+            if m.role == "assistant" and m.tool_calls:
+                api_messages.append({"role": "assistant",
+                                     "content": m.content or None,
+                                     "tool_calls": [
+                                         {"id": tc.id or f"call_{i}",
+                                          "type": "function",
+                                          "function": {"name": tc.name,
+                                                       "arguments": tc.arguments}}
+                                         for i, tc in enumerate(m.tool_calls)]})
+                continue
             if not m.content:
                 continue
             api_messages.append({"role": m.role, "content": m.content})
@@ -134,6 +150,10 @@ class ChatCompletionsAdapter:
             "messages": api_messages,
             "stream": True,
         }
+        # 函数工具（OpenAI 兼容 tools 数组）
+        if tool_defs:
+            body["tools"] = [{"type": "function", "function": td}
+                             for td in tool_defs]
         # 采样参数 None = 不发送，交给 provider 默认值（档案高级设置才可配置）
         if max_tokens is not None:
             body["max_tokens"] = max_tokens

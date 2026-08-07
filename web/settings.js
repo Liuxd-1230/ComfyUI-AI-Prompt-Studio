@@ -212,6 +212,7 @@ function buildEditorForm(p) {
   const freqPenalty = textInput(p.frequency_penalty != null ? String(p.frequency_penalty) : "", "空=默认");
   const presPenalty = textInput(p.presence_penalty != null ? String(p.presence_penalty) : "", "空=默认");
   const maxTokens = textInput(p.max_tokens != null ? String(p.max_tokens) : "", "空=默认");
+  const searchUrl = textInput(p.search_url, "https://…/search");
   const supportsVision = checkboxInput(p.supports_vision, "主模型支持图片附件（覆盖能力探测的保守判定）");
   const supportsFiles = checkboxInput(p.supports_files, "端点支持文件内容部分（附件 type:file）");
   const keyInput = el("input", { type: "password", placeholder: t("api_key_placeholder"), title: t("api_tooltip") });
@@ -237,6 +238,7 @@ function buildEditorForm(p) {
   adv.appendChild(inputRow("frequency_penalty", freqPenalty, "频率惩罚（-2~2；留空不发送）"));
   adv.appendChild(inputRow("presence_penalty", presPenalty, "存在惩罚（-2~2；留空不发送）"));
   adv.appendChild(inputRow("max_tokens", maxTokens, "最大输出 token（留空不发送）"));
+  adv.appendChild(inputRow("search_url", searchUrl, "外部搜索后端地址（POST {query} → {results:[{title,url,snippet}]}；无原生联网搜索时用于降级注入联网结果）"));
   adv.appendChild(inputRow("supports_vision", supportsVision, ""));
   adv.appendChild(inputRow("supports_files", supportsFiles, ""));
   wrap.appendChild(adv);
@@ -283,6 +285,7 @@ function buildEditorForm(p) {
       frequency_penalty: parseOptFloat(freqPenalty.value),
       presence_penalty: parseOptFloat(presPenalty.value),
       max_tokens: parseOptFloat(maxTokens.value),
+      search_url: searchUrl.value.trim(),
       supports_vision: supportsVision.checked,
       supports_files: supportsFiles.checked,
     };

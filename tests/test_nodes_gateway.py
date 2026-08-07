@@ -155,8 +155,9 @@ def test_runtime_control_load(monkeypatch):
         def list_models(self):
             return ["m1"]
 
-    # 节点模块内 `from ..services.runtime import create_backend` 是模块级引用
-    monkeypatch.setattr(runtime_mod, "create_backend",
+    # 节点经共享服务层调用 create_backend（services/runtime/control）
+    from aps.services.runtime import control as runtime_ctrl
+    monkeypatch.setattr(runtime_ctrl, "create_backend",
                         lambda kind, url: FakeBackend())
     node = runtime_mod.APS_RuntimeControl()
     _, status_json, loaded_json, op_json = node.control(
@@ -177,6 +178,7 @@ def test_runtime_control_unknown_backend():
 
 def test_runtime_control_load_requires_model():
     node = runtime_mod.APS_RuntimeControl()
-    with pytest.raises(ValueError, match="model"):
-        node.control(backend="ollama", action="load", url="", model="",
-                     AI_PROFILE=None)
+    _, _, _, op_json = node.control(backend="ollama", action="load", url="",
+                                    model="", AI_PROFILE=None)
+    op = json.loads(op_json)
+    assert op["ok"] is False and "model" in op["error"]
