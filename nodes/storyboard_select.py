@@ -1,0 +1,130 @@
+"""节点 6：Storyboard Select / Batch —— 从分镜选择场景/镜头，为批处理提供单项或列表。
+
+不调用模型；纯确定性选择逻辑（Phase 1 即完整实现）。
+"""
+
+import json
+
+from ..schemas import types
+from ..schemas.storyboard import SELECT_MODES, Scene, Shot, StoryItem, StoryItemList, Storyboard
+
+
+def _shot_text(shot: Shot) -> str:
+    parts = [shot.summary, shot.action]
+    for b in shot.beats:
+        parts.append(b.text)
+    return "\n".join(p for p in parts if p)
+
+
+def _scene_item(scene: Scene) -> StoryItem:
+    text = scene.synopsis or scene.title
+    return StoryItem(
+        item_id=scene.scene_id, kind="scene", scene_id=scene.scene_id, index=scene.index,
+        title=scene.title, text=text, characters=list(scene.characters),
+        scene_title=scene.title, location=scene.location,
+    )
+
+
+def _shot_item(scene: Scene, shot: Shot) -> StoryItem:
+    return StoryItem(
+        item_id=shot.shot_id, kind="shot", scene_id=scene.scene_id, shot_id=shot.shot_id,
+        index=shot.index, title=f"{scene.title} / {shot.summary or f'Shot {shot.index}'}",
+        text=_shot_text(shot), characters=list(shot.characters),
+        scene_title=scene.title, location=scene.location, camera=shot.camera,
+    )
+
+
+def _parse_range(range_text: str) -> list[int]:
+    """解析 1-3 / 1,2,5 为 1 基索引列表。"""
+    indexes: list[int] = []
+    for token in (range_text or "").replace(" ", "").split(","):
+        if not token:
+            continue
+        if "-" in token:
+            a, _, b = token.partition("-")
+            try:
+                indexes.extend(range(int(a), int(b) + 1))
+            except ValueError:
+                raise ValueError(f"非法范围: {token!r}（应为 1-3 或 1,2,5）")
+        else:
+            try:
+                indexes.append(int(token))
+            except ValueError:
+                raise ValueError(f"非法范围: {token!r}")
+    return indexes
+
+
+def select_items(storyboard: Storyboard, select_mode: str,
+                 scene_id: str = "", shot_id: str = "", range_text: str = ""):
+    """返回 (items, single)。single 为第一项或 None。"""
+    items: list[StoryItem] = []
+
+    def flat_shots() -> list[tuple[Scene, Shot]]:
+        return [(sc, sh) for sc in storyboard.scenes for sh in sc.shots]
+
+    if select_mode == "scene":
+        for sc in storyboard.scenes:
+            if scene_id and sc.scene_id == scene_id:
+                items.append(_scene_item(sc))
+                break
+            if not scene_id:
+                items.append(_scene_item(sc))
+    elif select_mode == "shot":
+        for sc, sh in flat_shots():
+            if shot_id and sh.shot_id == shot_id:
+                items.append(_shot_item(sc, sh))
+                break
+            if not shot_id:
+                items.append(_shot_item(sc, sh))
+    elif select_mode == "range":
+        shots = flat_shots()
+        for idx in _parse_range(range_text):
+            if 1 <= idx <= len(shots):
+                sc, sh = shots[idx - 1]
+                items.append(_shot_item(sc, sh))
+        if not items:
+            raise ValueError(f"范围内没有镜头: {range_text!r}")
+    elif select_mode == "all":
+        items = [_shot_item(sc, sh) for sc, sh in flat_shots()]
+    else:
+        raise ValueError(f"非法选择模式: {select_mode!r}")
+
+    if not items:
+        raise ValueError("没有匹配的镜头/场景")
+    return items, items[0]
+
+
+class APS_StoryboardSelect:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "storyboard": (types.STORYBOARD,),
+            "select_mode": (SELECT_MODES, {"default": "all",
+                                           "tooltip": "scene=按场景；shot=按镜头；range=镜头序号区间（1-3 / 1,2,5）；all=全部镜头"}),
+            "scene_id": ("STRING", {"default": "", "tooltip": "select_mode=scene 时的场景 id"}),
+            "shot_id": ("STRING", {"default": "", "tooltip": "select_mode=shot 时的镜头 id"}),
+            "range": ("STRING", {"default": "", "tooltip": "select_mode=range 时的扁平镜头序号区间，如 1-3 或 1,2,5"}),
+        }}
+
+    RETURN_TYPES = (types.STORY_ITEM, types.STORY_ITEM_LIST, "STRING", "STRING", "INT")
+    RETURN_NAMES = ("STORY_ITEM", "STORY_ITEM_LIST", "scene_text", "character_ids", "batch_count")
+    FUNCTION = "select"
+    CATEGORY = "AI Prompt Studio"
+    DESCRIPTION = "从分镜选择场景/镜头，输出单项或批处理列表（不调用模型）。"
+
+    def select(self, storyboard, select_mode, scene_id, shot_id, range):
+        sb = Storyboard.from_json(storyboard)
+        items, single = select_items(sb, select_mode, scene_id, shot_id, range)
+        item_list = StoryItemList(mode=select_mode, selection=range or scene_id or shot_id,
+                                  story_id=sb.story_id, items=items)
+        scene_text = single.text if single else ""
+        chars = []
+        for it in items:
+            for c in it.characters:
+                if c not in chars:
+                    chars.append(c)
+        return (single.to_json() if single else StoryItem().to_json(),
+                item_list.to_json(),
+                scene_text,
+                json.dumps(chars, ensure_ascii=False),
+                item_list.batch_count)

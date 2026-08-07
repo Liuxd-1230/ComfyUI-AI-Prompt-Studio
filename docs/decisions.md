@@ -24,6 +24,11 @@
 ## D4. 冒烟测试
 
 - 独立端口 + `--cpu` headless 启动用户 ComfyUI（Phase 1 末与 Phase 6 各一次），验证 `/object_info` 含 9 节点与设置路由，验完即关；不碰运行中的实例。
+- **环境发现（2026-08-07，Phase 1 末）**：用户 ComfyUI 的 `standalone-env` 缺少 torch（`import torch` 失败，全盘 `E:\Comfy-Desktop` 下无 torch 目录，`manifest.json` 声明 torch 2.12.1+cu130 但未实际安装）→ ComfyUI 主进程无法启动，`/object_info` 冒烟不可执行。按安全边界（不安装 CUDA/Torch 大依赖）不代为安装。
+- **替代冒烟（等价验证，已实现为 pytest 用例）**：
+  1. `tests/test_smoke_loader.py`：逐行复刻用户 ComfyUI 0.30.x `nodes.py::load_custom_node` 的加载语义（目录节点 `sys_module_name = module_path.replace(".", "_x_")` + `spec_from_file_location(./__init__.py)` + `sys.modules` 注册 + `exec_module` + `WEB_DIRECTORY` 目录存在 + V1 `NODE_CLASS_MAPPINGS` 注册 + `RELATIVE_PYTHON_MODULE` 赋值），验证扩展在其语义下可加载、9 节点完整。
+  2. `tests/test_smoke_routes.py`：伪造 `server.PromptServer.instance.routes`（与用户 ComfyUI 一致的 `web.RouteTableDef()`），用真实 aiohttp 起临时 HTTP 服务做端到端往返（状态/档案 CRUD/密钥隔离/404/400/设置），验证全部 15 条路由注册与处理器接线。
+- 结论：本扩展不依赖 ComfyUI 启动即可完整加载与验证；真实启动冒烟保留到用户补齐 torch 后（Phase 6 视环境情况执行或沿用替代冒烟）。
 
 ## D5. Schema 用 dataclass 而非 pydantic
 

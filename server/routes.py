@@ -1,0 +1,290 @@
+"""AI Prompt Studio 后端路由。
+
+处理器函数（handle_*）不依赖 aiohttp，可直接单元测试；
+register_routes() 在 ComfyUI 内把处理器挂到 PromptServer.instance.routes。
+所有路由同时有 /api 前缀副本（ComfyUI add_routes 自动注册）。
+"""
+from __future__ import annotations
+
+import json
+import logging
+from functools import partial
+from typing import Any, Callable, Dict, Optional
+
+from ..schemas.profile import AIProfile
+from ..services import capability_probe
+from .config_store import ConfigStore, get_store
+
+logger = logging.getLogger("ai_prompt_studio.routes")
+
+API_PREFIX = "/ai_prompt_studio"
+
+
+# ---------------------------------------------------------------- 处理器（可测）
+
+def _profile_public(profile: AIProfile, store: ConfigStore) -> Dict[str, Any]:
+    data = profile.to_json()
+    data["api_key_masked"] = store.masked_api_key(profile.profile_id)
+    data["capabilities"] = store.get_capabilities(profile.profile_id)
+    return data
+
+
+def handle_status(store: ConfigStore) -> Dict[str, Any]:
+    import importlib.metadata as _md
+
+    version = "0.1.0"
+    try:
+        version = _md.version("comfyui-ai-prompt-studio")
+    except Exception:  # noqa: BLE001
+        pass
+
+    comfyui_version = None
+    try:
+        import comfyui_version  # type: ignore  # 仅 ComfyUI 运行时存在
+
+        comfyui_version = getattr(comfyui_version, "__version__", None)
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "name": "AI Prompt Studio",
+        "version": version,
+        "comfyui_version": comfyui_version,
+        "config_dir": str(store.config_dir()),
+        "anima_booster_detected": detect_anima_booster(),
+        "profile_count": len(store.list_profiles()),
+        "api_prefix": API_PREFIX,
+    }
+
+
+def detect_anima_booster() -> Optional[bool]:
+    """软检测 ANIMA_BOOSTER（存在性提示，无硬依赖）。"""
+    try:
+        import os
+
+        import folder_paths  # type: ignore
+
+        for base in folder_paths.get_folder_paths("custom_nodes"):
+            try:
+                names = os.listdir(base)
+            except OSError:
+                continue
+            for n in names:
+                if "anima" in n.lower():
+                    return True
+        return False
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def handle_list_profiles(store: ConfigStore) -> Dict[str, Any]:
+    return {"profiles": store.list_profiles(), "default_profile_id": store._config.get("default_profile_id", "")}
+
+
+def handle_get_profile(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
+    profile = store.get_profile(profile_id)
+    if profile is None:
+        raise KeyError(f"profile 不存在: {profile_id}")
+    return _profile_public(profile, store)
+
+
+def handle_create_profile(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    profile = store.create_profile(payload)
+    return _profile_public(profile, store)
+
+
+def handle_update_profile(profile_id: str, payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    profile = store.update_profile(profile_id, payload)
+    return _profile_public(profile, store)
+
+
+def handle_delete_profile(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
+    store.delete_profile(profile_id)
+    return {"ok": True, "profile_id": profile_id}
+
+
+def handle_set_api_key(profile_id: str, payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    key = str(payload.get("api_key", "") or "").strip()
+    if not key:
+        raise ValueError("api_key 不能为空")
+    store.set_api_key(profile_id, key)
+    return {"ok": True, "masked": store.masked_api_key(profile_id)}
+
+
+def handle_clear_api_key(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
+    store.delete_api_key(profile_id)
+    return {"ok": True}
+
+
+def handle_probe(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
+    """手动执行能力探测并写缓存。"""
+    profile = store.get_profile(profile_id)
+    if profile is None:
+        raise KeyError(f"profile 不存在: {profile_id}")
+    api_key = store.get_api_key(profile_id) or ""
+    caps = capability_probe.probe_profile(profile, api_key)
+    if caps.get("error"):
+        return {"ok": False, "profile_id": profile_id, **caps}
+    merged = capability_probe.merge_capabilities(store.get_capabilities(profile_id), caps)
+    store.set_capabilities(profile_id, merged)
+    store.append_request_log({"profile_id": profile_id, "kind": "probe", "ok": True, "detail": "capability probe ok"})
+    return {"ok": True, "profile_id": profile_id, **merged}
+
+
+def handle_capabilities(profile_id: Optional[str], store: ConfigStore) -> Dict[str, Any]:
+    if profile_id:
+        return {"profile_id": profile_id, "capabilities": store.get_capabilities(profile_id)}
+    return {"capabilities": store._config.get("capability_cache", {})}
+
+
+def handle_test(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
+    """轻量连接测试（不写能力缓存）。"""
+    profile = store.get_profile(profile_id)
+    if profile is None:
+        raise KeyError(f"profile 不存在: {profile_id}")
+    api_key = store.get_api_key(profile_id) or ""
+    caps = capability_probe.probe_profile(profile, api_key)
+    store.append_request_log({
+        "profile_id": profile_id, "kind": "test", "ok": caps.get("auth_ok", False),
+        "detail": caps.get("error") or f"auth ok, models={len(caps.get('models', []))}",
+    })
+    return {"ok": caps.get("auth_ok", False), "profile_id": profile_id, **caps}
+
+
+def handle_log(store: ConfigStore) -> Dict[str, Any]:
+    return {"log": store.get_request_log(limit=100)}
+
+
+def handle_settings_get(store: ConfigStore) -> Dict[str, Any]:
+    return {"settings": store.get_settings()}
+
+
+def handle_settings_set(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    store.set_settings(dict(payload.get("settings", {}) or {}))
+    return {"ok": True}
+
+
+def handle_runtime(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    """本地运行时操作（Phase 2 完整实现）。"""
+    return {
+        "ok": False,
+        "error": "本地运行时控制将在 Phase 2 提供（Ollama / llama.cpp / LM Studio）",
+    }
+
+
+# ---------------------------------------------------------------- aiohttp 注册
+
+def _send(data: Any, status: int = 200):
+    from aiohttp import web
+
+    return web.json_response(data, status=status, dumps=partial(json.dumps, ensure_ascii=False))
+
+
+def _ok(data: Any):
+    return _send(data)
+
+
+def _error(message: str, status: int):
+    return _send({"error": message}, status)
+
+
+def register_routes() -> None:
+    """把处理器挂到 ComfyUI PromptServer。仅在 ComfyUI 运行时可用。"""
+    try:
+        from server import PromptServer  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("AI Prompt Studio: 跳过路由注册（非 ComfyUI 环境）：%s", exc)
+        return
+
+    store = get_store()
+    routes = PromptServer.instance.routes
+
+    async def _run(request, func: Callable[..., Any]):
+        payload: Dict[str, Any] = {}
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            if request.body_exists:
+                try:
+                    payload = await request.json()
+                except Exception:  # noqa: BLE001
+                    payload = {}
+        try:
+            result = func(request, payload, store)
+            return _ok(result)
+        except KeyError as exc:
+            return _error(str(exc), 404)
+        except ValueError as exc:
+            return _error(str(exc), 400)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("AI Prompt Studio 路由异常: %s", request.path)
+            return _error(f"服务器内部错误：{exc.__class__.__name__}", 500)
+
+    async def r_status(request):
+        return await _run(request, lambda req, payload, st: handle_status(st))
+
+    async def r_profiles_list(request):
+        return await _run(request, lambda req, payload, st: handle_list_profiles(st))
+
+    async def r_profiles_get(request):
+        pid = request.match_info["profile_id"]
+        return await _run(request, lambda req, payload, st: handle_get_profile(pid, st))
+
+    async def r_profiles_create(request):
+        return await _run(request, lambda req, payload, st: handle_create_profile(payload, st))
+
+    async def r_profiles_update(request):
+        pid = request.match_info["profile_id"]
+        return await _run(request, lambda req, payload, st: handle_update_profile(pid, payload, st))
+
+    async def r_profiles_delete(request):
+        pid = request.match_info["profile_id"]
+        return await _run(request, lambda req, payload, st: handle_delete_profile(pid, st))
+
+    async def r_api_key_set(request):
+        pid = request.match_info["profile_id"]
+        return await _run(request, lambda req, payload, st: handle_set_api_key(pid, payload, st))
+
+    async def r_api_key_clear(request):
+        pid = request.match_info["profile_id"]
+        return await _run(request, lambda req, payload, st: handle_clear_api_key(pid, st))
+
+    async def r_probe(request):
+        pid = request.match_info["profile_id"]
+        return await _run(request, lambda req, payload, st: handle_probe(pid, st))
+
+    async def r_test(request):
+        pid = request.match_info["profile_id"]
+        return await _run(request, lambda req, payload, st: handle_test(pid, st))
+
+    async def r_capabilities(request):
+        pid = request.query.get("profile_id") or None
+        return await _run(request, lambda req, payload, st: handle_capabilities(pid, st))
+
+    async def r_log(request):
+        return await _run(request, lambda req, payload, st: handle_log(st))
+
+    async def r_settings_get(request):
+        return await _run(request, lambda req, payload, st: handle_settings_get(st))
+
+    async def r_settings_set(request):
+        return await _run(request, lambda req, payload, st: handle_settings_set(payload, st))
+
+    async def r_runtime(request):
+        return await _run(request, lambda req, payload, st: handle_runtime(payload, st))
+
+    routes.get(f"{API_PREFIX}/status")(r_status)
+    routes.get(f"{API_PREFIX}/profiles")(r_profiles_list)
+    routes.get(f"{API_PREFIX}/profiles/{{profile_id}}")(r_profiles_get)
+    routes.post(f"{API_PREFIX}/profiles")(r_profiles_create)
+    routes.put(f"{API_PREFIX}/profiles/{{profile_id}}")(r_profiles_update)
+    routes.delete(f"{API_PREFIX}/profiles/{{profile_id}}")(r_profiles_delete)
+    routes.post(f"{API_PREFIX}/profiles/{{profile_id}}/api_key")(r_api_key_set)
+    routes.delete(f"{API_PREFIX}/profiles/{{profile_id}}/api_key")(r_api_key_clear)
+    routes.post(f"{API_PREFIX}/profiles/{{profile_id}}/probe")(r_probe)
+    routes.post(f"{API_PREFIX}/profiles/{{profile_id}}/test")(r_test)
+    routes.get(f"{API_PREFIX}/capabilities")(r_capabilities)
+    routes.get(f"{API_PREFIX}/log")(r_log)
+    routes.get(f"{API_PREFIX}/settings")(r_settings_get)
+    routes.post(f"{API_PREFIX}/settings")(r_settings_set)
+    routes.post(f"{API_PREFIX}/runtime")(r_runtime)
+
+    logger.info("AI Prompt Studio: 路由已注册（%s）", API_PREFIX)

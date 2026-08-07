@@ -1,0 +1,150 @@
+"""MiniMax H3 提示词计划：H3PromptPlan 及各子结构。
+
+以官方手册为格式真源（docs/sources/minimax_h3_FL2V手册.html / minimax_h3_r2v手册.html）。
+"""
+
+
+import dataclasses
+import time
+from typing import Any, List, Optional
+
+from .base import Schema
+from .prompt_plan import ValidationReport, empty_validation
+
+H3_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "R2V"]
+H3_OPERATIONS = ["generate", "rewrite", "convert_storyboard", "audit", "repair"]
+
+# R2V 六段固定顺序
+R2V_SECTIONS = [
+    "subject_definitions",
+    "summary",
+    "retention_analysis",
+    "detailed_description",
+    "overall_soundscape",
+    "non_diegetic_music",
+]
+
+# 三字段固定顺序（T2VA/I2VA/FL2VA/L2VA）
+THREE_FIELDS = [
+    "integrated_multimodal_description",
+    "overall_soundscape",
+    "non_diegetic_music",
+]
+
+
+@dataclasses.dataclass
+class H3Dialogue(Schema):
+    """一句对白/歌词/画外音。原文语言在 <d>[Language] ...</d> 中逐字保留。"""
+
+    language: str = "English"       # <d>[Language] 中的语言名
+    text: str = ""
+    speaker_ids: List[str] = dataclasses.field(default_factory=list)  # S1 / S2 / S1,S2
+    kind: str = "speech"            # speech | singing | voiceover
+
+
+@dataclasses.dataclass
+class H3Shot(Schema):
+    """一个镜头。start_time=None 表示 [Shot 1]（无时间戳）。"""
+
+    index: int = 1
+    start_time: Optional[float] = None   # 秒；Shot 1 为 None
+    description: List[str] = dataclasses.field(default_factory=list)  # 描述句（英文）
+    camera: str = ""                     # 自然英文相机运动
+    characters: List[str] = dataclasses.field(default_factory=list)   # speaker_ids 出现于本镜头
+    dialogues: List[H3Dialogue] = dataclasses.field(default_factory=list)
+    references: List[str] = dataclasses.field(default_factory=list)   # 用到的标签，如 "<Picture 1>"
+    audio_notes: str = ""                # 本镜头内的音效/声音说明
+
+
+@dataclasses.dataclass
+class H3Speaker(Schema):
+    """说话人定义（跨镜头稳定 ID）。"""
+
+    speaker_id: str = "S1"
+    name: str = ""
+    character_id: str = ""           # 对应 Character Bible
+    description: str = ""            # 首次出现时的身份/音色描述（写在 <d> 外）
+
+
+@dataclasses.dataclass
+class H3Subject(Schema):
+    """<Subject N>：可复用内容单元。"""
+
+    label: str = "Subject 1"
+    kind: str = "character"          # character | scene | object | clothing | style | other
+    definition: str = ""             # 定义句（英文）
+    source_assets: List[str] = dataclasses.field(default_factory=list)  # 如 "Picture 1"
+
+
+@dataclasses.dataclass
+class H3Asset(Schema):
+    """<Picture N> / <Video N> / <Audio N>。"""
+
+    label: str = "Picture 1"
+    kind: str = "picture"            # picture | video | audio
+    source: str = ""                 # 来源资产引用
+    alignment_time: Optional[float] = None   # 图片对齐到目标视频的秒数
+    note: str = ""
+
+
+@dataclasses.dataclass
+class H3Retention(Schema):
+    """retention_analysis 一行：标签 + marker + 说明。"""
+
+    label: str = ""
+    marker: str = "fully_preserved"  # fully_preserved|partially_preserved|attribute_transfer|weak_reference|fully_copy|partially_copy|reference
+    notes: str = ""
+    shot_refs: List[str] = dataclasses.field(default_factory=list)
+
+
+@dataclasses.dataclass
+class H3AudioField(Schema):
+    """soundscape / music 中的一条音频说明（或 <Audio N> 的 copy 状态）。"""
+
+    label: str = ""
+    kind: str = "soundscape"         # soundscape | music | audio_asset
+    copy_status: str = ""            # fully_copy | partially_copy | reference | weak_reference（音频资产时）
+    description: str = ""
+
+
+@dataclasses.dataclass
+class H3PromptPlan(Schema):
+    """H3 结构化计划：LLM 产出内容决策，Python renderer 拼装最终格式。"""
+
+    plan_id: str = ""
+    mode: str = "T2VA"               # T2VA | I2VA | FL2VA | L2VA | R2V
+    operation: str = "generate"
+    duration_seconds: float = 0.0    # 有效视频时长 S.SS（两位小数）
+    style_opening: str = ""          # R2V 在 [Shot 1] 之前的风格开场（1-2 句）
+    shots: List[H3Shot] = dataclasses.field(default_factory=list)
+    speakers: List[H3Speaker] = dataclasses.field(default_factory=list)
+    subjects: List[H3Subject] = dataclasses.field(default_factory=list)
+    assets: List[H3Asset] = dataclasses.field(default_factory=list)
+    retention: List[H3Retention] = dataclasses.field(default_factory=list)
+    soundscape: str = ""             # overall_soundscape 正文
+    non_diegetic_music: str = ""     # non_diegetic_music 正文（N/A 表示无）
+    summary: str = ""                # R2V summary 段（含任务前缀）
+    storyboard_id: str = ""
+    warnings: List[str] = dataclasses.field(default_factory=list)
+    validation: ValidationReport = dataclasses.field(default_factory=empty_validation)
+    raw: str = ""                    # LLM 原始输出（JSON）
+    created_at: str = ""
+
+    def __post_init__(self):
+        import uuid
+
+        if not self.plan_id:
+            self.plan_id = "h3_" + uuid.uuid4().hex[:10]
+        if not self.created_at:
+            self.created_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    def speaker_ids(self) -> List[str]:
+        return [s.speaker_id for s in self.speakers]
+
+    def all_reference_labels(self) -> List[str]:
+        labels = [s.label for s in self.subjects]
+        labels += [a.label for a in self.assets]
+        return labels
+
+    def to_payload(self) -> dict:
+        return self.to_json()
