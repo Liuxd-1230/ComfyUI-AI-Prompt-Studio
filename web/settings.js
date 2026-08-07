@@ -38,6 +38,17 @@ function selectInput(options, value) {
   return sel;
 }
 
+function checkboxInput(checked, tooltip) {
+  return el("input", { type: "checkbox", checked: !!checked, title: tooltip || "" });
+}
+
+function parseOptFloat(value) {
+  const v = (value || "").trim();
+  if (v === "") return null;
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+}
+
 // ---------------- 面板构建 ----------------
 
 function openPanel() {
@@ -195,6 +206,14 @@ function buildEditorForm(p) {
   const visionUrl = textInput(p.vision_base_url, "");
   const visionModel = textInput(p.vision_model, "");
   const timeout = textInput(p.timeout != null ? String(p.timeout) : "120", "120");
+  // 高级采样参数（D19）：留空 = 不发送该字段，交给 provider 默认值
+  const temperature = textInput(p.temperature != null ? String(p.temperature) : "", "空=默认");
+  const topP = textInput(p.top_p != null ? String(p.top_p) : "", "空=默认");
+  const freqPenalty = textInput(p.frequency_penalty != null ? String(p.frequency_penalty) : "", "空=默认");
+  const presPenalty = textInput(p.presence_penalty != null ? String(p.presence_penalty) : "", "空=默认");
+  const maxTokens = textInput(p.max_tokens != null ? String(p.max_tokens) : "", "空=默认");
+  const supportsVision = checkboxInput(p.supports_vision, "主模型支持图片附件（覆盖能力探测的保守判定）");
+  const supportsFiles = checkboxInput(p.supports_files, "端点支持文件内容部分（附件 type:file）");
   const keyInput = el("input", { type: "password", placeholder: t("api_key_placeholder"), title: t("api_tooltip") });
 
   wrap.appendChild(inputRow("name", name, "档案名称"));
@@ -208,6 +227,19 @@ function buildEditorForm(p) {
   wrap.appendChild(inputRow("vision_base_url", visionUrl, "视觉端点根地址（OpenAI 兼容，可选）"));
   wrap.appendChild(inputRow("vision_model", visionModel, "视觉模型名（可选，如 qwen-vl-max）"));
   wrap.appendChild(inputRow("timeout", timeout, "请求超时（秒）"));
+
+  // 高级采样区（不进普通节点 UI）
+  const adv = el("details", { class: "aps-advanced" });
+  const sum = el("summary", { text: "高级采样参数（留空 = provider 默认值）" });
+  adv.appendChild(sum);
+  adv.appendChild(inputRow("temperature", temperature, "采样温度（0-2；留空不发送）"));
+  adv.appendChild(inputRow("top_p", topP, "核采样 top_p（0-1；留空不发送）"));
+  adv.appendChild(inputRow("frequency_penalty", freqPenalty, "频率惩罚（-2~2；留空不发送）"));
+  adv.appendChild(inputRow("presence_penalty", presPenalty, "存在惩罚（-2~2；留空不发送）"));
+  adv.appendChild(inputRow("max_tokens", maxTokens, "最大输出 token（留空不发送）"));
+  adv.appendChild(inputRow("supports_vision", supportsVision, ""));
+  adv.appendChild(inputRow("supports_files", supportsFiles, ""));
+  wrap.appendChild(adv);
 
   // 密钥区
   const keyRow = el("div", { class: "aps-field" });
@@ -246,6 +278,13 @@ function buildEditorForm(p) {
       web_search: webSearch.value, unload_policy: unload.value,
       vision_base_url: visionUrl.value, vision_model: visionModel.value,
       timeout: parseFloat(timeout.value) || 120,
+      temperature: parseOptFloat(temperature.value),
+      top_p: parseOptFloat(topP.value),
+      frequency_penalty: parseOptFloat(freqPenalty.value),
+      presence_penalty: parseOptFloat(presPenalty.value),
+      max_tokens: parseOptFloat(maxTokens.value),
+      supports_vision: supportsVision.checked,
+      supports_files: supportsFiles.checked,
     };
     try {
       if (isNew) {
@@ -306,7 +345,7 @@ function renderCapabilities() {
     .then((p) => {
       box.innerHTML = "";
       const caps = p.capabilities || {};
-      const keys = ["responses", "chat_completions", "function_tools", "native_web_search", "structured_output", "vision", "model_listing"];
+      const keys = ["responses", "chat_completions", "function_tools", "native_web_search", "structured_output", "vision", "files", "capability_basis", "model_listing"];
       for (const k of keys) {
         const v = caps[k];
         if (v === undefined) continue;

@@ -260,3 +260,39 @@ def test_chat_http_error(monkeypatch):
                                                reasoning="high", max_tokens=100,
                                                temperature=1.0)
     assert result.error.kind == "rate_limit"
+
+
+# ------------------------------------------------------------------ 结构化输出
+
+def test_responses_output_schema_maps_to_text_format(monkeypatch):
+    schema = {"type": "object", "properties": {"a": {"type": "string"}},
+              "required": ["a"]}
+    calls = make_post_fake(monkeypatch, lines=sse([
+        {"type": "response.output_text.delta", "delta": "{}"},
+        {"type": "response.completed"},
+    ]))
+    ResponsesAdapter().generate(profile(model="deepseek-v4-flash"), "k",
+                                system="s", messages=[],
+                                web_search=False, reasoning="off",
+                                max_tokens=None, temperature=None,
+                                output_schema=schema)
+    body = calls[0]["json"]
+    assert body["text"]["format"]["type"] == "json_schema"
+    assert body["text"]["format"]["schema"] == schema
+    assert body["text"]["format"]["strict"] is True
+
+
+def test_chat_output_schema_maps_to_response_format(monkeypatch):
+    schema = {"type": "object"}
+    calls = make_post_fake(monkeypatch, lines=sse([
+        {"choices": [{"delta": {"content": "{}"}}]},
+        {"choices": [{"delta": {}}], "usage": {}},
+    ]))
+    ChatCompletionsAdapter().generate(profile(provider="openai_compatible"),
+                                      "k", system="s", messages=[],
+                                      web_search=False, reasoning="off",
+                                      max_tokens=None, temperature=None,
+                                      output_schema=schema)
+    body = calls[0]["json"]
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["schema"] == schema

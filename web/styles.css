@@ -88,6 +88,18 @@
   align-items: center;
   margin-bottom: 6px;
 }
+.aps-advanced {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px dashed #555;
+  border-radius: 4px;
+}
+.aps-advanced summary {
+  cursor: pointer;
+  color: #9aa;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
 .aps-field label {
   color: #bbb;
   font-size: 12px;

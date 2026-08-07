@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -15,6 +16,7 @@ from typing import Any, Dict, List, Optional
 from ..schemas.profile import AIProfile
 from ..schemas.results import ChatMessage, LLMResult, make_error
 from ..server.config_store import ConfigStore
+from . import attachments as attachments_svc
 from . import capability_probe, search
 from .adapters.base import ProtocolUnsupported
 from .adapters.chat_adapter import ChatCompletionsAdapter
@@ -38,6 +40,8 @@ class GenerateRequest:
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
     json_mode: bool = False
+    output_schema: Optional[Dict[str, Any]] = None   # JSON Schema dict（结构化输出）
+    attachments: List = field(default_factory=list)   # List[Attachment]（已过能力门槛）
     stop_event: Any = None
     timeout: float = 120.0
 
@@ -89,16 +93,45 @@ class Gateway:
             warnings.append(strategy["warning"])
         web_search = bool(strategy.get("enabled") and strategy.get("native"))
 
+        # 附件能力门槛：失败即报错（不静默丢弃伪装成功）
+        if req.attachments:
+            caps = self.store.get_capabilities(profile.profile_id)
+            sendable, att_warnings, att_error = attachments_svc.gate_attachments(
+                req.attachments, caps, profile.supports_vision,
+                profile.supports_files)
+            warnings.extend(att_warnings)
+            if att_error:
+                return LLMResult(profile_id=profile.profile_id, model=profile.model,
+                                 error=make_error("attachment_unsupported", att_error),
+                                 warnings=warnings)
+            req.attachments = sendable
+
         protocol = self._select_protocol(profile)
+
+        # 结构化输出：能力允许（非 DeepSeek，caps.structured_output=True）→ 协议层 schema；
+        # 否则降级为提示词约束（DeepSeek 未文档化 json_schema，不发送该参数）
+        output_schema = req.output_schema
+        caps = self.store.get_capabilities(profile.profile_id)
+        if output_schema and not (
+                profile.provider != "deepseek" and caps.get("structured_output") is True):
+            schema_text = json.dumps(output_schema, ensure_ascii=False)
+            req.system = (req.system or "") + (
+                "\n\n[输出约束]\n必须输出合法的 JSON 对象，"
+                f"严格符合以下 JSON Schema：\n{schema_text}")
+            req.json_mode = True
+            output_schema = None
+
         try:
-            result = self._call(profile, api_key, protocol, req, web_search=web_search)
+            result = self._call(profile, api_key, protocol, req, web_search=web_search,
+                                output_schema=output_schema)
         except ProtocolUnsupported as exc:
             # 仅「协议/参数不支持」降级到另一协议；其余异常已在 adapter 内归一化
             other = "chat_completions" if protocol == "responses" else "responses"
             warnings.append(f"协议 {protocol} 不可用（{exc}），已降级到 {other}")
             logger.info("gateway 降级 %s -> %s（%s）", protocol, other, exc)
             try:
-                result = self._call(profile, api_key, other, req, web_search=web_search)
+                result = self._call(profile, api_key, other, req, web_search=web_search,
+                                    output_schema=output_schema)
             except ProtocolUnsupported as exc2:
                 return LLMResult(profile_id=profile.profile_id, model=profile.model,
                                  protocol=protocol,
@@ -110,15 +143,18 @@ class Gateway:
         return result
 
     def _call(self, profile, api_key, protocol, req: GenerateRequest, *,
-              web_search: bool) -> LLMResult:
+              web_search: bool, output_schema: Optional[Dict[str, Any]] = None) -> LLMResult:
         if protocol == "responses":
             return self._responses.generate(
                 profile, api_key, system=req.system, messages=req.messages,
                 web_search=web_search, reasoning=req.reasoning,
                 max_tokens=req.max_tokens, temperature=req.temperature,
+                attachments=req.attachments, output_schema=output_schema,
                 stop_event=req.stop_event, timeout=req.timeout)
         return self._chat.generate(
             profile, api_key, system=req.system, messages=req.messages,
             web_search=web_search, reasoning=req.reasoning,
             max_tokens=req.max_tokens, temperature=req.temperature,
-            json_mode=req.json_mode, stop_event=req.stop_event, timeout=req.timeout)
+            json_mode=req.json_mode, attachments=req.attachments,
+            output_schema=output_schema,
+            stop_event=req.stop_event, timeout=req.timeout)

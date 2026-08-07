@@ -34,7 +34,7 @@ def test_llm_generate_happy_path(monkeypatch, store):
 
     node = llm_chat_mod.APS_LLMGenerate()
     out = node.generate(AI_PROFILE=payload, system_prompt="sys", user_prompt="问",
-                        context="", max_tokens="4096", session=None,
+                        context="", session=None,
                         history_mode="append", output_mode="text", json_schema="")
     text, reasoning, sess_json, result_json, citations, usage, warnings = out
     assert text == "回答内容"
@@ -58,7 +58,7 @@ def test_llm_generate_raises_on_error(monkeypatch, store):
     node = llm_chat_mod.APS_LLMGenerate()
     with pytest.raises(ValueError, match="402"):
         node.generate(AI_PROFILE=payload, system_prompt="", user_prompt="问",
-                      context="", max_tokens="4096", session=None,
+                      context="", session=None,
                       history_mode="append", output_mode="text", json_schema="")
 
 
@@ -68,7 +68,7 @@ def test_llm_generate_missing_api_key(store):
     node = llm_chat_mod.APS_LLMGenerate()
     with pytest.raises(ValueError, match="API Key"):
         node.generate(AI_PROFILE=payload, system_prompt="", user_prompt="问",
-                      context="", max_tokens="4096", session=None,
+                      context="", session=None,
                       history_mode="append", output_mode="text", json_schema="")
 
 
@@ -77,7 +77,7 @@ def test_llm_generate_empty_prompt(store):
     node = llm_chat_mod.APS_LLMGenerate()
     with pytest.raises(ValueError, match="为空"):
         node.generate(AI_PROFILE=payload, system_prompt="sys", user_prompt="",
-                      context="", max_tokens="4096", session=None,
+                      context="", session=None,
                       history_mode="append", output_mode="text", json_schema="")
 
 
@@ -88,22 +88,41 @@ def test_llm_generate_json_mode_warns_on_bad_json(monkeypatch, store):
     node = llm_chat_mod.APS_LLMGenerate()
     _, _, _, _, _, _, warnings = node.generate(
         AI_PROFILE=payload, system_prompt="", user_prompt="问", context="",
-        max_tokens="4096", session=None, history_mode="off",
+        session=None, history_mode="off",
         output_mode="json", json_schema="")
     assert "不是合法 JSON" in warnings
 
 
-def test_llm_generate_json_schema_injects_system(monkeypatch, store):
+def test_llm_generate_json_schema_sets_output_schema(monkeypatch, store):
+    """合法 schema → 走 gateway 协议层（output_schema），system 不再内联拼接。"""
     payload = setup_profile(store)
     result = LLMResult(text='{"a": 1}', profile_id="p1")
     fake = FakeGateway(result)
     monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: fake)
     node = llm_chat_mod.APS_LLMGenerate()
     node.generate(AI_PROFILE=payload, system_prompt="sys", user_prompt="问",
-                  context="", max_tokens="4096", session=None,
+                  context="", session=None,
                   history_mode="off", output_mode="json_schema",
                   json_schema='{"type":"object"}')
+    assert fake.req.output_schema == {"type": "object"}
+    assert fake.req.json_mode is True
+    assert "JSON Schema" not in fake.req.system
+
+
+def test_llm_generate_json_schema_invalid_falls_back_to_constraint(monkeypatch, store):
+    """非法 schema → 提示词约束兜底 + warning，不静默丢弃。"""
+    payload = setup_profile(store)
+    result = LLMResult(text='{"a": 1}', profile_id="p1")
+    fake = FakeGateway(result)
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: fake)
+    node = llm_chat_mod.APS_LLMGenerate()
+    _, _, _, _, _, _, warnings = node.generate(
+        AI_PROFILE=payload, system_prompt="sys", user_prompt="问", context="",
+        session=None, history_mode="off", output_mode="json_schema",
+        json_schema='not-json')
+    assert fake.req.output_schema is None
     assert "JSON Schema" in fake.req.system
+    assert "不是合法 JSON 对象" in warnings
 
 
 def test_llm_generate_history_off_keeps_session(monkeypatch, store):
@@ -116,7 +135,7 @@ def test_llm_generate_history_off_keeps_session(monkeypatch, store):
     node = llm_chat_mod.APS_LLMGenerate()
     _, _, sess_json, _, _, _, _ = node.generate(
         AI_PROFILE=payload, system_prompt="", user_prompt="新消息", context="",
-        max_tokens="4096", session=sess.to_json(), history_mode="off",
+        session=sess.to_json(), history_mode="off",
         output_mode="text", json_schema="")
     restored = ChatSession.from_json(sess_json)
     assert len(restored.messages) == 1  # off 不改动原会话

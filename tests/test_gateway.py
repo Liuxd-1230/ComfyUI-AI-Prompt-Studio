@@ -178,3 +178,35 @@ def test_web_search_offline_degraded_warns(store):
                          GenerateRequest(web_search="always"))
     assert r.calls[0]["web_search"] is False
     assert any("不支持原生联网" in w for w in result.warnings)
+
+
+# ------------------------------------------------------------------ 结构化输出
+
+def test_gateway_deepseek_schema_falls_back_to_prompt_constraint(store):
+    """DeepSeek 未文档化 json_schema → 不发送协议层 schema，改为提示词约束。"""
+    store.create_profile({"profile_id": "p1"})  # provider=deepseek
+    store.set_capabilities("p1", {"responses": True, "structured_output": False})
+    gw = Gateway(store=store)
+    r = FakeAdapter("responses")
+    gw._responses = r
+    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    gw.generate(store.get_profile("p1"), "k", req)
+    assert r.calls
+    kw = r.calls[0]
+    assert "output_schema" not in kw or kw.get("output_schema") is None
+    assert "JSON Schema" in req.system      # 约束已注入 system
+    assert req.json_mode is True
+
+
+def test_gateway_openai_compatible_schema_reaches_adapter(store):
+    """OpenAI 兼容端点 + structured_output 能力 → 协议层 schema 透传。"""
+    store.create_profile({"profile_id": "p1", "provider": "openai_compatible"})
+    store.set_capabilities("p1", {"responses": True, "structured_output": True})
+    gw = Gateway(store=store)
+    r = FakeAdapter("responses")
+    gw._responses = r
+    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    gw.generate(store.get_profile("p1"), "k", req)
+    kw = r.calls[0]
+    assert kw["output_schema"] == {"type": "object"}
+    assert "JSON Schema" not in req.system

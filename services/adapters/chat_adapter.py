@@ -101,9 +101,11 @@ class ChatCompletionsAdapter:
         messages: List,
         web_search: bool,
         reasoning: str,
-        max_tokens: int,
-        temperature: float,
+        max_tokens: Optional[int],
+        temperature: Optional[float],
         json_mode: bool = False,
+        attachments: Optional[List] = None,
+        output_schema: Optional[Dict[str, Any]] = None,
         stop_event: Optional[Any] = None,
         timeout: float = 120.0,
     ) -> LLMResult:
@@ -118,18 +120,34 @@ class ChatCompletionsAdapter:
                 continue
             api_messages.append({"role": m.role, "content": m.content})
 
+        # 附件并入最后一条 user 消息（多模态 content parts：图片 image_url / 文件 file）
+        if attachments:
+            parts = _attachment_parts(attachments)
+            if parts:
+                if api_messages and api_messages[-1]["role"] == "user":
+                    api_messages[-1]["content"] = _to_parts(api_messages[-1]["content"]) + parts
+                else:
+                    api_messages.append({"role": "user", "content": parts})
+
         body: Dict[str, Any] = {
             "model": profile.model,
             "messages": api_messages,
             "stream": True,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
         }
+        # 采样参数 None = 不发送，交给 provider 默认值（档案高级设置才可配置）
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+        if temperature is not None:
+            body["temperature"] = temperature
         # reasoning_effort / response_format 是 DeepSeek 特有参数；通用端点可能 400，只对 deepseek 发送
         if reasoning != "off" and profile.provider == "deepseek":
             body["reasoning_effort"] = REASONING_EFFORT.get(reasoning, "high")
         if json_mode and profile.provider == "deepseek":
             body["response_format"] = {"type": "json_object"}
+        # 结构化输出：response_format json_schema（OpenAI 兼容端点官方结构）
+        if output_schema:
+            body["response_format"] = {"type": "json_schema", "json_schema": {
+                "name": "structured_output", "schema": output_schema, "strict": True}}
 
         headers = {"Authorization": f"Bearer {api_key}",
                    "Content-Type": "application/json"}
@@ -181,3 +199,30 @@ def _safe_body(resp) -> str:
         return resp.text[:1000]
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _to_parts(content) -> List[Dict[str, Any]]:
+    """把纯文本 user content 转成 content parts 数组（纯文本原样返回）。"""
+    if isinstance(content, list):
+        return content
+    return [{"type": "text", "text": str(content)}]
+
+
+def _attachment_parts(attachments) -> List[Dict[str, Any]]:
+    """附件 → Chat Completions content parts（官方结构，2026-08-07 查证）：
+    - 图片：{"type": "image_url", "image_url": {"url": data_uri}}
+    - 文件：{"type": "file", "file": {"file_data": ..., "filename": ...}}
+    - 文本：{"type": "text", "text": ...}
+    """
+    parts: List[Dict[str, Any]] = []
+    for a in attachments or []:
+        if a.kind == "text":
+            parts.append({"type": "text", "text": a.content})
+        elif a.kind == "image":
+            parts.append({"type": "image_url",
+                          "image_url": {"url": a.as_data_uri()}})
+        elif a.kind == "file":
+            parts.append({"type": "file", "file": {
+                "file_data": a.content.split(",", 1)[-1],
+                "filename": a.name or "attachment.bin"}})
+    return parts

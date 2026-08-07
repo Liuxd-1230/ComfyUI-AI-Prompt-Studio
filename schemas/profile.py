@@ -2,7 +2,7 @@
 
 
 import dataclasses
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .base import Schema
 
@@ -37,6 +37,16 @@ class AIProfile(Schema):
     runtime: Dict[str, Any] = dataclasses.field(default_factory=dict)
     timeout: float = 120.0
     max_retries: int = 1
+    # ---- 高级采样参数（产品决策 D19：不进普通节点 UI，只在档案高级设置配置；
+    #       None = 不发送该字段，交给 provider 默认值）----
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    frequency_penalty: Optional[float] = None
+    presence_penalty: Optional[float] = None
+    max_tokens: Optional[int] = None
+    # ---- 附件能力（D20）：用户断言端点支持时手动开启（覆盖能力探测的保守判定）----
+    supports_vision: bool = False
+    supports_files: bool = False
     created_at: str = ""
     updated_at: str = ""
     notes: str = ""

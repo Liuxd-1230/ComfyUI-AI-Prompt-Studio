@@ -127,8 +127,10 @@ class ResponsesAdapter:
         messages: List,
         web_search: bool,
         reasoning: str,
-        max_tokens: int,
-        temperature: float,
+        max_tokens: Optional[int],
+        temperature: Optional[float],
+        attachments: Optional[List] = None,
+        output_schema: Optional[Dict[str, Any]] = None,
         stop_event: Optional[Any] = None,
         timeout: float = 120.0,
     ) -> LLMResult:
@@ -139,12 +141,20 @@ class ResponsesAdapter:
         body: Dict[str, Any] = {
             "model": profile.model,
             "instructions": system or "You are a helpful assistant.",
-            "input": _input_from_messages(messages),
+            "input": _input_from_messages(messages) + _attachment_input_items(attachments),
             "tools": tools,
             "stream": True,
-            "max_output_tokens": max_tokens,
-            "temperature": temperature,
         }
+        # 结构化输出：text.format json_schema（OpenAI Responses 官方结构）
+        if output_schema:
+            body["text"] = {"format": {
+                "type": "json_schema", "name": "structured_output",
+                "schema": output_schema, "strict": True}}
+        # 采样参数 None = 不发送，交给 provider 默认值（档案高级设置才可配置）
+        if max_tokens is not None:
+            body["max_output_tokens"] = max_tokens
+        if temperature is not None:
+            body["temperature"] = temperature
         if reasoning != "off":
             body["reasoning"] = {"effort": REASONING_EFFORT.get(reasoning, "high")}
 
@@ -202,6 +212,33 @@ def _input_from_messages(messages) -> List[Dict[str, Any]]:
         result.append({"role": m.role,
                        "content": [{"type": "input_text", "text": m.content}]})
     return result
+
+
+def _attachment_input_items(attachments) -> List[Dict[str, Any]]:
+    """附件 → Responses input 条目（官方：input_image / input_file content parts）。
+
+    官方结构（api-docs.deepseek.com，2026-08-07 查证）：
+    - 图片：content part {"type": "input_image", "image_url": data_uri, "filename": ...}
+    - 文件：content part {"type": "input_file", "file_data": ..., "filename": ...}
+      （file_data/file_id/file_url 三选一）
+    - 文本：直接并入已有 user 消息，不新增条目
+    """
+    items: List[Dict[str, Any]] = []
+    for a in attachments or []:
+        if a.kind == "text":
+            # 文本附件作为独立 user 消息条目（保持顺序可读）
+            items.append({"role": "user", "content": [
+                {"type": "input_text", "text": a.content}]})
+        elif a.kind == "image":
+            items.append({"role": "user", "content": [
+                {"type": "input_image", "image_url": a.as_data_uri(),
+                 "filename": a.name or "image.png"}]})
+        elif a.kind == "file":
+            items.append({"role": "user", "content": [
+                {"type": "input_file",
+                 "file_data": a.content.split(",", 1)[-1],
+                 "filename": a.name or "attachment.bin"}]})
+    return items
 
 
 def _safe_body(resp) -> str:

@@ -128,3 +128,21 @@ def test_h3_plan_basics():
     assert S.R2V_SECTIONS[0] == "subject_definitions"
     assert len(S.THREE_FIELDS) == 3
     assert S.H3PromptPlan.from_json(plan.to_json()).duration_seconds == 8.0
+
+
+def test_profile_advanced_sampling_fields_roundtrip():
+    from aps.schemas.profile import AIProfile
+    p = AIProfile(profile_id="p1", temperature=0.7, top_p=0.9,
+                  frequency_penalty=0.2, presence_penalty=0.0,
+                  max_tokens=2048, supports_vision=True, supports_files=True)
+    restored = AIProfile.from_json(p.to_json())
+    assert restored.temperature == 0.7
+    assert restored.top_p == 0.9
+    assert restored.frequency_penalty == 0.2
+    assert restored.presence_penalty == 0.0
+    assert restored.max_tokens == 2048
+    assert restored.supports_vision is True
+    assert restored.supports_files is True
+    # 默认 None = 不发送采样参数（provider 默认值）
+    d = AIProfile(profile_id="p2")
+    assert d.temperature is None and d.max_tokens is None

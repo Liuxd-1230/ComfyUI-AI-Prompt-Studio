@@ -89,3 +89,38 @@
 - **H3 修复不引入第二套 skill 系统**：repair 操作把校验问题经 `build_plan_prompt(repair_issues=...)` 回灌给 LLM，一次修复后重新渲染+校验；与 Composer 的 YAML skill 系统（面向图像 prompt）职责分离，不建 `skills/minimax_h3/`。
 - **convert_storyboard 回退链**：LLM 计划解析失败或空镜头时，回退为 `convert_storyboard` 的结构映射（镜头时间分布、说话人 S1..、manifest→subjects/assets/retention），描述沿用分镜文本并记 warning。
 - **图片映射**：`map_image_assets` 按模式把输入图映射为 Picture 资产——I2VA 首帧（0.00s）、FL2VA 首尾（0.00s / 有效时长）、L2VA 尾帧（有效时长）；已存在的标签跳过不重复。
+
+## D16. ANIMA 默认自然语言（2026-08-07）
+
+- ANIMA 默认 `prompt_mode=natural_language`；tags/hybrid 保留为显式选项。
+- Character Bible 稳定/锁定特征自然融入散文正文，绝不降级为 tag soup。
+- 结构化 `AnimaPromptPlan`（人物绑定/正文/标签/风格/环境/构图/光照）供 Natural/Tags/Hybrid 三渲染器消费，Hybrid = 小段控制标签块 + 自然正文，杜绝正文重复成标签。
+
+## D17. CharacterBook 与 Speaker ID 唯一分配（2026-08-07）
+
+- `CHARACTER_BOOK` 类型；Character Bible 节点可选输入已有 Book，输出 CHARACTER_BIBLE + CHARACTER_BOOK 双路。
+- 单个 CharacterBible 不再默认 `speaker_id="S1"`（曾导致多人物全部撞号）；唯一 ID 由 `CharacterBook.assign_speaker_ids()` 分配：既有 ID 稳定、删除不改动他人、新人物取下一个可用、冲突修复并记 warning。
+- 节点按「同名」复用 Book 中已有档案（保留 character_id / Speaker ID / 锁定），更新不产生重复条目。
+
+## D18. H3 媒体独立编号 + R2V 英文 + 模式资产约束（2026-08-07）
+
+- Picture/Video/Audio 按类型独立 1 起始连续编号（`normalize_media_labels` 渲染前确定性重排），manifest 标签可回溯到原始资产。
+- R2V 六段正文必须英文；检测到非英语 → 一次 LLM 修复（auto_repair，默认开）；仍失败 → validation 记 `h3_r2v_english` 错误，不做假装翻译。`<d>` 对白/歌词/画面文字保留原语言。
+- 模式资产约束：T2VA=0 图、I2VA=1、FL2VA=2、L2VA=1、R2V 不限；不满足记 error 且不生成错误引用。
+
+## D19. 采样参数进档案高级设置（2026-08-07）
+
+- temperature/top_p/frequency_penalty/presence_penalty/max_tokens **不进普通节点 UI**；只存在于档案高级设置，None = 不发送字段（provider 默认值）。
+- LLM Generate 节点移除 max_tokens 控件；生成请求采样值来自档案。
+- 用户 system_prompt 以真实 system 指令发送（内部守则层在前 + 用户 system_prompt，不静默丢弃）。
+
+## D20. API 附件（2026-08-07）
+
+- `ATTACHMENT` / `ATTACHMENT_LIST` 类型；LLM Generate 可选输入 + 本机文件路径控件（相对 input 目录）。
+- 协议映射（官方文档查证）：Responses `input_image`（image_url data URI）/ `input_file`（file_data+filename）/ `input_text`；Chat `image_url` parts / `{"type":"file","file":{...}}` / text parts。
+- 降级规则：文本附件全协议可用；图片附件要求视觉能力（caps.vision 或档案 supports_vision），否则**报错不静默**；文件附件要求 supports_files，否则报错。
+- 安全：路径必须解析在 input 目录内（拒绝穿越/绝对路径绕过）、大小上限（文本 512KB/图 20MB/文件 20MB）、内容不进日志。
+
+## D21. 结构化输出（2026-08-07）
+
+- Gateway `output_schema`：能力允许（非 DeepSeek 且 caps.structured_output=True）→ 协议层 schema（Responses `text.format` json_schema / Chat `response_format.json_schema`）；否则降级为提示词约束 + 解析校验（DeepSeek 未文档化 json_schema，不发送该参数）。

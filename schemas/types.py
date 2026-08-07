@@ -17,6 +17,8 @@ STORY_ITEM_LIST = "STORY_ITEM_LIST"
 PROMPT_PLAN = "PROMPT_PLAN"
 GENERATION_PROFILE = "GENERATION_PROFILE"
 H3_PROMPT_PLAN = "H3_PROMPT_PLAN"
+ATTACHMENT = "ATTACHMENT"
+ATTACHMENT_LIST = "ATTACHMENT_LIST"
 
 # 类型名 → Schema 类（相对 schemas 包的模块名 + 类名；延迟导入避免环）
 _SCHEMA_IMPORTS = {
@@ -34,6 +36,8 @@ _SCHEMA_IMPORTS = {
     PROMPT_PLAN: (".prompt_plan", "PromptPlan"),
     GENERATION_PROFILE: (".prompt_plan", "GenerationProfile"),
     H3_PROMPT_PLAN: (".h3", "H3PromptPlan"),
+    ATTACHMENT: (".attachments", "Attachment"),
+    ATTACHMENT_LIST: (".attachments", "AttachmentList"),
 }
 
 _SCHEMA_CACHE: dict[str, type] = {}
