@@ -1,5 +1,6 @@
 // AI Prompt Studio 设置工作台 —— ComfyUI 内嵌面板
 // 语言：中文默认，可切换 EN；字段 tooltip 用 title 属性。
+// 入口（0.2.1c）：ComfyUI 原生 Settings 页面；设置项触发大型工作台 overlay。
 import { app } from "../../scripts/app.js";
 import { el, api, toast, t, setLang, lang, maskDisplay } from "./profile_widgets.js";
 
@@ -52,6 +53,8 @@ function parseOptFloat(value) {
 // ---------------- 面板构建 ----------------
 
 function openPanel() {
+  // 热重载/重复执行保护：复用已存在的 overlay（唯一 id），避免重复面板
+  panel = panel || document.getElementById("aps-overlay");
   if (!panel) {
     panel = buildPanel();
     document.body.appendChild(panel);
@@ -66,6 +69,7 @@ function closePanel() {
 
 function buildPanel() {
   const overlay = el("div", { class: "aps-overlay" });
+  overlay.id = "aps-overlay";
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) closePanel();
   });
@@ -483,24 +487,56 @@ function renderSkills() {
     .catch(() => {});
 }
 
-// ---------------- 菜单入口 ----------------
+// ---------------- 原生 Settings 入口（0.2.1c） ----------------
+// ComfyUI Settings API 没有 button/action 类型；用一次性 combo 作为工作台入口。
+// 选择 "Open Settings Workbench" 后打开现有大型 overlay，再恢复为 idle。
+const PREFIX = "[AI Prompt Studio]";
+const OPEN_WORKBENCH_SETTING_ID = "AI Prompt Studio.General.openWorkbench";
 
-function addMenuButton() {
-  const menu = document.querySelector(".comfy-menu");
-  if (!menu) return;
-  const btn = el("button", {
-    class: "comfy-menu-btn",
-    text: "AI Prompt Studio",
-    title: "AI Prompt Studio 设置工作台",
-    style: { width: "100%", margin: "4px 0" },
-    onClick: openPanel,
+function resetWorkbenchSetting() {
+  const setting = app.extensionManager && app.extensionManager.setting;
+  if (!setting || typeof setting.set !== "function") return;
+  Promise.resolve(setting.set(OPEN_WORKBENCH_SETTING_ID, "idle")).catch((err) => {
+    console.warn(PREFIX + " failed to reset workbench setting", err);
   });
-  menu.insertBefore(btn, menu.firstChild);
 }
 
 app.registerExtension({
   name: "AI Prompt Studio Settings",
+  settings: [
+    {
+      id: "AI Prompt Studio.General.language",
+      name: "Language（语言）",
+      category: ["AI Prompt Studio", "General", "Language（语言）"],
+      type: "combo",
+      defaultValue: "zh",
+      options: ["zh", "en"],
+      onChange(value) {
+        setLang(value === "en" ? "en" : "zh");
+        const btn = document.querySelector("#aps-lang-btn");
+        if (btn) btn.textContent = t("lang");
+      },
+    },
+    {
+      id: OPEN_WORKBENCH_SETTING_ID,
+      name: "Open Settings Workbench（打开设置工作台）",
+      category: ["AI Prompt Studio", "General", "Settings Workbench"],
+      tooltip: "Select the action to open the full AI Prompt Studio workbench.",
+      type: "combo",
+      defaultValue: "idle",
+      options: [
+        { text: "Select an action", value: "idle" },
+        { text: "Open Settings Workbench", value: "open" },
+      ],
+      onChange(value, oldValue) {
+        if (value !== "open" || oldValue === "open") return;
+        openPanel();
+        resetWorkbenchSetting();
+      },
+    },
+  ],
   async setup() {
-    addMenuButton();
+    console.info(PREFIX + " frontend extension loaded");
+    console.info(PREFIX + " native Settings entry registered");
   },
 });

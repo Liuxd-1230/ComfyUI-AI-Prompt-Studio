@@ -2,6 +2,14 @@
 
 本项目按阶段（Phase 0-6）迭代，每阶段完成即提交并推送（master）。
 
+## [0.2.1c] - 2026-08-07 — 前端入口修复（原生 Settings）
+
+- **最终入口**：按产品决定不占用 Sidebar，也不注入 `.comfy-menu`；入口放入 ComfyUI 原生 Settings 的 `AI Prompt Studio > General > Settings Workbench`。
+- **动作兼容**：官方 Settings API 没有 button/action 类型，因此使用一次性 combo：选择 `Open Settings Workbench` → 调用现有 `openPanel()` 打开大型设置工作台 → 自动复位为 `idle`。
+- **原生设置**：`AI Prompt Studio.General.language`（zh/en）与 `AI Prompt Studio.General.openWorkbench`；API Key 不进前端设置，仍只存服务端 SecretStore。
+- **去重与诊断**：`openPanel()` 复用 `#aps-overlay`；加载/Settings 注册/复位失败都有 `[AI Prompt Studio]` 状态日志，不输出密钥、提示词或附件内容。
+- **测试**：`node --check web/settings.js`、pytest smoke 资源检查与全量 pytest；生产 `settings.js` 不依赖 Sidebar/legacy 入口模块。
+
 ## [0.2.1b] - 2026-08-07 — 收尾补丁（默认路径 Natural / VLM 否决 / 按需 Key / metadata）
 
 - **Generic/SDXL/FLUX Natural 模式消费 CharacterBook（默认路径修复）**：`render_generic` natural_language 分支此前直接返回 `text.strip()`，把整理好的全部人物特征丢弃；而 Composer 默认 `prompt_mode=natural_language`。现改为 `_natural_with_characters()`——每人物一句 `A, with black short hair and a white military uniform.`，正文已含特征跳过（防重复），无人物时行为不变。

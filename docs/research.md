@@ -164,3 +164,12 @@
 - **Reference Analyzer 按需取 API Key**：有 text_anchor → 要求文本档案 Key；有 images → 要求视觉档案 Key（vision_profile_id 解耦）。只做图片分析时**不再**要求文本档案也配置 Key（Text Provider ≠ Vision Provider）。
 - **PromptPlan.character_bindings 全量**：CharacterBook 场景记录全部人物（此前只记 first_bible 的 metadata）。
 - **文案清理**：Reference Analyzer DESCRIPTION 去掉「/视频」（本扩展明确不做视频参考分析）。
+
+### 8.9 0.2.1c 前端入口与原生 Settings（2026-08-07）
+
+- **原生 Settings API**：https://docs.comfy.org/custom-nodes/js/javascript_settings （官方文档，2026-08-07 访问）。支持 `boolean / text / number / slider / combo / color / image / hidden`，支持 `category` 三段分组、`options`、`attrs`、`onChange`；**没有 button/action 类型**。
+- **最终入口决策**：不注册 Sidebar Tabs，也不注入旧 `.comfy-menu`。生产 `web/settings.js` 仅注册原生 Settings：`AI Prompt Studio.General.language`（zh/en）与 `AI Prompt Studio.General.openWorkbench`（一次性 combo）。用户选择 `open` 时调用现有 `openPanel()`，然后通过 `app.extensionManager.setting.set(id, "idle")` 复位。
+- **为何不使用 Sidebar**：虽然 1.47.12 的 `registerSidebarTab` 能注册并渲染，但侧栏入口不是用户最终需要的设置入口；把入口集中到 ComfyUI Settings，避免额外占用 Sidebar，符合产品偏好。
+- **本机浏览器验收**：ComfyUI 0.30.2 + frontend 1.47.12 实际启动；此前 Sidebar 路径确认能显示内容、按钮能打开大型工作台；改为 Settings 后需在 Settings 页面验证动作 combo。
+- **安全边界**：API Key 不作为前端 Settings 项；密钥仍只经工作台发往服务端 SecretStore，前端只显示脱敏值；日志不输出 API Key / 提示词 / 附件内容。
+- **资源检查**：`WEB_DIRECTORY = "./web"` 保持；`settings.js`、`profile_widgets.js`、`styles.css` 均由 `/extensions/ComfyUI-AI-Prompt-Studio/<file>` 返回 200。原先的 `entry.js` Sidebar 实验模块已移除，生产入口只有 `settings.js`。

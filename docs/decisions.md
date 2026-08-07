@@ -166,3 +166,12 @@
 - **VLM same=false 在启发式无法分组时只取单图**：字符串一致度全聚成一组 ≠ 允许全量合并——取置信度最高的一张作主人物，其余保留身份冲突（真正的「VLM 否决合并」）。
 - **Reference Analyzer 按需取 Key**：文本/视觉两个 Profile 各自按需 require（Text Provider ≠ Vision Provider）；只做图片分析时文本档案无 Key 也可运行。
 - **PromptPlan metadata 全量**：character_bindings 记录 CharacterBook 全部人物（不只 first_bible）；Reference Analyzer 描述去掉「视频」文案。
+
+## D27. 0.2.1c 前端入口决策（2026-08-07）
+
+- **入口放入原生 Settings，不占 Sidebar**：不调用 `app.extensionManager.registerSidebarTab`，也不注入 `.comfy-menu`。ComfyUI Settings 页面显示 `AI Prompt Studio > General > Settings Workbench`，选择后调用现有 `openPanel()` 打开大型设置工作台 overlay。
+- **Settings API 的动作限制**：官方 Settings API 支持 `boolean / text / number / slider / combo / color / image / hidden`，没有 button/action 类型。工作台入口采用一次性 combo `AI Prompt Studio.General.openWorkbench`：`idle`（默认）/ `open`；用户选择 `open` 后打开 overlay，并通过 `app.extensionManager.setting.set(id, "idle")` 自动复位，避免重启后重复动作。
+- **原生设置项**：`AI Prompt Studio.General.language`（combo zh/en）+ `AI Prompt Studio.General.openWorkbench`（动作 combo）。**API Key 不进前端设置**——密钥存储保持服务端 SecretStore，工作台只显示脱敏值。
+- **重复打开防护**：`openPanel()` 复用 `#aps-overlay`（`panel || getElementById`），不重复建面板。
+- **诊断日志**：加载与 Settings 注册都有 `[AI Prompt Studio]` 前缀的 `console.info`；动作复位失败 `console.warn`；只打状态，不打印 API Key / 提示词 / 附件内容。
+- **前端可测性**：Settings 配置与动作通过真实 ComfyUI 0.30.2 + frontend 1.47.12 浏览器验收；生产 `settings.js` 不依赖 Sidebar/legacy 入口模块。

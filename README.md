@@ -17,6 +17,7 @@
 - **MiniMax H3 Prompt Director**：T2VA / I2VA / FL2VA / L2VA / R2V 五模式官方格式，LLM 产出结构化计划 + Python 确定性渲染 + 规则校验 + 修复循环，输出 STRING 直连核心 H3 节点。
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
 - **设置工作台**：ComfyUI 内嵌面板（设置按钮打开），档案管理、密钥（脱敏）、API 测试、能力状态、运行时状态、提示词预览、验证报告。
+- **前端入口（0.2.1c）**：不占用 ComfyUI Sidebar；入口放在 ComfyUI 原生 **Settings** 页面中的 `AI Prompt Studio > General > Settings Workbench`。选择「Open Settings Workbench」打开大型设置工作台；语言也在同一组设置中切换。API Key 不进原生 Settings，仍由工作台填写并只存服务端。
 
 ## 安装
 
@@ -34,7 +35,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 
 ## 快速开始
 
-1. 启动 ComfyUI，点顶部菜单 **AI Prompt Studio** 打开设置工作台。
+1. 启动 ComfyUI，打开 **Settings（Ctrl+,）** → **AI Prompt Studio** → **General**，选择 **Open Settings Workbench**。
 2. 新建档案（如 `deepseek`），选择 provider，填写 API Key（只保存在你本机 `user/<pkg>/config.json`，界面只回显脱敏值），点「测试连接」。
 3. 在节点图中放置 **AI Model Profile** → 档案 ID 留空（用默认档案）或填档案名。
 4. 放置 **MiniMax H3 Prompt Director**（或 **Model Prompt Composer**），把 `AI_PROFILE` 连上，填剧情文本，运行。

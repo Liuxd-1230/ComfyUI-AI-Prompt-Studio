@@ -47,6 +47,8 @@
 ## 7. 前端 / 设置
 
 - 设置面板为 ComfyUI 内嵌 vanilla JS 模态；密钥只经服务端 SecretStore 存储，前端只显示脱敏值，**工作流 JSON 与日志永不出现完整密钥**。
+- **入口（0.2.1c）**：不注册 Sidebar Tabs，也不注入 `.comfy-menu`；入口放在 ComfyUI 原生 Settings 的 `AI Prompt Studio > General > Settings Workbench`。由于官方 Settings API 没有 button/action 类型，工作台入口用一次性 combo：选择「Open Settings Workbench」后打开大型 overlay，并自动恢复 idle。
+- **原生 ComfyUI 设置**（0.2.1c）：`AI Prompt Studio.General.language`（zh/en）与 `AI Prompt Studio.General.openWorkbench`（一次性动作 combo）。**API Key 不作为前端设置项**——密钥仍只在服务端 SecretStore。
 - 本扩展不拦截 ComfyUI 核心行为；不改动核心文件。
 - ANIMA_BOOSTER 未安装 → 软检测（仅提示，无硬依赖）。
 
