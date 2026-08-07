@@ -2,6 +2,45 @@
 
 本项目按阶段（Phase 0-6）迭代，每阶段完成即提交并推送（master）。
 
+## [0.2.0] - 2026-08-07 — P0/P1 集成修复轮
+
+### Batch E — 集成收尾
+
+- 依赖修正：`requirements.txt` / `pyproject.toml` 补 PyYAML 硬依赖，vision 可选依赖（Pillow/numpy）单列。
+- 真实 ComfyUI 冒烟（`--cpu` headless，独立端口）：9 节点注册、`/object_info`、设置路由、档案 CRUD、密钥不落盘（config.json 无 api_key/api_key_ref）、`/skills`、`/runtime`、示例工作流节点类型与无密钥校验、扩展静态资源 `/extensions/ComfyUI-AI-Prompt-Studio/*` 全部 200、`/api` 前缀路由、无扩展加载错误、验后关闭并释放端口。
+- 文档：`docs/research.md` §7 补充、`docs/known-limitations.md` 新建、`docs/decisions.md` D22-D23。
+
+### Batch D — 数据链完善
+
+- 多图身份判断：`identity_agreement` / `cluster_by_identity` / `judge_identity` / `identity_consensus`（多主体只合并最高一致度分组，防跨主体串绑；`__subject_identity__` 冲突）。
+- 视觉/文本 Profile 解耦：`AIProfile.vision_profile_id`（视觉分析可指向另一档案，含其配置与密钥）。
+- Storyboard 消费 Manifest：character 类 Subject 补成角色表并沿用真实 subject_id；已有 CharacterBook 时不重复注入。
+- Prompt Skill 管理：内置只读 + 自定义可管理（复制/新建/改/删/启停/校验/hash），`/skills` 6 路由 + 设置面板 Skill 区。
+
+### Batch C — 运行时与工具链
+
+- `/runtime` 与 Runtime Control 节点共用 `run_runtime_action` 服务层（P0）。
+- 真实自定义运行时后端（status 走 `/v1/models`，load/unload 走 `/models/{load,unload}`）。
+- 外部搜索后端（`search_url`）降级注入；函数工具循环（`MAX_TOOL_ROUNDS=4`，now/search）；本地运行时 `unload_policy`（after_request / after_success）。
+
+### Batch B — API 与 UX
+
+- 用户 `system_prompt` 作为真实 system 指令（内部守则层优先 + 不静默丢弃）。
+- 采样参数（temperature/top_p/frequency_penalty/presence_penalty/max_tokens）移出节点 UI，进档案高级设置（None=不发送）。
+- API 附件（ATTACHMENT/ATTACHMENT_LIST）：Responses/Chat 官方结构映射、能力门槛、路径安全与大小限制。
+- 结构化输出：gateway `output_schema`（能力允许→协议层 schema；DeepSeek→提示词约束+解析校验）。
+
+### Batch A2 — Prompt Audit
+
+- 全量提示词审计 + 参考项目调研（PromptForge / Prompt Assistant / TE_MAN / DaSiWa / MiniMax 官方手册）→ `docs/prompt-comparison.md` + `docs/prompt-audit.md`。
+- Reference Analyzer / H3 / Storyboard / 技能提示词重写；注入守则（数据即数据）；4 个回归用例 + 语义契约测试。
+
+### Batch A — 正确性修复
+
+- ANIMA 默认 natural_language + 结构化 AnimaPromptPlan（Hybrid 去重）；CharacterBook 真正接通 + Speaker ID 唯一分配。
+- H3 媒体独立编号、R2V 英文（一次修复、绝不假翻译）、模式资产约束；DeepSeek 按具体模型能力探测。
+- llama.cpp load/unload body 修正（`{"model": ...}`）。
+
 ## [0.1.0] - 2026-08-07
 
 ### Phase 6 — 文档与发布

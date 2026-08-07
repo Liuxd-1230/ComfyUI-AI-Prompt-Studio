@@ -91,3 +91,14 @@
 - 本机 ComfyUI 已装 MiniMax H3 三件套：ComfyUI-MiniMax-H3-Turbo（LoRA + 4-step sampler）、ComfyUI-MiniMaxH3DualClockSampler、TE-Speed-MiniMaxH3（编译 nodes.pyd）——均为 LoRA/采样器，**prompt 输入在 ComfyUI 核心原生 H3 节点**（STRING）。ANIMA_BOOSTER **未安装**。
 - 前端默认端口 8188（comfy/cli_args.py）；模型/输入/输出目录重定向到 `E:\Comfy-Desktop\ComfyUI-Shared`。
 - 用户 ComfyUI 前端包 1.47.12；`app.extensionManager.setting` 持久化在服务端 `comfy.settings.json`（app/app_settings.py，user 目录）。
+
+## 7. Batch C/D 补充查证（2026-08-07）
+
+- **函数工具协议结构（OpenAI Responses / Chat Completions 官方）**：
+  - Chat：`tools: [{"type":"function","function":{"name","description","parameters"}}]`；续轮 = assistant 消息带 `tool_calls:[{"id","type":"function","function":{"name","arguments"}}]` + 每条工具结果一条 `{"role":"tool","tool_call_id","content"}`。
+  - Responses：`tools: [{"type":"function","name","description","parameters"}]`；续轮 = assistant item 带 `output:[{"type":"function_call","call_id","name","arguments"}]` + `{"type":"function_call_output","call_id","output"}` 顶层条目。
+  - 工具执行失败 → 错误文本回给模型继续（不抛异常、不伪造）；上限 `MAX_TOOL_ROUNDS=4`（产品决策，不暴露节点 UI）。
+- **外部搜索后端契约（自定义 HTTP 优先，本仓库定义）**：`POST {query} → 200 {"results":[{"title","url","snippet"}]}`（兼容 `{"items":[...]}`）；401/402/403/429/5xx/超时/非 JSON/契约不符 → 明确失败，注入离线警告，绝不伪造结果。前端 settings 高级区 `search_url` 字段。
+- **llama.cpp 官方 load/unload**：`POST /models/load|unload`，body 为 `{"model": ...}`（README/server 源码确认，非 `{"id": ...}`）。LM Studio v1：`/api/v1/models/load|unload`；v0 只读降级。
+- **多图身份判断**：无第三方库；纯函数 `identity_agreement`（stable 特征名与值一致比例）+ 贪心聚类；多主体时只合并最高一致度分组（防跨主体串绑，P0）。
+- **视觉/文本 Profile 解耦**：`AIProfile.vision_profile_id` 指向另一档案时视觉用该档案配置与密钥；实现为字段级解耦（不复制密钥引用）。

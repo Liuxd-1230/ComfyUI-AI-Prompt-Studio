@@ -20,7 +20,7 @@
 
 ## 安装
 
-> 目标环境：Windows 11 · ComfyUI 0.30.x · Python 3.10+。扩展只依赖 `requests`，**不需要 torch / CUDA**，CPU 环境可加载全部节点。
+> 目标环境：Windows 11 · ComfyUI 0.30.x · Python 3.10+。扩展只依赖 `requests` + `PyYAML`（视觉分析另需 Pillow/numpy，ComfyUI venv 自带），**不需要 torch / CUDA**，CPU 环境可加载全部节点。
 
 ```bash
 cd E:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes
@@ -86,7 +86,7 @@ git clone https://github.com/Liuxd-1230/ComfyUI-AI-Prompt-Studio.git
 ## 兼容性
 
 - **ComfyUI 0.30.x**：已隔离 `comfy.logging → comfy.internal_logging` 破坏性变更（本扩展不 import 核心日志）。
-- **无 GPU 环境**：提示词相关功能只依赖 `requests`，可离线加载；联网功能（网关/探测）在无网络时明确报错，不伪装。
+- **无 GPU 环境**：提示词相关功能只依赖 `requests` + `PyYAML`，可离线加载；联网功能（网关/探测）在无网络时明确报错，不伪装。
 - **第三方共存**：MiniMax H3 采样三件套（Turbo / DualClock / TE-Speed）——H3 Director 只输出 STRING，不重复采样后端；ANIMA_BOOSTER 未安装时软检测提示，不硬依赖。
 - 详见 `docs/compatibility.md`。
 
