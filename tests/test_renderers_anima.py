@@ -38,8 +38,42 @@ def test_turbo_profile():
 
 
 def test_sensitive_tier():
-    r = render_anima("1girl", variant="base", content_tier="sensitive")
+    r = render_anima("1girl", variant="base", safety_tag="sensitive")
     assert "sensitive" in r.positive
+    assert "safe" not in r.positive
+
+
+def test_safety_none_injects_nothing():
+    r = render_anima("1girl, long hair", variant="base", prompt_mode="tags")
+    assert "safe" not in r.positive
+    assert "sensitive" not in r.positive
+    assert "nsfw" not in r.positive
+    assert "explicit" not in r.positive
+    assert r.positive.startswith(ANIMA_BASE_PREFIX)  # 前缀不再包含安全标签
+
+
+def test_safety_tags_explicit_all_variants():
+    for tag in ("safe", "sensitive", "nsfw", "explicit"):
+        r = render_anima("1girl", variant="base", prompt_mode="tags",
+                         safety_tag=tag)
+        assert tag in r.positive
+        assert r.positive.startswith(ANIMA_BASE_PREFIX)
+
+
+def test_safety_natural_and_hybrid_modes():
+    for mode in ("natural_language", "hybrid"):
+        r = render_anima("A girl standing in a garden", variant="base",
+                         prompt_mode=mode, safety_tag="safe")
+        assert "safe" in r.positive
+        r2 = render_anima("A girl standing in a garden", variant="base",
+                          prompt_mode=mode, safety_tag="none")
+        assert "safe" not in r2.positive
+
+
+def test_safety_tag_invalid_falls_back_none():
+    r = render_anima("1girl", variant="base", prompt_mode="tags",
+                     safety_tag="whatever")
+    assert "whatever" not in r.positive
     assert "safe" not in r.positive
 
 

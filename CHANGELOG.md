@@ -2,6 +2,50 @@
 
 本项目按阶段（Phase 0-6）迭代，每阶段完成即提交并推送（master）。
 
+## [0.2.1] - 2026-08-07 — 加固轮（无新功能、无架构重构）
+
+### P0 修复（运行时 / 协议 / 数据）
+
+- **Composer 崩溃修复**：`nodes/prompt_composer.py` `compose()` 以 `book_context` 调用 `_generic()` 而函数无此参数且内部引用未定义 `book_context` → generic_image / sdxl / flux_kontext 崩溃（TypeError/NameError）。已加参数并接线，不依赖 TypeError 兜底。
+- **API Key 解耦**：Composer audit / convert / generate+tags 与 H3 audit 完全离线（不查密钥）；H3 `convert_storyboard` 无 Key 时走确定性分镜转换（带警告「无 API Key：已使用确定性分镜转换」），有 Key 才 LLM 增强。只有 LLM 路径（expand/rewrite/translate/repair、ANIMA natural/hybrid generate、自定义技能 LLM）要求密钥。
+- **DeepSeek 结构化输出按协议分能力**：官方文档核实 `deepseek-v4-flash` 支持 Responses API + `text.format` json_schema（`structured_output_responses=True`）；Chat Completions 无 json_schema（`structured_output_chat=False`）。Gateway 按当前协议判定：Responses 走 `{"text":{"format":{"type":"json_schema",...}}}`，Chat 降级提示词约束 + JSON 解析 + 校验。
+- **附件警告上节点输出**：`load_path_attachments()` 的 `file_warnings`（路径越界、文件缺失、超限、跳过）合并进 LLM Generate 最终 `warnings` 输出，不再丢失。
+- **PDF/DOCX 本地文本提取（方案 A）**：pypdf / python-docx 惰性导入；无原生文件输入支持的 Provider 降级为本地提取文本 + 警告「Provider 不支持原生文件输入，已本地提取文本发送」；扫描件/无文本层明确报错；非 PDF/DOCX 二进制明确报错（提示 supports_files）。PPTX/XLSX 明确不在支持范围。
+- **DeepSeek 附件能力诚实化**：`deepseek-v4-flash` vision=False / files=False（官方文档确认 image/file 输入不支持，`input_image` 仅占位）；能力门槛阻止发送。
+- **Responses 工具调用 call_id 修正**：`ToolCall(id=<模型返回的实际 call_id>)`；`function_call_output` 与模型返回的 call_id 一致，绝不伪造 `call_0`；覆盖流式 function_call、非流式 output_item.done、多工具调用（按 item_id 关联，call_id 取自 function_call item）。
+- **LM Studio v1 探测顺序**：`GET /api/v1/models` 优先 → v0 降级 → 都失败 = 不可用；unload 用官方 `{"instance_id": ...}` 而非 `{"model": ...}`；运行时状态保存 model id + instance id；load 后记录 instance_id，unload 优先用已存实例，用户只给 model 时查已加载实例列表。
+
+### Prompt 修复（数据污染 / 规范）
+
+- **Reference Analyzer H3 提示词**：删除相机运动/时间运动/视频运动/运动序列（静态图；相机运动归 H3 Director）。
+- **类别语义修正（防污染 Character Bible）**：scene/composition/object → `current`，style → `variable`（不再使用 `stable`）。
+- **ANIMA natural 提示词**：官方前缀 `masterpiece, best quality, score_7, `（不再强制 `safe`，Aesthetic 无 score）；Natural 与 Character Bible 短语边界去重（「long black hair」vs「her long black hair」）；多人物属性绑定保持（A/B 各自特征不串位）。
+- **分镜人物 ID**：沿用已有 character_id（char_01/char_02），绝不臆造 c1/c2；JSON 示例改为 `"characters": ["char_01", "char_02"]`；仅真正新人物才新建 ID。
+- **批量身份判断 `batch_identity_check`**：多图 → 一次 VLM「是否同一视觉主体」裁决（same_subject+confidence+evidence）→ 逐图分析 → 特征共识；最多 6 张代表图；VLM 失败回退确定性启发式。
+- **身份提示词只比较可观察身份特征**（面部比例、发际线、眼型、鼻/嘴几何、明显标记、稳定身体比例）；服装/背景/姿势仅弱辅助。
+- **H3 retention 标记按官方手册核实**：audio 集合含 `weak_reference`；校验器按资产类型检查（visual: fully_preserved/partially_preserved/attribute_transfer/weak_reference；audio: fully_copy/partially_copy/reference/weak_reference）。
+- **ANIMA Safety 标签产品决策（补充 P0）**：`content_tier` → `safety_tag`（none/safe/sensitive/nsfw/explicit，**默认 none**）；Composer 只在用户明确选择时注入，不做内容审查（模型认为敏感→自动改 safe 禁止）；三模式（tags/natural/hybrid）一致；用户节点 `safety_tag` > Prompt Plan 建议 > 无标签（用户选 none 时 Plan 的 safe 也不注入）；旧 content_tier 迁移；技能 YAML 去除硬编码 safe；校验器只查格式（最多一个、位置正确），nsfw/explicit 非语法错误。
+
+### 结构化输出（P1）
+
+- H3 Prompt Director（初始 + 修复）与 Storyboard Builder 原生 structured output：`H3_SCHEMA` / `STORYBOARD_SCHEMA` JSON Schema；Provider 支持原生 → 协议层 Schema，否则保留 JSON 模板。
+
+### 新增回归测试
+
+- `tests/test_main_flows.py`：8 条主链路（普通 LLM、单人物、多人物、generic_image、SDXL、FLUX、H3、离线审计）。
+- 附件：本地提取 PDF/DOCX、扫描件报错、非文档报错、降级文本+警告、二进制报错、警告达节点输出。
+- LM Studio：v1 优先、unload 用 instance_id、回退已加载实例列表。
+- Adapters：Responses call_id（流式/非流式/多工具）。
+- Gateway：按协议结构化输出（Responses schema / Chat 降级 / 能力门）。
+- ANIMA：safety_tag none/safe/sensitive/nsfw/explicit 五态、natural/hybrid/tags 三模式 none、content_tier 迁移。
+- ANIMA natural：短语边界去重、多人物绑定保持。
+- Reference：VLM 批量身份裁决 + 回退启发式。
+
+### 文档
+
+- `docs/research.md` §8（DeepSeek 结构化输出/附件/call_id、LM Studio、ANIMA safety、H3 retention，含官方来源与日期）；`docs/decisions.md` D24；`docs/known-limitations.md`、`docs/prompt-audit.md` 0.2.1 节。
+- README（ANIMA safety_tag、可选 doc-extract 依赖）；pyproject/requirements 版本 0.2.1 + doc-extract 可选依赖。
+
 ## [0.2.0] - 2026-08-07 — P0/P1 集成修复轮
 
 ### Batch E — 集成收尾

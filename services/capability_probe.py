@@ -17,16 +17,20 @@ DEFAULT_TIMEOUT = 15.0
 # 已知 DeepSeek 具体模型能力基线（官方文档，2026-08-07 查证，来源见 docs/research.md）。
 # 能力必须按「具体模型」判定，而不是 provider==deepseek 一刀切：
 # - deepseek-v4-flash：Responses API 与原生 web_search 工具均可用（仅 Responses 路径支持）；
-#   文本 API（图片以占位符替换）→ vision/files 均不可用；
-#   Chat json_schema 未文档化 → structured_output 走提示词约束+解析修复（False）。
+#   Responses 的 text.format 原生 Structured Output 官方支持（structured_output_responses=True）；
+#   Chat 路径未文档化 json_schema → structured_output_chat=False（走提示词约束+解析修复）；
+#   vision/files 均不可用（图片以占位符替换）。
 # - deepseek-v4-pro：Responses 支持计划 2026-08 初上线，当前不可用 → responses=False。
+# 协议级区分：structured_output_responses / structured_output_chat；
+# 兼容旧字段 structured_output = 任意协议之一可用（设置面板展示用）。
 DEEPSEEK_MODEL_CAPS = {
     "deepseek-v4-flash": {
         "responses": True,
         "chat_completions": True,
         "function_tools": True,
         "native_web_search": True,
-        "structured_output": False,
+        "structured_output_responses": True,
+        "structured_output_chat": False,
         "vision": False,
         "files": False,
     },
@@ -35,11 +39,23 @@ DEEPSEEK_MODEL_CAPS = {
         "chat_completions": True,
         "function_tools": True,
         "native_web_search": False,
-        "structured_output": False,
+        "structured_output_responses": False,
+        "structured_output_chat": False,
         "vision": False,
         "files": False,
     },
 }
+
+
+def _legacy_structured_output(caps: dict) -> str:
+    """协议级能力 → 旧 structured_output 字段（设置面板展示；任意协议可用即 True）。"""
+    r = caps.get("structured_output_responses")
+    c = caps.get("structured_output_chat")
+    if r is True or c is True:
+        return True
+    if r is False and c is False:
+        return False
+    return "unknown"
 
 
 def _match_deepseek_model(model: str, models) -> Optional[str]:
@@ -61,6 +77,18 @@ def deepseek_known_responses(model: str) -> Optional[bool]:
     if key is None:
         return None
     return bool(DEEPSEEK_MODEL_CAPS[key]["responses"])
+
+
+def supports_native_structured_output(profile: AIProfile, caps: dict,
+                                     protocol: str) -> bool:
+    """当前协议是否走原生 Structured Output（0.2.1 P0-3：按协议区分能力）。
+
+    responses → structured_output_responses；chat_completions → structured_output_chat。
+    caps 为 None/未知 → False（走提示词约束兜底）。
+    """
+    key = "structured_output_responses" if protocol == "responses" \
+        else "structured_output_chat"
+    return bool(caps and caps.get(key) is True)
 
 
 def _status_kind(status: int) -> str:
@@ -97,7 +125,9 @@ def probe_profile(profile: AIProfile, api_key: str, timeout: float = DEFAULT_TIM
         "chat_completions": "unknown",
         "function_tools": "unknown",
         "native_web_search": "unknown",
-        "structured_output": "unknown",
+        "structured_output_responses": "unknown",
+        "structured_output_chat": "unknown",
+        "structured_output": "unknown",   # 旧字段：协议级能力的聚合（展示用）
         "vision": False,
         "files": False,
         "model_listing": False,
@@ -143,6 +173,7 @@ def probe_profile(profile: AIProfile, api_key: str, timeout: float = DEFAULT_TIM
         key = _match_deepseek_model(profile.model, caps["models"])
         if key is not None:
             caps.update(DEEPSEEK_MODEL_CAPS[key])
+            caps["structured_output"] = _legacy_structured_output(caps)
             caps["capability_basis"] = f"per_model:{key}"
         else:
             # 未知 DeepSeek 模型：保守基线（chat 可用；responses/web_search 未知，
@@ -152,18 +183,23 @@ def probe_profile(profile: AIProfile, api_key: str, timeout: float = DEFAULT_TIM
                 chat_completions=True,
                 function_tools=True,
                 native_web_search=False,
+                structured_output_responses=False,
+                structured_output_chat=False,
                 structured_output=False,
                 vision=False,
                 files=False,
             )
             caps["capability_basis"] = "deepseek_unknown_model_conservative"
     else:
-        # 通用 OpenAI 兼容端点：chat 与 function tools 大概率可用，responses 未知
+        # 通用 OpenAI 兼容端点：chat 与 function tools 大概率可用，responses 未知；
+        # chat json_schema 按 OpenAI 兼容生态常见支持处理（协议级区分）
         caps.update(
             responses="unknown",
             chat_completions=True,
             function_tools=True,
             native_web_search=False,
+            structured_output_responses=True,
+            structured_output_chat=True,
             structured_output=True,
             vision=False,
             files=False,

@@ -8,8 +8,14 @@
 - Character Bible 通过 AnimaCharacter 绑定（required=锁定/稳定特征，
   variable=可变特征），身份特征自然融入正文，不机械 tag 化。
 
+safety 标签（0.2.1 补充 P0）：
+- safety_tag ∈ none/safe/sensitive/nsfw/explicit；默认 none = 不注入任何 Safety 标签；
+- 仅当用户显式选择非 none 时，标签按官方排序插入 safety 段；
+- Prompt Composer 只按用户选择渲染，不做内容审查 / 不自动修改等级。
+
 三套档案：
-- base：官方前缀 `masterpiece, best quality, score_7, safe, ` + 官方负面（含 score_1..3）；
+- base：官方前缀 `masterpiece, best quality, score_7, ` + 官方负面（含 score_1..3）；
+  （0.2.1 起 safe 不再固定注入，随 safety_tag 决定）
 - aesthetic：官方明确建议正负都不用 score_*；保留人类式品质词；
 - turbo：官方未给 score 指导 → 人类式品质词，无 score；CFG 1 / 8-12 步。
 """
@@ -24,15 +30,18 @@ from ..schemas.character import CharacterBible
 from ..schemas.prompt_plan import GenerationProfile
 
 # ---------------------------------------------------------------- 官方档案
-ANIMA_BASE_PREFIX = "masterpiece, best quality, score_7, safe, "
+ANIMA_BASE_PREFIX = "masterpiece, best quality, score_7, "
 ANIMA_BASE_NEGATIVE = ("worst quality, low quality, score_1, score_2, score_3, "
                        "artist name, blurry, jpeg artifacts, chromatic aberration")
 ANIMA_QUALITY_NEGATIVE = ("worst quality, low quality, artist name, blurry, "
                           "jpeg artifacts, chromatic aberration")
 
+# 官方 safety 标签全集（0.2.1 补充 P0：safe/sensitive/nsfw/explicit；none=不注入）
+SAFETY_TAGS = {"safe", "sensitive", "nsfw", "explicit"}
+SAFETY_TAG_RENDER = {"safe": "safe", "sensitive": "sensitive",
+                     "nsfw": "nsfw", "explicit": "explicit"}
 QUALITY_TAGS = {"masterpiece", "best quality", "good quality", "normal quality",
                 "low quality", "worst quality"} | {f"score_{i}" for i in range(1, 10)}
-SAFETY_TAGS = {"safe", "sensitive", "nsfw", "explicit"}
 META_TAGS = {"highres", "absurdres", "anime screenshot", "jpeg artifacts",
              "official art", "newest", "recent", "mid", "early", "old"}
 COUNT_RE = re.compile(r"^\d+(girl|boy|other)s?$")
@@ -160,9 +169,33 @@ def _dedupe(items: List[str]) -> List[str]:
     return seen
 
 
-def _substr_in(text: str, frag: str) -> bool:
-    """frag 是否已作为子串出现在 text（大小写不敏感）——用于正文去重。"""
-    return bool(frag) and frag.strip().lower() in (text or "").lower()
+def _fragment_in(text: str, frag: str) -> bool:
+    """frag 是否已作为（词边界的）片段出现在 text 中（大小写不敏感）。
+
+    去重规则（0.2.1 P0-12）：以空白/标点作为词边界做子串匹配——
+    "long black hair" 命中 "her long black hair"（避免机械追加），
+    而 "hair" 不命中 "long black hair" 中的整体短语（避免过度删除）。
+    """
+    if not frag or not frag.strip():
+        return False
+    needle = frag.strip().lower()
+    hay = (text or "").lower()
+    start = 0
+    while True:
+        idx = hay.find(needle, start)
+        if idx == -1:
+            return False
+        before = hay[idx - 1] if idx > 0 else " "
+        after = hay[idx + len(needle):idx + len(needle) + 1] if idx + len(needle) < len(hay) else " "
+        if (not before.isalnum()) and (not after.isalnum()):
+            return True
+        start = idx + 1
+
+
+def validate_safety_tag(safety_tag: str) -> str:
+    """归一化 safety_tag；none/safe/sensitive/nsfw/explicit；非法值回退 none（不注入）。"""
+    tag = (safety_tag or "").strip()
+    return tag if tag in SAFETY_TAG_RENDER else "none"
 
 
 def _extract_json(raw: str) -> Optional[dict]:
@@ -261,19 +294,19 @@ def render_anima(
     *,
     variant: str = "base",
     prompt_mode: str = "natural_language",
-    content_tier: str = "safe",
+    safety_tag: str = "none",
     bible: Optional[CharacterBible] = None,
     negative_override: str = "",
     lora_triggers: Optional[List[str]] = None,
 ) -> AnimaRenderResult:
     """兼容入口：输入自由文本 → 确定性 Plan → 渲染。"""
     if prompt_mode == "tags":
-        return _render_tags_from_text(text, variant=variant, content_tier=content_tier,
+        return _render_tags_from_text(text, variant=variant, safety_tag=safety_tag,
                                       bible=bible, negative_override=negative_override,
                                       lora_triggers=lora_triggers)
     plan = build_anima_plan(text, bible)
     return render_anima_plan(plan, variant=variant, prompt_mode=prompt_mode,
-                             content_tier=content_tier,
+                             safety_tag=safety_tag,
                              negative_override=negative_override,
                              lora_triggers=lora_triggers)
 
@@ -283,11 +316,15 @@ def render_anima_plan(
     *,
     variant: str = "base",
     prompt_mode: str = "natural_language",
-    content_tier: str = "safe",
+    safety_tag: str = "none",
     negative_override: str = "",
     lora_triggers: Optional[List[str]] = None,
 ) -> AnimaRenderResult:
-    """统一渲染：Natural / Tags / Hybrid 消费同一个 Plan，绝不重复正文。"""
+    """统一渲染：Natural / Tags / Hybrid 消费同一个 Plan，绝不重复正文。
+
+    safety_tag：none 不注入任何 Safety 标签；safe/sensitive/nsfw/explicit 按
+    官方排序插入 safety 段（用户显式选择才注入，不做内容审查）。
+    """
     if variant not in PROFILE_SETTINGS:
         raise ValueError(f"未知 ANIMA 变体 {variant!r}（可选：base/aesthetic/turbo）")
     if prompt_mode not in PROMPT_MODES:
@@ -297,11 +334,12 @@ def render_anima_plan(
     result.profile = GenerationProfile(target_family="anima", target_variant=variant,
                                        **PROFILE_SETTINGS[variant])
 
-    tier = content_tier if content_tier in ("safe", "sensitive") else "safe"
+    safety_tag = validate_safety_tag(safety_tag)
+    safety = SAFETY_TAG_RENDER[safety_tag] if safety_tag in SAFETY_TAG_RENDER else ""
     if variant == "base":
-        prefix = f"masterpiece, best quality, score_7, {tier}, "
+        prefix = f"masterpiece, best quality, score_7, "
     else:
-        prefix = f"masterpiece, best quality, {tier}, "
+        prefix = f"masterpiece, best quality, "
 
     negative = (negative_override.strip() if negative_override and negative_override.strip()
                 else (ANIMA_BASE_NEGATIVE if variant == "base" else ANIMA_QUALITY_NEGATIVE))
@@ -309,10 +347,13 @@ def render_anima_plan(
 
     if prompt_mode == "natural_language":
         body = _natural_body(plan)
-        positive = (prefix + body).rstrip(" ,")
+        positive = prefix + (f"{safety}, " if safety else "") + body
+        positive = positive.rstrip(" ,")
     elif prompt_mode == "hybrid":
         control = _dedupe(_normalize_underscores(
             plan.control_tags + plan.series_tags + plan.artist_tags))
+        # 用户显式选择的安全标签并入控制块；plan 建议的安全标签被忽略
+        control = _dedupe(control + ([safety] if safety else []))
         body = _natural_body(plan)
         block = ", ".join(control)
         positive = prefix + (block + (", " if block and body else "") + body).rstrip(" ,")
@@ -320,7 +361,11 @@ def render_anima_plan(
     else:  # tags
         tags = _plan_tags(plan)
         merged = _dedupe(_normalize_underscores(tags)) + lora
-        ordered = order_tags(merged[:len(merged) - len(lora)] if lora else merged)
+        non_lora = merged[:len(merged) - len(lora)] if lora else merged
+        if safety and safety not in non_lora:
+            # 用户显式选择的安全标签按官方排序插入 safety 段（tags 正文含同标签则不重复）
+            non_lora = _dedupe(order_tags([safety] + non_lora))
+        ordered = order_tags(non_lora)
         if lora:
             ordered = ordered + lora
         positive = prefix + ", ".join(ordered)
@@ -338,8 +383,6 @@ def render_anima_plan(
     if variant == "aesthetic" and any(t.startswith("score_") for t in plan.control_tags):
         result.warnings.append(
             "Aesthetic 官方建议不使用 score_* 标签（已按官方档案保留输入原样，可手动移除）")
-    if content_tier not in ("safe", "sensitive"):
-        result.warnings.append(f"content_tier={content_tier!r} 未知，回退 safe")
     return result
 
 
@@ -351,13 +394,13 @@ def _natural_body(plan: AnimaPromptPlan) -> str:
     body = plan.natural_body or ""
     for c in plan.characters:
         desc = c.description.strip() if c.description and c.description.strip() else _assemble_character(c, body)
-        if desc and not _substr_in(body, desc):
+        if desc and not _fragment_in(body, desc):
             parts.append(desc)
     if body:
         parts.append(body)
     for env in plan.environment:
         e = (env or "").strip().rstrip(".")
-        if e and not _substr_in(body, e):
+        if e and not _fragment_in(body, e):
             parts.append(e + ".")
     if plan.lighting and plan.lighting.strip():
         parts.append(plan.lighting.strip().rstrip(".") + ".")
@@ -369,9 +412,9 @@ def _natural_body(plan: AnimaPromptPlan) -> str:
 
 
 def _assemble_character(c: AnimaCharacter, body: str) -> str:
-    """确定性组装人物块：身份特征与正文去重，禁止属性串位。"""
+    """确定性组装人物块：身份特征与正文去重（词边界匹配），禁止属性串位。"""
     traits = [t for t in (c.required_traits + c.variable_traits)
-              if t.strip() and not _substr_in(body, t)]
+              if t.strip() and not _fragment_in(body, t)]
     name = c.name.strip() or "A character"
     if traits:
         base = f"{name} with {', '.join(t.strip() for t in traits)}"
@@ -387,27 +430,32 @@ def _assemble_character(c: AnimaCharacter, body: str) -> str:
 
 
 def _plan_tags(plan: AnimaPromptPlan) -> List[str]:
-    """Tags 模式标签源：显式标签字段；为空时按 tags 语义把正文切为标签。"""
+    """Tags 模式标签源：显式标签字段；为空时按 tags 语义把正文切为标签。
+
+    0.2.1：plan.control_tags 里的 safety 标签（如 LLM Plan 建议 safe）不自动注入——
+    safety 标签只由用户节点参数 safety_tag 决定（产品决策）。
+    """
     explicit = _dedupe(plan.control_tags + plan.character_tags + plan.series_tags
                        + plan.artist_tags + plan.visual_tags)
     if explicit:
-        return explicit
+        return [t for t in explicit if t not in SAFETY_TAGS]
     if plan.natural_body:
         return split_tags(plan.natural_body)
     return []
 
 
-def _render_tags_from_text(text, *, variant, content_tier, bible, negative_override,
+def _render_tags_from_text(text, *, variant, safety_tag, bible, negative_override,
                            lora_triggers) -> AnimaRenderResult:
     """旧 Tags 管线（显式 tags 模式）：Bible 补全 + 输入切标签 + 官方排序。"""
     result = AnimaRenderResult()
     result.profile = GenerationProfile(target_family="anima", target_variant=variant,
                                        **PROFILE_SETTINGS[variant])
-    tier = content_tier if content_tier in ("safe", "sensitive") else "safe"
+    safety_tag = validate_safety_tag(safety_tag)
+    safety = SAFETY_TAG_RENDER[safety_tag] if safety_tag in SAFETY_TAG_RENDER else ""
     if variant == "base":
-        prefix = f"masterpiece, best quality, score_7, {tier}, "
+        prefix = f"masterpiece, best quality, score_7, "
     else:
-        prefix = f"masterpiece, best quality, {tier}, "
+        prefix = f"masterpiece, best quality, "
 
     bible_tags: List[str] = []
     if bible is not None and bible.character_prompt():
@@ -424,6 +472,11 @@ def _render_tags_from_text(text, *, variant, content_tier, bible, negative_overr
     ordered = order_tags(seen[:len(seen) - len(lora)] if lora else seen)
     if lora:
         ordered = ordered + lora
+    if safety and safety not in ordered:
+        non_lora = ordered[:len(ordered) - len(lora)] if lora else ordered
+        if safety not in non_lora:
+            non_lora = _dedupe(order_tags([safety] + non_lora))
+        ordered = order_tags(non_lora) + lora
 
     negative = (negative_override.strip() if negative_override and negative_override.strip()
                 else (ANIMA_BASE_NEGATIVE if variant == "base" else ANIMA_QUALITY_NEGATIVE))
@@ -435,8 +488,6 @@ def _render_tags_from_text(text, *, variant, content_tier, bible, negative_overr
         result.warnings.append("Aesthetic 官方建议不使用 score_* 标签（已按官方档案保留输入原样，可手动移除）")
     if any(has_underscore_besides_score(t) for t in pre_norm):
         result.warnings.append("检测到下划线标签（官方规范：标签间用空格，仅 score_* 允许下划线）——已自动转换")
-    if content_tier not in ("safe", "sensitive"):
-        result.warnings.append(f"content_tier={content_tier!r} 未知，回退 safe")
     return result
 
 

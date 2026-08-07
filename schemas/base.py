@@ -122,11 +122,19 @@ class Schema:
 
     @classmethod
     def from_json(cls, data: Any) -> "Schema":
-        """容错反序列化：接受 None/dict/同类型实例。未知键忽略，缺失字段取默认。"""
+        """容错反序列化：接受 None/dict/JSON 字符串/同类型实例。未知键忽略，缺失字段取默认。"""
         if isinstance(data, cls):
             return data
         if data is None:
             data = {}
+        if isinstance(data, str):
+            try:
+                import json as _json
+                parsed = _json.loads(data)
+            except ValueError:
+                parsed = None
+            if isinstance(parsed, dict):
+                data = parsed
         if not isinstance(data, dict):
             raise SchemaError(f"{cls.__name__}: 输入必须是对象，实际是 {type(data).__name__}")
         data = cls._migrate(dict(data))

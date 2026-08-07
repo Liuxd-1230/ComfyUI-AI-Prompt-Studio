@@ -29,20 +29,35 @@ REASONING_EFFORT = {"off": "none", "low": "low", "medium": "medium", "high": "hi
 
 
 class _StreamConsumer:
-    """从 SSE 事件流中累积 Responses 协议的输出。"""
+    """从 SSE 事件流中累积 Responses 协议的输出。
+
+    function call 关联（官方结构，2026-08-07 查证，docs/research.md §7）：
+    - 流式 function_call_arguments.delta/done 事件携带 item_id + output_index（不是 call_id）；
+    - call_id 只出现在 function_call 输出项（output[] 与 response.output_item.done 的 item）里；
+    - 因此参数 delta 按 item_id 累积，call_id 在 function_call 项到达时取权威值。
+    """
 
     def __init__(self, profile: AIProfile):
         self.profile = profile
         self.text_parts: List[str] = []
         self.reasoning_parts: List[str] = []
         self.tool_calls: List[ToolCall] = []
-        self._tool_name = ""
-        self._tool_args = ""
+        # 按 item_id（或 output_index）累积 function call 参数；并行调用互不干扰
+        self._tool_parts: Dict[str, Dict[str, str]] = {}
+        self._tool_order: List[str] = []
         self.citations: List[Citation] = []
         self._urls = set()
         self.usage: Dict[str, Any] = {}
         self.failed = False
         self.server_error = ""
+
+    def _part(self, key: str) -> Dict[str, str]:
+        """取（或新建）某个 item_id 的累积槽；空 key 用临时槽。"""
+        key = (key or "").strip() or "__slot__"
+        if key not in self._tool_parts:
+            self._tool_parts[key] = {"name": "", "args": ""}
+            self._tool_order.append(key)
+        return self._tool_parts[key]
 
     def feed(self, event: Dict[str, Any]) -> None:
         kind = event.get("_event") or event.get("type") or ""
@@ -56,9 +71,20 @@ class _StreamConsumer:
             if isinstance(data, str):
                 self.reasoning_parts.append(data)
         elif "function_call_arguments.delta" in kind and isinstance(data, str):
-            self._tool_args += data
+            # 官方：delta 事件用 item_id 标识目标 function call（非 call_id）
+            key = (event.get("item_id") or event.get("output_index") or "") if (
+                event.get("item_id") or event.get("output_index") is not None) else ""
+            self._part(str(key))["args"] += data
+        elif kind == "response.function_call_arguments.done":
+            key = str(event.get("item_id") or event.get("output_index") or "") if (
+                event.get("item_id") or event.get("output_index") is not None) else ""
+            if isinstance(data, str):
+                part = self._part(key)
+                part["args"] = data
+                if isinstance(event.get("name"), str) and event["name"]:
+                    part["name"] = event["name"]
         elif "function_call.name.delta" in kind and isinstance(data, str):
-            self._tool_name += data
+            self._part(str(event.get("item_id") or ""))["name"] += data
         elif kind == "response.output_item.done":
             self._on_item(event.get("item") or {})
         elif kind == "response.completed":
@@ -84,15 +110,32 @@ class _StreamConsumer:
                 if isinstance(part, dict) and isinstance(part.get("text"), str):
                     self.reasoning_parts.append(part["text"])
         elif itype == "function_call":
-            name = item.get("name") or self._tool_name
-            args = item.get("arguments") or self._tool_args
+            # 官方结构：{"type":"function_call","call_id":...,"id":...,"name":...,"arguments":...}
+            cid = (item.get("call_id") or "").strip()
+            # 优先按 item.id（=流式 item_id）取累积的参数
+            iid = (item.get("id") or "").strip()
+            part = self._tool_parts.pop(iid, None)
+            if part is None and cid and cid in self._tool_parts:
+                part = self._tool_parts.pop(cid, None)
+            if part is None and self._tool_parts:
+                part = self._tool_parts.pop(self._tool_order[0], None)
+            name = item.get("name") or (part or {}).get("name", "")
+            args = item.get("arguments")
+            if not isinstance(args, str):
+                args = json.dumps(args, ensure_ascii=False) if args is not None else ""
+            args = args or (part or {}).get("args", "")
             if name:
-                self.tool_calls.append(ToolCall(name=name, arguments=args))
-                self._tool_name, self._tool_args = "", ""
+                self.tool_calls.append(ToolCall(id=cid, name=name, arguments=args))
         elif itype == "web_search_call":
             deep_find_urls(item.get("output") or item, self._urls)
 
     def finalize(self) -> LLMResult:
+        # 兜底：只有 delta、没有 item.done 的 function call 在此落盘（避免丢失）
+        for key in list(self._tool_parts.keys()):
+            part = self._tool_parts.pop(key)
+            if part.get("name"):
+                self.tool_calls.append(ToolCall(name=part["name"],
+                                                arguments=part["args"]))
         result = LLMResult(profile_id=self.profile.profile_id, model=self.profile.model,
                            protocol="responses")
         result.text = "".join(self.text_parts)
@@ -229,11 +272,13 @@ def _input_from_messages(messages) -> List[Dict[str, Any]]:
                                     "content": [{"type": "input_text",
                                                  "text": m.content}]
                                     if m.content else []}
+            # call_id 必须逐字沿用模型返回的真实 ID（0.2.1 P0-7）；
+            # 缺失时为协议错误，由 Provider 显式拒绝，绝不临时伪造 call_N
             item["output"] = [{"type": "function_call",
-                               "call_id": tc.id or f"call_{i}",
+                               "call_id": tc.id,
                                "name": tc.name,
                                "arguments": tc.arguments}
-                              for i, tc in enumerate(m.tool_calls)]
+                              for tc in m.tool_calls]
             result.append(item)
             continue
         if not m.content:

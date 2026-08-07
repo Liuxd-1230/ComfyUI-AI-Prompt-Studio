@@ -129,6 +129,40 @@ def consensus_of(candidates: List[CharacterCandidate]) -> CharacterCandidate:
 
 # ------------------------------------------------------------------ 多图身份判断
 
+# 0.2.1 P0-15：多图身份 VLM 提示词只比较「可观察身份特征」；
+# 服装/背景/姿势/光照禁止作为主要身份依据（只作弱辅助）。
+IDENTITY_COMPARISON_PROMPT = (
+    "Do all these images show the same visual subject? Compare only observable identity "
+    "features: face proportions, hairline, eye shape, nose/mouth geometry, distinctive "
+    "visible marks (moles, scars, birthmarks, tattoos), and stable body proportions. "
+    "Clothing, background, pose, and lighting are NOT identity evidence — at most weak "
+    "auxiliary signals. Return JSON only: "
+    '{"same_subject": true, "confidence": 0.92, '
+    '"evidence": ["same facial proportions", "same mole below left eye", "same hairline"], '
+    '"reasons_if_different": []}'
+)
+
+
+def parse_identity_verdict(raw: str) -> Optional[Dict[str, Any]]:
+    """把 VLM 身份判断输出容错解析为 {same_subject, confidence, evidence}。
+
+    非 JSON / 缺 same_subject → None（调用方回退 deterministic heuristic）。
+    """
+    data = extract_json_object(raw or "")
+    if data is None or "same_subject" not in data:
+        return None
+    try:
+        confidence = float(data.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        confidence = 0.5
+    evidence = data.get("evidence") or []
+    if not isinstance(evidence, list):
+        evidence = []
+    return {"same_subject": bool(data["same_subject"]),
+            "confidence": min(max(confidence, 0.0), 1.0),
+            "evidence": [str(e).strip() for e in evidence if str(e).strip()][:6]}
+
+
 def identity_agreement(a: CharacterCandidate, b: CharacterCandidate) -> float:
     """两个候选的身份一致度：stable 特征名与值完全一致的比例（0-1）。
 

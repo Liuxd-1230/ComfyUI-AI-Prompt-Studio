@@ -32,3 +32,8 @@ def require_api_key(profile: AIProfile) -> str:
             f"档案 {profile.profile_id!r} 未配置 API Key。请在 AI Prompt Studio 设置面板填写。"
         )
     return key
+
+
+def try_api_key(profile: AIProfile) -> str:
+    """取档案密钥；缺失返回空串（供「有 API 增强、无 API 降级」的路径使用）。"""
+    return get_store().get_api_key(profile.profile_id) or ""

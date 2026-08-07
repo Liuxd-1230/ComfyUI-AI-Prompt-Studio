@@ -138,3 +138,15 @@
 - 视觉/文本 Profile 解耦：`AIProfile.vision_profile_id` 指向另一档案时，视觉分析使用该档案的 vision_* 配置与密钥；留空用本档案。文本生成始终用本档案 base_url/model。
 - Storyboard 消费 Manifest：character 类 Subject 补成 `[角色表（来自参考清单）]` 并沿用真实 subject_id；已有 CharacterBook 时以 book 为准不重复注入；其余资产/主体进 `[可用参考资产]`。
 - Prompt Skill 管理：内置（仓库 skills/，只读）+ 自定义（用户配置目录 skills/，可增删改/启停/复制内置）；字段白名单 + renderer/family 枚举校验 + hash 审计；新增 `/skills` 路由（list/get/create/update/delete/enabled）。
+
+## D24. 0.2.1 Hardening 关键决策（2026-08-07）
+
+- **ANIMA Safety 标签产品决策（补充 P0）**：官方 safety 标签全集 `safe/sensitive/nsfw/explicit`；`safe` 只是官方示例默认，不是所有 Prompt 的强制项。节点参数 `content_tier` 重新设计为 `safety_tag ∈ none/safe/sensitive/nsfw/explicit`，**默认 none = 不注入任何 Safety 标签**（Composer 不在用户未要求时给提示词增加内容语义）。旧工作流 `content_tier=safe/sensitive` 自动迁移到 `safety_tag`。三种 prompt_mode（natural/tags/hybrid）统一尊重；用户节点参数优先级 > Prompt Plan 建议 > 无标签（`none` 时即使 LLM Plan 输出 safe 也不插入）；Composer 只按用户选择渲染，不做内容审查、不自动改等级；Validator 只查格式（最多一个 safety 标签、位于官方 safety 段），`nsfw/explicit` 不是语法错误。
+- **职责解耦：只有 LLM 路径才 require_api_key**：Prompt Composer 的 audit / convert / generate(tags)（Python renderer 确定性路径）与 ANIMA audit 完全离线；H3 Director 的 audit 完全离线，`convert_storyboard` 支持无 API 的纯 Python 确定性转换（有 API 时 LLM 增强）。
+- **DeepSeek 结构化输出按协议判定**：Responses 路径 `structured_output_responses=True`（flash，官方 `text.format` 支持）→ 原生 `{"text":{"format":{"type":"json_schema",...}}}`；Chat 路径未文档化 json_schema → 提示词约束+解析修复。旧 `structured_output` 字段保留为协议级能力的聚合（设置面板展示）。
+- **Responses call_id 以模型返回为准**：SSE 参数 delta 按 `item_id` 累积，`call_id` 取 function_call 输出项的权威值；续轮 `function_call_output` 逐字沿用，绝不伪造 `call_N`。
+- **LM Studio v1 优先 + instance_id 卸载**：探测顺序 v1 → v0 → unavailable；unload 请求体 `{"instance_id": ...}`（用户只传 model 时从 load 响应或 `loaded_instances` 解析）。
+- **附件文档解析一致性（方案 A 实现）**：PDF/DOCX 在 Provider 无 file 能力时本地提取文本（pypdf/python-docx，可选依赖）→ `Attachment(kind=text)` + warning「已本地提取文本发送」；扫描件无文本层/非 PDF/DOCX/依赖缺失 → 明确报错，不 OCR、不假装识别。PPTX/XLSX 不在本轮（文档明确只支持 PDF/DOCX 本地提取）。
+- **多图身份判断增加一次 VLM 整体判断**：`batch_identity_check`（最多 6 张代表图；"Do these images show the same visual subject?"，只比较可观察身份特征，服装/背景/姿势为弱辅助）；VLM 失败回退 deterministic heuristic；身份判断提示词禁止以「衣服/背景/姿势相同」为主要依据。
+- **H3/Storyboard 原生 Structured Output**：`H3_SCHEMA` / `STORYBOARD_SCHEMA` 作为 `GenerateRequest.output_schema`（Provider 支持时走协议层，否则自动降级提示词约束），避免 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复。
+- **Schema.from_json 接受 JSON 字符串**：ComfyUI 自定义类型输入可能以 JSON 字符串到达（之前对 str 直接抛 SchemaError 导致自定义类型无法接线）；现在字符串先解析为 dict 再反序列化，保持输入容错。

@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-ai-prompt-studio"
-version = "0.2.0"
+version = "0.2.1"
 description = "AI Prompt Studio — LLM-powered prompt generation, character bible, storyboard, ANIMA and MiniMax H3 prompt director for ComfyUI."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -13,6 +13,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 vision = ["Pillow>=10.0", "numpy>=1.24"]   # 仅 Reference Analyzer 视觉分析需要
+doc-extract = ["pypdf>=4.0", "python-docx>=1.1"]   # 0.2.1：PDF/DOCX 附件本地文本提取
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -58,6 +58,50 @@ def test_natural_mode_dedupes_bible_traits_already_in_body():
     assert r.positive.count("long dark hair") == 1
 
 
+def test_natural_dedup_phrase_within_longer_sentence():
+    """0.2.1 P0-12：'long black hair' 应命中 'her long black hair'（词边界去重）。"""
+    bible = make_bible("A young woman", [
+        {"name": "hair", "value": "long black hair", "category": "stable", "locked": True}])
+    r = render_anima("Her long black hair flows in the wind.",
+                     bible=bible, prompt_mode="natural_language")
+    assert r.positive.count("long black hair") == 1
+
+
+def test_natural_dedup_partial_word_still_kept():
+    """0.2.1 P0-12：'hair' 不应命中 'long black hair'（避免过度删除）。"""
+    bible = make_bible("A young woman", [
+        {"name": "hair", "value": "hair", "category": "stable", "locked": True}])
+    r = render_anima("She has long black hair.",
+                     bible=bible, prompt_mode="natural_language")
+    # "hair" 是 'long black hair' 的子串但非词边界匹配 → 保留追加
+    assert "hair" in r.positive
+
+
+def test_multi_person_spec_scenario_binding():
+    """0.2.1 P0-12 §3：A(黑色短发/白色军装) + B(金色长发/黑色礼服)，A 牵 B 手，
+    不得产生 A 穿黑裙 / B 穿白色军装。"""
+    plan = AnimaPromptPlan(
+        characters=[
+            AnimaCharacter(character_id="char_01", name="A",
+                           description="A man with short black hair wearing a white "
+                                       "military uniform",
+                           action="holds B's hand", position="left"),
+            AnimaCharacter(character_id="char_02", name="B",
+                           description="A woman with long blonde hair wearing a black dress",
+                           position="right"),
+        ],
+        natural_body="A holds B's hand.")
+    r = render_anima_plan(plan, variant="base", prompt_mode="natural_language")
+    pos = r.positive
+    assert "short black hair" in pos
+    assert "white military uniform" in pos
+    assert "long blonde hair" in pos
+    assert "black dress" in pos
+    # 属性不得串位：黑色礼服绝不能出现在 A 的句子里
+    a_part, _, b_part = pos.partition("long blonde hair")
+    assert "black dress" not in a_part
+
+
 def test_build_anima_plan_separates_required_and_variable():
     bible = make_bible("少女", [
         {"name": "hair", "value": "black hair", "category": "stable", "locked": True},
@@ -170,6 +214,17 @@ def test_tags_mode_from_plan_control_tags():
                            visual_tags=["long_hair"],
                            artist_tags=["@big chungus"])
     r = render_anima_plan(plan, variant="base", prompt_mode="tags")
-    assert r.positive.startswith("masterpiece, best quality, score_7, safe, ")
+    # 0.2.1：Plan 里的 safety 标签不自动注入（只随用户 safety_tag），默认 none
+    assert r.positive.startswith("masterpiece, best quality, score_7, ")
+    assert "safe" not in r.positive
     assert "long hair" in r.positive  # 下划线规范化
     assert "@big chungus" in r.positive
+
+
+def test_tags_mode_user_safety_tag_wins():
+    plan = AnimaPromptPlan(control_tags=["score_7", "masterpiece"],
+                           character_tags=["1girl"])
+    r = render_anima_plan(plan, variant="base", prompt_mode="tags",
+                          safety_tag="nsfw")
+    assert "nsfw" in r.positive
+    assert "safe" not in r.positive

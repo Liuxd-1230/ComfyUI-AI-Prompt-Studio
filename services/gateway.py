@@ -122,12 +122,14 @@ class Gateway:
 
         protocol = self._select_protocol(profile)
 
-        # 结构化输出：能力允许（非 DeepSeek，caps.structured_output=True）→ 协议层 schema；
-        # 否则降级为提示词约束（DeepSeek 未文档化 json_schema，不发送该参数）
+        # 结构化输出（0.2.1 P0-3）：按「当前协议」判定原生支持——
+        # responses → caps.structured_output_responses；chat → structured_output_chat。
+        # 支持 → 协议层 schema（text.format / response_format json_schema）；
+        # 否则 → 提示词约束 + json_mode 兜底（DeepSeek Chat 未文档化 json_schema）。
         output_schema = req.output_schema
         caps = self.store.get_capabilities(profile.profile_id)
-        if output_schema and not (
-                profile.provider != "deepseek" and caps.get("structured_output") is True):
+        if output_schema and not capability_probe.supports_native_structured_output(
+                profile, caps, protocol):
             schema_text = json.dumps(output_schema, ensure_ascii=False)
             req.system = (req.system or "") + (
                 "\n\n[输出约束]\n必须输出合法的 JSON 对象，"

@@ -183,12 +183,15 @@ def test_web_search_offline_degraded_warns(store):
 # ------------------------------------------------------------------ 结构化输出
 
 def test_gateway_deepseek_schema_falls_back_to_prompt_constraint(store):
-    """DeepSeek 未文档化 json_schema → 不发送协议层 schema，改为提示词约束。"""
+    """DeepSeek Chat 未文档化 json_schema → 不发送协议层 schema，改为提示词约束。"""
     store.create_profile({"profile_id": "p1"})  # provider=deepseek
-    store.set_capabilities("p1", {"responses": True, "structured_output": False})
+    # chat 路径：structured_output_chat=False（Responses 虽支持，本协议不支持）
+    store.set_capabilities("p1", {"responses": False, "chat_completions": True,
+                                  "structured_output_responses": True,
+                                  "structured_output_chat": False})
     gw = Gateway(store=store)
-    r = FakeAdapter("responses")
-    gw._responses = r
+    r = FakeAdapter("chat")
+    gw._chat = r
     req = GenerateRequest(messages=[], output_schema={"type": "object"})
     gw.generate(store.get_profile("p1"), "k", req)
     assert r.calls
@@ -199,9 +202,11 @@ def test_gateway_deepseek_schema_falls_back_to_prompt_constraint(store):
 
 
 def test_gateway_openai_compatible_schema_reaches_adapter(store):
-    """OpenAI 兼容端点 + structured_output 能力 → 协议层 schema 透传。"""
+    """OpenAI 兼容端点 + 协议级 structured_output 能力 → 协议层 schema 透传。"""
     store.create_profile({"profile_id": "p1", "provider": "openai_compatible"})
-    store.set_capabilities("p1", {"responses": True, "structured_output": True})
+    store.set_capabilities("p1", {"responses": True, "chat_completions": True,
+                                  "structured_output_responses": True,
+                                  "structured_output_chat": True})
     gw = Gateway(store=store)
     r = FakeAdapter("responses")
     gw._responses = r
@@ -210,3 +215,68 @@ def test_gateway_openai_compatible_schema_reaches_adapter(store):
     kw = r.calls[0]
     assert kw["output_schema"] == {"type": "object"}
     assert "JSON Schema" not in req.system
+
+
+def test_gateway_openai_chat_structured_output_reaches_adapter(store):
+    """OpenAI 兼容 Chat 路径 + structured_output_chat → chat adapter 收到 schema。"""
+    store.create_profile({"profile_id": "p1", "provider": "openai_compatible"})
+    store.set_capabilities("p1", {"responses": False, "chat_completions": True,
+                                  "structured_output_responses": True,
+                                  "structured_output_chat": True})
+    gw = Gateway(store=store)
+    r = FakeAdapter("chat")
+    gw._chat = r
+    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    gw.generate(store.get_profile("p1"), "k", req)
+    kw = r.calls[0]
+    assert kw["output_schema"] == {"type": "object"}
+    assert "JSON Schema" not in req.system
+
+
+def test_deepseek_flash_responses_structured_output(store):
+    """0.2.1 P0-3：deepseek-v4-flash + Responses → 原生 text.format json_schema。"""
+    store.create_profile({"profile_id": "p1", "provider": "deepseek",
+                          "model": "deepseek-v4-flash"})
+    store.set_capabilities("p1", {"responses": True, "chat_completions": True,
+                                  "structured_output_responses": True,
+                                  "structured_output_chat": False})
+    gw = Gateway(store=store)
+    r = FakeAdapter("responses")
+    gw._responses = r
+    req = GenerateRequest(messages=[], output_schema={"type": "object",
+                                                     "properties": {}})
+    gw.generate(store.get_profile("p1"), "k", req)
+    kw = r.calls[0]
+    assert kw["output_schema"] == {"type": "object", "properties": {}}
+    assert "JSON Schema" not in req.system
+
+
+def test_deepseek_chat_schema_fallback(store):
+    """0.2.1 P0-3：deepseek chat_completions 未文档化 json_schema → 提示词约束。"""
+    store.create_profile({"profile_id": "p1", "provider": "deepseek",
+                          "model": "deepseek-v4-flash"})
+    store.set_capabilities("p1", {"responses": False, "chat_completions": True,
+                                  "structured_output_responses": True,
+                                  "structured_output_chat": False})
+    gw = Gateway(store=store)
+    r = FakeAdapter("chat")
+    gw._chat = r
+    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    gw.generate(store.get_profile("p1"), "k", req)
+    kw = r.calls[0]
+    assert "output_schema" not in kw or kw.get("output_schema") is None
+    assert "JSON Schema" in req.system
+
+
+def test_generic_openai_structured_output(store):
+    """0.2.1 P0-3：通用 OpenAI 兼容端点在两个协议都走原生 schema。"""
+    store.create_profile({"profile_id": "p1", "provider": "openai_compatible"})
+    store.set_capabilities("p1", {"responses": True, "chat_completions": True,
+                                  "structured_output_responses": True,
+                                  "structured_output_chat": True})
+    gw = Gateway(store=store)
+    r = FakeAdapter("responses")
+    gw._responses = r
+    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    gw.generate(store.get_profile("p1"), "k", req)
+    assert r.calls[0]["output_schema"] == {"type": "object"}

@@ -94,19 +94,82 @@ def test_lmstudio_v1_load(monkeypatch):
 
     def responder(m, u, **k):
         calls.append(u)
-        # 第一次探测 /api/v0/models 返回 404 → v1
-        if u.endswith("/api/v0/models"):
-            return FakeResp(404, text="not found")
+        # v1 优先：/api/v1/models 可达 → v1
+        if u.endswith("/api/v1/models/load"):
+            return FakeResp(200, {"instance_id": "inst-1", "status": "loaded"})
         return FakeResp(200, {})
 
     make_request_fake(monkeypatch, responder=responder)
     res = create_backend("lmstudio").load("m1")
     assert res["ok"] is True
+    assert res.get("instance_id") == "inst-1"
     assert any(u.endswith("/api/v1/models/load") for u in calls)
+    # v0 不应被探测（v1 优先，官方推荐）
+    assert not any(u.endswith("/api/v0/models") for u in calls)
+
+
+def test_lmstudio_v1_probe_prefers_v1(monkeypatch):
+    calls = []
+
+    def responder(m, u, **k):
+        calls.append(u)
+        if u.endswith("/api/v1/models"):
+            return FakeResp(200, {"models": [{"id": "m1"}]})
+        if u.endswith("/api/v0/models"):
+            return FakeResp(200, {"data": [{"id": "m0"}]})
+        return FakeResp(200, {})
+
+    make_request_fake(monkeypatch, responder=responder)
+    backend = create_backend("lmstudio")
+    st = backend.status()
+    assert st["version"] == "v1"
+    assert st["models"] == ["m1"]  # v1 顶层是 models 键（v0 才是 data 键）
+    assert calls[0].endswith("/api/v1/models")
+
+
+def test_lmstudio_v1_unload_uses_instance_id(monkeypatch):
+    calls = []
+
+    def responder(m, u, **k):
+        calls.append({"u": u, "j": k.get("json")})
+        if u.endswith("/api/v1/models/load"):
+            return FakeResp(200, {"instance_id": "inst-9", "status": "loaded"})
+        return FakeResp(200, {})
+
+    make_request_fake(monkeypatch, responder=responder)
+    backend = create_backend("lmstudio")
+    backend.load("m1")
+    res = backend.unload("m1")
+    assert res["ok"] is True
+    unload_call = next(c for c in calls if c["u"].endswith("/api/v1/models/unload"))
+    # 官方 unload 请求体是 {"instance_id": ...}，不是 {"model": ...}
+    assert unload_call["j"] == {"instance_id": "inst-9"}
+
+
+def test_lmstudio_v1_unload_falls_back_to_loaded_instances(monkeypatch):
+    calls = []
+
+    def responder(m, u, **k):
+        calls.append({"u": u, "j": k.get("json")})
+        if u.endswith("/api/v1/models"):
+            return FakeResp(200, {"models": [{
+                "id": "m1",
+                "loaded_instances": [{"id": "m1", "config": {}}]}]})
+        return FakeResp(200, {})
+
+    make_request_fake(monkeypatch, responder=responder)
+    backend = create_backend("lmstudio")
+    # 用户只传 model：从已加载实例列表找 instance_id（loaded_instances[].id）
+    res = backend.unload("m1")
+    assert res["ok"] is True
+    unload_call = next(c for c in calls if c["u"].endswith("/api/v1/models/unload"))
+    assert unload_call["j"] == {"instance_id": "m1"}
 
 
 def test_lmstudio_v0_readonly(monkeypatch):
     def responder(m, u, **k):
+        if u.endswith("/api/v1/models"):
+            return FakeResp(404, text="not found")
         if u.endswith("/api/v0/models"):
             return FakeResp(200, {"data": [{"id": "m1"}]})
         return FakeResp(200, {})

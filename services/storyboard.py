@@ -9,6 +9,43 @@ from ..schemas.character import CharacterBible
 from ..schemas.storyboard import Beat, ContinuityNote, Scene, Shot, Storyboard
 from .reference import extract_json_object
 
+# 0.2.1 P1-17：分镜输出的原生 Structured Output JSON Schema。
+# Provider 支持 → output_schema 走协议层；不支持 → 提示词模板兜底。
+STORYBOARD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "title": {"type": "string"},
+        "characters": {"type": "array", "items": {"type": "string"},
+                       "description": "沿用角色表已有 character_id（如 char_01）；新人物才新建"},
+        "scenes": {"type": "array", "items": {"type": "object",
+            "properties": {
+                "scene_id": {"type": "string"},
+                "title": {"type": "string"},
+                "location": {"type": "string"},
+                "synopsis": {"type": "string"},
+                "characters": {"type": "array", "items": {"type": "string"}},
+                "shots": {"type": "array", "items": {"type": "object",
+                    "properties": {
+                        "shot_id": {"type": "string"},
+                        "summary": {"type": "string"},
+                        "action": {"type": "string"},
+                        "camera": {"type": "string"},
+                        "duration": {"type": "number"},
+                        "characters": {"type": "array", "items": {"type": "string"}},
+                        "beats": {"type": "array", "items": {"type": "object",
+                            "properties": {"text": {"type": "string"},
+                                           "kind": {"type": "string"},
+                                           "characters": {"type": "array",
+                                                          "items": {"type": "string"}}},
+                            "required": ["text"]}},
+                    },
+                    "required": ["shot_id"]}},
+            },
+            "required": ["scene_id", "shots"]}},
+    },
+    "required": ["title", "characters", "scenes"],
+}
+
 
 def build_storyboard_prompt(
     story_text: str,
@@ -65,14 +102,17 @@ def build_storyboard_prompt(
         f"[拆分要求] {split_desc}；目标时长约 {target_duration or 10.0}s；"
         f"最多 {max_scenes} 个场景。\n"
         f"[风格] {style or '未指定'}{context}\n"
-        "[人物] 用简短字符 ID 标记人物（如 c1/c2），保持同一人物 ID 全篇一致；"
+        "[人物] 用简短字符 ID 标记人物；如果提供了角色表（CharacterBook / 参考清单），"
+        "必须逐字沿用其中的 character_id（如 char_01/char_02），禁止自行发明新 ID "
+        "（如 c1/c2）；仅当输入中出现角色表里没有的新人物时，才创建新 ID 并在 "
+        "characters 数组里声明。保持同一人物 ID 全篇一致；"
         "动作必须绑定到具体人物，不要把某人的动作/服装写到别人身上；"
         "对白与动作分开字段；camera 描述可为空，不确定就不要编造。\n"
         "[连续性] 连续镜头之间保持服装、位置、道具状态一致。\n"
         "[JSON 结构]\n"
         '{\n'
         '  "title": string,\n'
-        '  "characters": ["c1", ...],\n'
+        '  "characters": ["char_01", "char_02"],\n'
         '  "scenes": [{\n'
         '    "scene_id": string, "title": string, "location": string, '
         '"synopsis": string, "characters": [ids],\n'

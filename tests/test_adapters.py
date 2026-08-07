@@ -122,6 +122,90 @@ def test_responses_function_tool_call(monkeypatch):
     assert '"q"' in result.tool_calls[0].arguments
 
 
+def test_responses_function_call_preserves_call_id(monkeypatch):
+    """0.2.1 P0-7：流式 function_call_arguments.delta 用 item_id 关联，
+    call_id 从 output_item.done 的 function_call 项取权威值。"""
+    events = [
+        {"type": "response.function_call_arguments.delta",
+         "item_id": "fc_001", "delta": "{\"city\":"},
+        {"type": "response.function_call_arguments.delta",
+         "item_id": "fc_001", "delta": "\"Paris\"}"},
+        {"type": "response.output_item.done",
+         "item": {"type": "function_call", "id": "fc_001",
+                  "call_id": "call_abc123", "name": "search",
+                  "arguments": "{\"city\": \"Paris\"}", "status": "completed"}},
+    ]
+    make_post_fake(monkeypatch, lines=sse(events))
+    result = ResponsesAdapter().generate(profile(), "sk", system="",
+                                         messages=[], web_search=False,
+                                         reasoning="off", max_tokens=100,
+                                         temperature=1.0)
+    assert len(result.tool_calls) == 1
+    tc = result.tool_calls[0]
+    assert tc.id == "call_abc123"          # 模型真实 call_id，不是 call_0
+    assert tc.name == "search"
+    assert tc.arguments == '{"city": "Paris"}'
+
+
+def test_responses_multiple_tool_calls(monkeypatch):
+    """0.2.1 P0-7：并行多个 function call 的 call_id 与参数互不串扰。"""
+    events = [
+        {"type": "response.function_call_arguments.delta",
+         "item_id": "fc_a", "delta": "{\"q\":"},
+        {"type": "response.function_call_arguments.delta",
+         "item_id": "fc_b", "delta": "{\"page\":"},
+        {"type": "response.function_call_arguments.delta",
+         "item_id": "fc_a", "delta": "\"alpha\"}"},
+        {"type": "response.function_call_arguments.delta",
+         "item_id": "fc_b", "delta": "2}"},
+        {"type": "response.output_item.done",
+         "item": {"type": "function_call", "id": "fc_a", "call_id": "call_1",
+                  "name": "search_a", "arguments": "{\"q\": \"alpha\"}"}},
+        {"type": "response.output_item.done",
+         "item": {"type": "function_call", "id": "fc_b", "call_id": "call_2",
+                  "name": "search_b", "arguments": "{\"page\": 2}"}},
+    ]
+    make_post_fake(monkeypatch, lines=sse(events))
+    result = ResponsesAdapter().generate(profile(), "sk", system="",
+                                         messages=[], web_search=False,
+                                         reasoning="off", max_tokens=100,
+                                         temperature=1.0)
+    assert len(result.tool_calls) == 2
+    by_name = {t.name: t for t in result.tool_calls}
+    assert by_name["search_a"].id == "call_1"
+    assert by_name["search_a"].arguments == '{"q": "alpha"}'
+    assert by_name["search_b"].id == "call_2"
+    assert by_name["search_b"].arguments == '{"page": 2}'
+
+
+def test_responses_tool_result_uses_original_call_id(monkeypatch):
+    """0.2.1 P0-7：续轮 function_call_output 必须逐字沿用模型返回的 call_id。"""
+    from aps.schemas.results import ToolCall
+
+    calls = make_post_fake(monkeypatch, lines=sse([]))
+    msgs = [
+        ChatMessage(role="user", content="帮我搜一下"),
+        ChatMessage(role="assistant", content="",
+                    tool_calls=[ToolCall(id="call_zzz99", name="search",
+                                         arguments='{"q": "x"}')]),
+        ChatMessage(role="tool", content='{"ok": true}', tool_call_id="call_zzz99"),
+    ]
+    ResponsesAdapter().generate(profile(), "sk", system="", messages=msgs,
+                                web_search=False, reasoning="off",
+                                max_tokens=100, temperature=1.0)
+    body = calls[0]["json"]
+    output_items = body["input"]
+    # 助手消息的 function_call 嵌套在 assistant 项的 output 数组里
+    func_items = [o for i in output_items if i.get("role") == "assistant"
+                  for o in i.get("output") or []
+                  if o.get("type") == "function_call"]
+    assert func_items and func_items[0]["call_id"] == "call_zzz99"
+    # 工具结果用同一个 call_id
+    out_items = [i for i in output_items if i.get("type") == "function_call_output"]
+    assert out_items and out_items[0]["call_id"] == "call_zzz99"
+    assert out_items[0]["output"] == '{"ok": true}'
+
+
 def test_responses_messages_input_mapping(monkeypatch):
     calls = make_post_fake(monkeypatch, lines=sse([]))
     msgs = [ChatMessage(role="user", content="hi"),

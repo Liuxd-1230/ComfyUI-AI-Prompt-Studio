@@ -19,6 +19,7 @@ from ..schemas.storyboard import Storyboard
 from ..renderers.minimax_h3 import render_h3
 from ..services.gateway import Gateway, GenerateRequest
 from ..services.h3_plan import (
+    H3_SCHEMA,
     H3_SYSTEM_PROMPT,
     build_plan_prompt,
     convert_storyboard,
@@ -27,7 +28,7 @@ from ..services.h3_plan import (
     parse_plan_json,
 )
 from ..validators.minimax_h3 import r2v_english_issue, validate_h3
-from ._helpers import require_api_key, resolve_profile
+from ._helpers import require_api_key, resolve_profile, try_api_key
 
 # 模式资产约束：T2VA=0；I2VA=1（首帧）；FL2VA=2（首尾）；L2VA=1（尾帧）；R2V 不限
 MODE_IMAGE_REQUIREMENTS = {"I2VA": 1, "FL2VA": 2, "L2VA": 1}
@@ -69,7 +70,6 @@ class APS_MiniMaxH3Director:
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
         prof = resolve_profile(profile.profile_id)
-        api_key = require_api_key(prof)
 
         manifest = (ReferenceManifest.from_json(reference_manifest)
                     if reference_manifest else ReferenceManifest())
@@ -80,7 +80,7 @@ class APS_MiniMaxH3Director:
         sb = Storyboard.from_json(storyboard) if storyboard else None
         img_count = _count_images(images)
 
-        # ------------------------------------------------------------ audit
+        # ------------------------------------------------------------ audit（完全离线，0.2.1）
         if operation == "audit":
             if not text or not text.strip():
                 raise ValueError("audit 需要把已有 H3 提示词输入到 text")
@@ -102,21 +102,44 @@ class APS_MiniMaxH3Director:
                 raise ValueError("repair 需要把已有提示词输入到 text")
             repair_issues = validate_h3(text, mode).as_text()
 
+        # 职责解耦（0.2.1）：LLM 路径才要求 API Key。
+        # convert_storyboard 支持纯 Python 确定性转换（无 API 也可用；有 API 时
+        # LLM 增强内容决策）；generate/rewrite/repair 必须有 API。
+        api_key = ""
+        needs_llm = operation != "convert_storyboard"
+        if needs_llm:
+            api_key = require_api_key(prof)
+        else:
+            api_key = try_api_key(prof)
+            if api_key:
+                needs_llm = True  # 有 API：走 LLM 计划（可增强）
+
         # ------------------------------------------------------------ LLM 计划
-        prompt = build_plan_prompt(
-            text.strip() if text else "", mode, float(duration or 1.0),
-            storyboard=sb, bible=bible, book=book, manifest=manifest,
-            image_count=img_count, repair_issues=repair_issues)
-        req = GenerateRequest(
-            system=H3_SYSTEM_PROMPT,
-            messages=[_msg(prompt)], web_search="off", reasoning="high",
-            max_tokens=8192, timeout=prof.timeout)
-        result = Gateway().generate(prof, api_key, req)
-        if result.has_error():
-            raise ValueError(result.error.as_text)
+        if needs_llm:
+            prompt = build_plan_prompt(
+                text.strip() if text else "", mode, float(duration or 1.0),
+                storyboard=sb, bible=bible, book=book, manifest=manifest,
+                image_count=img_count, repair_issues=repair_issues)
+            req = GenerateRequest(
+                system=H3_SYSTEM_PROMPT,
+                messages=[_msg(prompt)], web_search="off", reasoning="high",
+                max_tokens=8192, timeout=prof.timeout,
+                # 0.2.1 P1-17：Provider 支持原生 Structured Output → 协议层 schema；
+                # 不支持时 Gateway 自动降级为提示词约束（与 build_plan_prompt 的 JSON 模板一致）
+                output_schema=H3_SCHEMA)
+            result = Gateway().generate(prof, api_key, req)
+            if result.has_error():
+                raise ValueError(result.error.as_text)
+        else:
+            # 无 API：确定性分镜转换（画面描述沿用分镜文本，不调用 LLM，不伪造）
+            result = None
 
         # ------------------------------------------------------------ 解析/回退
-        plan = self._parse_plan(result.text, sb, mode, duration, manifest, book)
+        if result is not None:
+            plan = self._parse_plan(result.text, sb, mode, duration, manifest, book)
+        else:
+            plan = convert_storyboard(sb, mode, float(duration or 1.0), manifest, book)
+            plan.warnings.append("无 API Key：已使用确定性分镜转换（有 API 时可获得更丰富的画面/声音描述）")
         if sb is not None and operation == "convert_storyboard":
             plan.storyboard_id = sb.story_id
 
@@ -131,8 +154,11 @@ class APS_MiniMaxH3Director:
         self._apply_mode_asset_errors(report, mode, img_count)
 
         # ------------------------------------------------------------ 一次自动修复
-        if auto_repair and not report.valid or (auto_repair and mode == "R2V"
-                                                and r2v_english_issue(rendered)):
+        # 无 API（确定性转换路径）不尝试 LLM 修复：确定性格式修正已由
+        # normalize_media_labels/render 完成，语义问题保留在报告里（不伪造）。
+        if (needs_llm and auto_repair and not report.valid) or (
+                needs_llm and auto_repair and mode == "R2V"
+                and r2v_english_issue(rendered)):
             fixed = self._repair_once(prof, api_key, text, mode, duration, report,
                                       sb, bible, book, manifest, img_count)
             if fixed is not None:
@@ -174,7 +200,8 @@ class APS_MiniMaxH3Director:
             system=H3_SYSTEM_PROMPT + "\nFix only the reported issues. "
                    "Preserve all unrelated details, structure, and the user's concept.",
             messages=[_msg(prompt)], web_search="off", reasoning="medium",
-            max_tokens=8192, timeout=prof.timeout)
+            max_tokens=8192, timeout=prof.timeout,
+            output_schema=H3_SCHEMA)
         result = Gateway().generate(prof, api_key, req)
         if result.has_error():
             return None

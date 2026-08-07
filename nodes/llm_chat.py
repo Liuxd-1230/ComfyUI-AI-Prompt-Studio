@@ -73,14 +73,18 @@ class APS_LLMGenerate:
 
         # ---- 附件：ATTACHMENT_LIST + 本机文件路径（安全解析；内容不进日志）----
         att_list = []
+        file_warnings: List[str] = []
         if attachments:
-            from ..schemas.attachments import AttachmentList
+            from ..schemas.attachments import Attachment, AttachmentList
             from ..schemas import types as _types
             cls = _types.schema_class_for(_types.ATTACHMENT_LIST) or AttachmentList
             if isinstance(attachments, str):
-                att_list = cls.from_json(attachments).attachments
+                att_list = list(cls.from_json(attachments).attachments)
             elif hasattr(attachments, "attachments"):
                 att_list = list(attachments.attachments)
+            # 容错：个别元素可能是 dict（coerce 未深构）→ 归一化为 Attachment
+            att_list = [a if isinstance(a, Attachment)
+                        else Attachment.from_json(a) for a in att_list]
         if attachment_files and attachment_files.strip():
             from ..services import attachments as att_svc
             file_att, file_warnings = att_svc.load_path_attachments(
@@ -89,7 +93,6 @@ class APS_LLMGenerate:
         att_problems = [p for a in att_list for p in a.validate()]
         if att_problems:
             raise ValueError("附件校验失败：" + "；".join(att_problems[:5]))
-
         # 内部守则 + 用户 system_prompt 合并（内部在前优先，用户指令不丢弃）
         user_system = system_prompt or "You are a helpful assistant."
         system = f"{INTERNAL_SYSTEM_PROMPT}\n\n{user_system}"
@@ -158,7 +161,7 @@ class APS_LLMGenerate:
         sess.total_usage = _add_usage(sess.total_usage, result.usage)
 
         # JSON 输出校验
-        warnings = list(result.warnings) + schema_warnings
+        warnings = list(file_warnings) + list(result.warnings) + schema_warnings
         if json_mode and result.text.strip():
             try:
                 json.loads(result.text)

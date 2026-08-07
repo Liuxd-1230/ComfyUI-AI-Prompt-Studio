@@ -94,3 +94,13 @@ PromptBuilder）在三字段/六段格式上完全收敛**——本扩展的 H3 
 
 **结论**：本扩展的提示词内容均为原创撰写（或依官方手册表述），结构上借鉴了公开项目的组织思想；
 GPL/受限项目仅用于对照学习，未复制任何文本或代码（docs/licenses-and-sources.md 记录许可边界）。
+
+## 7. 0.2.1 补充核实（2026-08-07）
+
+- **H3 retention markers**：上表 §5 的视觉/音频两套标记已对照 `docs/sources/minimax_h3_r2v手册.html`
+  逐条核实——视觉 `fully_preserved / partially_preserved / attribute_transfer / weak_reference`，
+  音频 `fully_copy / partially_copy / reference / weak_reference`（「weak_reference」表示仅保留大体相似度/风格氛围）。
+  校验器（validators/minimax_h3.py）按资产类型检查对应集合。
+- **ANIMA safety 标签**：官方卡片 §3 的 safety 段为标签全集 `safe / sensitive / nsfw / explicit`，
+  `safe` 是官方示例前缀的一部分而非强制项；0.2.1 起 Composer 默认不注入（safety_tag=none），
+  详见 docs/research.md §8.5 与 docs/decisions.md D24。

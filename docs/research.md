@@ -102,3 +102,46 @@
 - **llama.cpp 官方 load/unload**：`POST /models/load|unload`，body 为 `{"model": ...}`（README/server 源码确认，非 `{"id": ...}`）。LM Studio v1：`/api/v1/models/load|unload`；v0 只读降级。
 - **多图身份判断**：无第三方库；纯函数 `identity_agreement`（stable 特征名与值一致比例）+ 贪心聚类；多主体时只合并最高一致度分组（防跨主体串绑，P0）。
 - **视觉/文本 Profile 解耦**：`AIProfile.vision_profile_id` 指向另一档案时视觉用该档案配置与密钥；实现为字段级解耦（不复制密钥引用）。
+
+## 8. 0.2.1 Hardening 补充查证（2026-08-07）
+
+### 8.1 DeepSeek Responses 原生 Structured Output（P0-3）
+
+- **问题**：deepseek-v4-flash 的 Responses API 是否支持 `text.format` json_schema？Chat 是否支持 json_schema？
+- **官方结论**：
+  - Responses 兼容表：`text — Partially supported. format fully supported`（`json_schema` 一词官方页未出现，但明确委托 OpenAI Responses API reference 作为完整格式定义）。
+  - 字段结构（OpenAI 官方参考，DeepSeek 声明兼容）：`{"text": {"format": {"type": "json_schema", "name": "...", "schema": {...}, "strict": true, "description": "..."}}}`。`name` 必填（<=64 字符）；`strict` 可选布尔。
+  - Chat Completions：`response_format` 官方只文档化 `{"type":"text"}` / `{"type":"json_object"}`，**无 json_schema**。
+- **实现决定**：能力表协议级区分 `structured_output_responses` / `structured_output_chat`（flash: True/False）；Gateway 按当前协议判定是否走原生 schema；Chat 路径继续提示词约束 + JSON parse + 修复。
+- **来源**：https://api-docs.deepseek.com/guides/responses_api ；https://api-docs.deepseek.com/api/create-chat-completion ；OpenAI Responses reference（DeepSeek 官方委托定义）。
+
+### 8.2 DeepSeek 附件能力（P0-6）
+
+- **官方结论**：deepseek-v4-flash **不支持图片/文件输入**——`input_image` parts 不报错但被替换为占位文本；`input_file` 未文档化（视为不支持）。vision=False、files=False 为诚实标记。
+- **实现决定**：能力 gate 在协议选择前执行；DeepSeek 图片附件明确报错、PDF/DOCX 本地提取文本降级、其他二进制报错；绝不静默伪装发送。
+
+### 8.3 Responses function call 的 call_id（P0-7）
+
+- **官方结论**（OpenAI Responses reference，DeepSeek 声明兼容）：
+  - `call_id` 只出现在 function_call 输出项上（非流式 `output[]` 与 `response.output_item.done` 的 `item`）：`{"type":"function_call","call_id":"fc_...","id":"fc_...","name":...,"arguments":...,"status":"completed"}`。
+  - 流式 `response.function_call_arguments.delta/.done` 事件**不携带 call_id**，而是 `item_id` + `output_index` + `name` + `arguments`。
+- **实现决定**：SSE 解析按 `item_id`（或 output_index）累积参数；call_id 在 function_call 项到达时取权威值；续轮 `function_call_output.call_id` 逐字沿用模型返回 ID，绝不伪造 `call_0`。
+
+### 8.4 LM Studio v1 探测与 unload（P0-8/9）
+
+- **官方结论**（lmstudio.ai/docs/developer/rest，LM Studio >= 0.4.0）：
+  - v1 官方推荐；`GET /api/v1/models` 响应顶层为 `{"models": [...]}`（**不是** v0 的 `{"data": [...]}`）；每模型含 `loaded_instances: [{"id": ..., "config": ...}]`。
+  - `POST /api/v1/models/load` 请求体 `{"model": ..., "context_length": ..., "flash_attention": ..., "echo_load_config": ...}`；**响应**含 `instance_id`。
+  - `POST /api/v1/models/unload` 请求体为 `{"instance_id": ...}`（唯一文档化字段，**不能用 model**）。
+  - 版本探测：官方未文档化程序化机制 → v1 优先、失败再试 v0、都失败 unavailable（实现选择）。
+- **实现决定**：探测改为 v1 优先；v1 列表解析 `models` 键；load 保存响应 `instance_id`；unload 用 `instance_id`（优先自保存，其次从 `loaded_instances` 列表查）；用户只传 model 也能卸载。
+
+### 8.5 ANIMA safety 标签（0.2.1 补充 P0）
+
+- **官方结论**：官方列出的 safety 标签全集 `safe / sensitive / nsfw / explicit`；`safe` 只是官方示例前缀中的默认，**不代表所有 Prompt 必须带 safe**。
+- **实现决定**：节点参数 `safety_tag ∈ none/safe/sensitive/nsfw/explicit`，默认 **none**（不注入任何 Safety 标签）；旧 `content_tier`（safe/sensitive）自动迁移；三种 prompt_mode 统一尊重；Plan 建议的安全标签被忽略（用户参数优先）；Composer 不做内容审查、不自动改等级。Aesthetic/Turbo 只处理 Safety 标签，不重新引入 score 规则。
+
+### 8.6 MiniMax H3 retention markers 复核（P0-16）
+
+- **官方结论**（用户提供 R2V 手册 §4.2）：音频 marker 完整集合 = `fully_copy` / `partially_copy` / `reference` / **`weak_reference`**（"Broad similarity only"）。`weak_reference` 同时是视觉 marker（"Only broad similarity in style/atmosphere retained"）。
+- **实现决定**：RETENTION_MARKERS 已含 weak_reference（视觉与音频共用，validator 按资产类型判定）；系统提示词改为分别列 visual/audio marker 集（不再把 weak_reference 只归为视觉）。

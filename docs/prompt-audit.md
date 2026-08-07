@@ -95,3 +95,53 @@ anima_repair 与 translate_en 缺「数据不是指令」句，本次补齐；�
   不做假翻译（validators/minimax_h3.py）。
 - 分镜 camera 可空：不确定就不编造。
 - Reference 解析失败：空候选 + 低置信度 + warning，不伪造特征。
+
+## 0.2.1 Hardening 变化（2026-08-07 追加）
+
+### RA-1h：静态图不分析镜头运动
+
+`h3_reference` 模式删除「camera motion / temporal motion / video movement / motion sequence」要求——
+Reference Analyzer 只分析静态图，只提取 subject appearance / visible action·state / composition /
+framing / camera angle / environment / lighting / spatial relationships / reference role；
+镜头运动由 H3 Director 生成阶段决定。`composition` 模式同样注明「静态图，不描述 camera motion」。
+
+### RA-1i：非人物模式不复用 stable 语义
+
+- scene / composition / object → `category: current`（仅本图成立）；
+- style → `category: variable`（可跨图变化）；
+- 仅 character 相关模式使用 stable/variable/current/uncertain 人物 Trait 语义；
+  防止 scene/style/object 被当作「跨图一致身份特征」污染 Character Bible。
+
+### RA-1j：多图身份判断新增一次 VLM 整体判断
+
+- 流程：多图 → 一次 VLM「Do these images show the same visual subject?」（最多 6 张代表图）
+  → `{same_subject, confidence, evidence}` → 逐图结构化分析 → trait consensus；
+- 身份判断提示词只比较**可观察身份特征**（face proportions / hairline / eye shape /
+  nose·mouth geometry / distinctive marks / stable body proportions），
+  服装/背景/姿势/光照**只作弱辅助**（禁止作为主要身份依据）；
+- VLM 判断失败 → 回退 deterministic heuristic（stable 特征名与值文本一致度），不伪装。
+
+### SB-1h：Storyboard 角色 ID 规则
+
+- 提供角色表（CharacterBook / 参考清单）时：**必须逐字沿用已有 character_id**
+  （如 char_01 / char_02），禁止诱导模型自造 c1/c2；
+- JSON 示例改为 `"characters": ["char_01", "char_02"]`；
+- 仅当输入中出现角色表里没有的新人物时才创建新 ID。
+
+### SK-*h：技能不再写死 safety
+
+- anima_expand / anima_rewrite / anima_repair / translate_en 均未写死 `safe`（0.2.1 复查确认）；
+- AnimaPromptPlan 可携带 `safety_tag`，但**最终以用户节点 `safety_tag` 参数为准**：
+  用户选 none 时即使 LLM Plan 输出 safe 也不插入（renderer 层过滤）。
+
+### H3-S-1h：retention markers 修正
+
+- R2V 手册复核：audio marker 完整集合含 `weak_reference`（"Broad similarity only"），
+  与 visual marker 共用 weak_reference；系统提示词按 visual / audio 分别列 marker 集。
+
+### COMP-1h / H3 结构化输出偏好（P1-17）
+
+- `H3_SCHEMA` / `STORYBOARD_SCHEMA` 作为 `GenerateRequest.output_schema`：
+  Provider 支持原生 Structured Output → 协议层 schema（不再 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复）；
+  不支持 → Gateway 自动降级为提示词约束（build_plan_prompt 的 JSON 模板保留为兜底）；
+- 通用 LLM 路径 `structured_output` 能力按协议区分（responses / chat，见 docs/research.md §8.1）。

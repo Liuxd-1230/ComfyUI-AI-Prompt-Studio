@@ -13,6 +13,7 @@ from ..schemas.profile import AIProfile
 from ..schemas.storyboard import SPLIT_MODES, Storyboard
 from ..services.gateway import Gateway, GenerateRequest
 from ..services.storyboard import (
+    STORYBOARD_SCHEMA,
     build_continuity,
     build_storyboard_prompt,
     parse_storyboard_json,
@@ -73,7 +74,9 @@ class APS_StoryboardBuilder:
             system="You are a professional storyboard artist. Output only JSON.",
             messages=[_msg(prompt)],
             web_search="off", reasoning="high", max_tokens=8192,
-            timeout=prof.timeout)
+            timeout=prof.timeout,
+            # 0.2.1 P1-17：原生 Structured Output（Provider 支持时）；否则提示词约束兜底
+            output_schema=STORYBOARD_SCHEMA)
         result = Gateway().generate(prof, api_key, req)
         if result.has_error():
             raise ValueError(result.error.as_text)

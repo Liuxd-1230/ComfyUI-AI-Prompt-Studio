@@ -2,12 +2,13 @@
 
 安全（§32）：路径必须解析在受控输入目录内（拒绝 .. 逃逸 / 绝对路径绕过）；
 内容不写日志；大小上限；附件生命周期短（文本/图片直接内联，无临时文件遗留）。
-降级规则（产品决策 D20）：
+降级规则（产品决策 D20；0.2.1 补充）：
 - 文本附件：任何协议直接作为文本内容发送，无需能力；
 - 图片附件：主模型必须支持视觉（caps.vision 或档案 supports_vision），否则**报错**，
   绝不静默丢弃伪装成功；
 - 文件附件：支持文件发送（caps.files 或档案 supports_files）→ 发送文件内容部分；
-  否则本地提取文本成功 → 文本降级 + warning；提取失败 → 报错。
+  否则 PDF/DOCX → 本地轻量提取文本（pypdf/python-docx，可选依赖）→ 文本降级 + warning；
+  提取失败（扫描件无文本层/依赖缺失/其他二进制）→ 报错，绝不假装识别。
 """
 from __future__ import annotations
 
@@ -27,6 +28,8 @@ from ..schemas.attachments import (
 _TEXT_EXTENSIONS = {".txt", ".md", ".json", ".csv", ".yml", ".yaml", ".log",
                     ".srt", ".vtt", ".xml", ".py", ".js", ".ts", ".html", ".css"}
 _IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".avif"}
+# 可本地提取文本的文档类型（0.2.1：Provider 无文件能力时的降级路径）
+_DOC_EXTENSIONS = {".pdf", ".docx"}
 
 
 def default_input_dir() -> Optional[str]:
@@ -101,6 +104,76 @@ def _read_attachment(path: Path) -> Attachment:
                                   mime_type=mime or "application/octet-stream")
 
 
+def _document_extractable(name: str, mime_type: str) -> bool:
+    """判断该附件是否为可本地提取文本的文档（PDF/DOCX）。"""
+    mime = (mime_type or "").lower()
+    if mime in ("application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"):
+        return True
+    ext = (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
+    return ext in (".pdf", ".docx")
+
+
+def _extract_text_from_payload(att: Attachment) -> str:
+    """从附件 base64 载荷中本地提取文本（PDF/DOCX）。
+
+    不 OCR：扫描 PDF 没有文本层时返回空串（由调用方明确报错）。
+    依赖 pypdf / python-docx 为可选；未安装时抛 ImportError（调用方转为可读错误）。
+    """
+    payload = att.content or ""
+    if att.is_data_uri and "," in payload:
+        payload = payload.split(",", 1)[1]
+    try:
+        raw = base64.b64decode(payload)
+    except Exception:  # noqa: BLE001 - 非法 base64
+        return ""
+    from io import BytesIO
+
+    name = att.name or ""
+    if name.lower().endswith(".pdf"):
+        from pypdf import PdfReader  # noqa: PLC0415 - 可选依赖，延迟导入
+
+        reader = PdfReader(BytesIO(raw))
+        return "\n".join((page.extract_text() or "") for page in reader.pages)
+    if name.lower().endswith(".docx"):
+        import docx  # noqa: PLC0415 - 可选依赖，延迟导入
+
+        document = docx.Document(BytesIO(raw))
+        parts = [p.text for p in document.paragraphs]
+        for table in document.tables:
+            for row in table.rows:
+                parts.append(" | ".join(cell.text for cell in row.cells))
+        return "\n".join(parts)
+    return ""
+
+
+def local_extract_document(att: Attachment) -> Optional[Tuple[Attachment, str]]:
+    """Provider 无文件能力时：把 PDF/DOCX 本地提取为文本附件。
+
+    返回 (文本附件, 附加说明) 或 None（无法提取：非文档/扫描件无文本层/依赖缺失）。
+    提取文本超 MAX_TEXT_BYTES 时截断并在说明中明确标注（不静默丢弃）。
+    """
+    if not _document_extractable(att.name, att.mime_type):
+        return None
+    try:
+        text = _extract_text_from_payload(att)
+    except ImportError as exc:
+        raise ValueError(
+            f"本地提取 {att.name} 需要 pypdf/python-docx（可选依赖，未安装）：{exc}") from exc
+    except Exception:  # noqa: BLE001 - 解析失败按无法提取处理
+        return None
+    if not text or not text.strip():
+        return None  # 扫描件无文本层，不假装识别
+    note = ""
+    if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
+        text = text[:MAX_TEXT_BYTES]
+        note = f"（提取文本已截断至 {MAX_TEXT_BYTES} 字节）"
+    out = Attachment(kind="text", name=att.name, mime_type="text/plain",
+                     content=text, size_bytes=len(text.encode("utf-8")),
+                     source=f"local_extract:{att.name}")
+    return out, note
+
+
 def load_path_attachments(paths_text: str,
                           base_dir: Optional[str] = None) -> Tuple[List[Attachment], List[str]]:
     """把多行文件路径解析为附件列表（安全）。返回 (attachments, warnings)。"""
@@ -147,10 +220,22 @@ def gate_attachments(attachments: List[Attachment], caps: dict,
             if files_ok:
                 sendable.append(a)
             else:
-                # 降级：文件其实就是文本时已按 text 读取；走到这里是真正的二进制
-                errors.append(
-                    f"文件附件 {a.name!r} 无法发送：当前服务不支持文件内容部分"
-                    "（可在档案高级设置开启 supports_files）")
+                # 降级：PDF/DOCX 本地提取文本（0.2.1）；其余二进制无法提取 → 报错
+                try:
+                    extracted = local_extract_document(a)
+                except ValueError as exc:
+                    errors.append(str(exc))
+                    continue
+                if extracted is not None:
+                    sendable.append(extracted[0])
+                    warnings.append(
+                        f"Provider 不支持原生文件输入，已本地提取文本发送："
+                        f"{a.name}{extracted[1]}")
+                else:
+                    errors.append(
+                        f"文件附件 {a.name!r} 无法发送：当前服务不支持文件内容部分，"
+                        "且该文件无法本地提取文本（扫描件无文本层或非 PDF/DOCX；"
+                        "可在档案高级设置开启 supports_files）")
     if errors:
         return sendable, warnings, "；".join(errors)
     return sendable, warnings, None

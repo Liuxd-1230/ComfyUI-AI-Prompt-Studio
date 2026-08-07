@@ -20,12 +20,14 @@
 
 ## 安装
 
-> 目标环境：Windows 11 · ComfyUI 0.30.x · Python 3.10+。扩展只依赖 `requests` + `PyYAML`（视觉分析另需 Pillow/numpy，ComfyUI venv 自带），**不需要 torch / CUDA**，CPU 环境可加载全部节点。
+> 目标环境：Windows 11 · ComfyUI 0.30.x · Python 3.10+。硬依赖只有 `requests` + `PyYAML`（视觉分析另需 Pillow/numpy，ComfyUI venv 自带），**不需要 torch / CUDA**，CPU 环境可加载全部节点。
 
 ```bash
 cd E:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\custom_nodes
 git clone https://github.com/Liuxd-1230/ComfyUI-AI-Prompt-Studio.git
 # 重启 ComfyUI；无需安装任何大依赖（requests 一般已存在）
+# 可选：PDF/DOCX 附件本地文本提取（0.2.1）——不装则此类附件在无原生文件支持时明确报错
+pip install "pypdf>=4.0" "python-docx>=1.1"
 ```
 
 卸载：删除 `custom_nodes/ComfyUI-AI-Prompt-Studio` 目录即可（不修改 ComfyUI 核心，无残留配置以外的写入）。
@@ -62,11 +64,12 @@ git clone https://github.com/Liuxd-1230/ComfyUI-AI-Prompt-Studio.git
 
 ## ANIMA 提示词（官方档案）
 
-- **Base**：前缀 `masterpiece, best quality, score_7, safe, ` + 官方负面（`worst quality, low quality, score_1..3, artist name, blurry, jpeg artifacts, chromatic aberration`），建议 30-50 步 / CFG 4-6。
+- **Base**：前缀 `masterpiece, best quality, score_7, `（0.2.1 起 **不再强制注入 `safe`**，见下方 Safety 标签）+ 官方负面（`worst quality, low quality, score_1..3, artist name, blurry, jpeg artifacts, chromatic aberration`），建议 30-50 步 / CFG 4-6。
 - **Aesthetic**：官方建议正负提示词都不用 `score_*` 标签，30-50 步 / CFG 4.5。
 - **Turbo**：官方示例前缀 + **CFG 1 / 8-12 步**。
 - 语法：小写标签、空格分隔（`score_*` 是唯一带下划线的标签）、`@artist` 艺术家前缀、标签分段排序（quality/meta/year/safety → count → artist → general）、LoRA 触发词原样保留追加。
-- 支持 `tags` / `natural_language` / `hybrid` 三模式与 safe/sensitive 分级。
+- 支持 `tags` / `natural_language` / `hybrid` 三模式。
+- **Safety 标签（0.2.1）**：节点参数 `safety_tag` ∈ `none / safe / sensitive / nsfw / explicit`，**默认 `none` = 不注入任何 Safety 标签**（Composer 不在用户未要求时给提示词增加内容语义，也不做内容审查——审查留给模型服务端）。官方 safety 标签全集为 `safe / sensitive / nsfw / explicit`，`safe` 只是官方示例默认而非强制项；Composer 只按用户明确选择渲染。旧参数 `content_tier`（safe/sensitive）自动迁移。
 
 ## MiniMax H3（官方手册规则）
 
@@ -102,8 +105,8 @@ node --check web/*.js            # 前端语法检查
 python -m compileall nodes services renderers validators schemas server tests
 ```
 
-- 测试 260+：加载器语义复现（`spec_from_file_location`）、真实 aiohttp `RouteTableDef` 路由回环、三后端 mock、H3/ANIMA 全部官方格式规则正反用例、示例工作流可加载校验。
-- 架构与决策：`docs/decisions.md`（D1–D15）、`docs/research.md`（含来源与日期）、`docs/adr/`、`docs/compatibility.md`。
+- 测试 430+：加载器语义复现（`spec_from_file_location`）、真实 aiohttp `RouteTableDef` 路由回环、三后端 mock、H3/ANIMA 全部官方格式规则正反用例、示例工作流可加载校验、8 条主链路回归（`tests/test_main_flows.py`）。
+- 架构与决策：`docs/decisions.md`（D1–D24）、`docs/research.md`（含来源与日期）、`docs/adr/`、`docs/compatibility.md`。
 
 ## 许可与来源
 

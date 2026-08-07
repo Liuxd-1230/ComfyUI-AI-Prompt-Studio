@@ -49,9 +49,12 @@ def test_analyzer_text_only(monkeypatch, store):
 
 def test_analyzer_images_consensus_and_passthrough(monkeypatch, store):
     payload = setup_profile(store)
+    # 响应顺序：逐图分析（2 张）→ VLM 整体身份判断（0.2.1 P0-14：一次多图判断）
     responses = iter([
         anchor_json(value="黑发", category="stable"),
         anchor_json(value="金发", category="stable"),
+        '{"same_subject": false, "confidence": 0.1, '
+        '"evidence": ["different hair colors"], "reasons_if_different": []}',
     ])
     monkeypatch.setattr(ra_mod.vision_svc, "call_vision",
                         lambda *a, **k: {"ok": True, "text": next(responses),
@@ -75,6 +78,35 @@ def test_analyzer_images_consensus_and_passthrough(monkeypatch, store):
     manf = ReferenceManifest.from_json(manifest)
     assert len(manf.assets) == 2
     assert len(manf.subjects) == 1
+
+
+def test_analyzer_vlm_identity_fallback_on_failure(monkeypatch, store):
+    """VLM 身份判断失败 → 回退 deterministic heuristic（0.2.1 P0-14）。"""
+    payload = setup_profile(store)
+    responses = iter([
+        anchor_json(value="黑发", category="stable"),
+        anchor_json(value="金发", category="stable"),
+        {"ok": False, "error": "视觉端点错误"},   # 身份判断调用失败
+    ])
+
+    def fake_vision(*a, **k):
+        resp = next(responses)
+        if isinstance(resp, dict) and resp.get("ok") is False:
+            return resp
+        return {"ok": True, "text": resp, "raw": "raw"}
+
+    monkeypatch.setattr(ra_mod.vision_svc, "call_vision", fake_vision)
+    node = ra_mod.APS_ReferenceAnalyzer()
+    imgs = [np.random.rand(16, 16, 3).astype(np.float32),
+            np.random.rand(16, 16, 3).astype(np.float32)]
+    analysis, candidate, _, _, _, raw, _ = node.analyze(
+        AI_PROFILE=payload, analysis_mode="character_full",
+        text_anchor="", images=imgs, character_bible=None, custom_prompt="")
+    cand = CharacterCandidate.from_json(candidate)
+    anl = analysis if isinstance(analysis, dict) else json.loads(analysis)
+    # 回退 heuristic：冲突 → 不同主体，仍防串绑
+    assert cand.same_subject is False
+    assert any("回退" in w for w in anl["warnings"])
 
 
 def test_analyzer_text_priority_over_images(monkeypatch, store):
