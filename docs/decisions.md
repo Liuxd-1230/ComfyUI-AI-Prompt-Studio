@@ -40,6 +40,8 @@
 - `requests` 同步 + SSE 流式解析；节点在 ComfyUI 工作线程内执行；取消通过共享 `stop_event` + 轮询检查。
 - 超时/重试策略：连接超时 10s、读超时可配置（默认 120s）；幂等 GET/探测可重试 1 次，POST 生成不自动重试（防重复扣费）。
 - 错误按 HTTP 状态码归一化；`error.code` 视为可选。
+- reasoning 参数：Responses 用 `reasoning.effort`（off 不发该字段）；Chat Completions 用 `reasoning_effort`，**仅当 provider=deepseek 时发送**（通用 OpenAI 兼容端点对未知参数可能 400）。同理 `response_format`(json) 仅 deepseek 发送。
+- usage 命名差异：Responses `input/output_tokens`，Chat `prompt/completion_tokens`，adapter 统一映射为 LLMResult.usage（`accumulate_usage`）。
 
 ## D7. 联网搜索范围（v1）
 

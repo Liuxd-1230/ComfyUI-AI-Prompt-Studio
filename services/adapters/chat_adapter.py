@@ -1,0 +1,183 @@
+"""OpenAI 兼容 Chat Completions 适配器（POST {base}/chat/completions）。
+
+适用于：DeepSeek /chat/completions、OpenAI 兼容端点、本地运行时
+（Ollama / llama.cpp / LM Studio 均提供该接口）。
+支持：流式（SSE）、reasoning_content（DeepSeek）、function tool 调用（delta 累积）、usage。
+"""
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any, Dict, List, Optional
+
+import requests
+
+from ...schemas.profile import AIProfile
+from ...schemas.results import Citation, LLMResult, ToolCall, Usage, make_error
+from .base import (
+    Canceled,
+    ProtocolUnsupported,
+    accumulate_usage,
+    is_protocol_unsupported,
+    map_http_error,
+    sse_events,
+)
+
+logger = logging.getLogger("ai_prompt_studio.adapters.chat")
+
+REASONING_EFFORT = {"off": "none", "low": "low", "medium": "medium", "high": "high"}
+
+
+class _ChatConsumer:
+    """从 SSE 事件流中累积 Chat Completions 的输出。"""
+
+    def __init__(self, profile: AIProfile):
+        self.profile = profile
+        self.text_parts: List[str] = []
+        self.reasoning_parts: List[str] = []
+        self.tool_calls: List[ToolCall] = []
+        self._tool_calls_by_index: Dict[int, ToolCall] = {}
+        self.usage: Dict[str, Any] = {}
+
+    def feed(self, event: Dict[str, Any]) -> None:
+        choices = event.get("choices") or []
+        if not isinstance(choices, list) or not choices:
+            accumulate_usage(event, self.usage)
+            return
+        delta = choices[0].get("delta") or {}
+        if not isinstance(delta, dict):
+            return
+        content = delta.get("content")
+        if isinstance(content, str) and content:
+            self.text_parts.append(content)
+        reasoning = delta.get("reasoning_content")
+        if isinstance(reasoning, str) and reasoning:
+            self.reasoning_parts.append(reasoning)
+        for tc in delta.get("tool_calls") or []:
+            if not isinstance(tc, dict):
+                continue
+            idx = tc.get("index", 0)
+            entry = self._tool_calls_by_index.setdefault(
+                idx, ToolCall(name="", arguments=""))
+            fn = tc.get("function") or {}
+            if isinstance(fn, dict):
+                if fn.get("name"):
+                    entry.name += fn["name"]
+                if fn.get("arguments"):
+                    entry.arguments += fn["arguments"]
+            if tc.get("id"):
+                entry.id = tc["id"]
+        if choices[0].get("finish_reason"):
+            accumulate_usage(event, self.usage)
+
+    def finalize(self) -> LLMResult:
+        result = LLMResult(profile_id=self.profile.profile_id, model=self.profile.model,
+                           protocol="chat_completions")
+        result.text = "".join(self.text_parts)
+        result.reasoning = "".join(self.reasoning_parts)
+        result.tool_calls = [self._tool_calls_by_index[i]
+                             for i in sorted(self._tool_calls_by_index)]
+        result.usage = Usage(input_tokens=self.usage.get("input_tokens", 0),
+                             output_tokens=self.usage.get("output_tokens", 0),
+                             total_tokens=self.usage.get("total_tokens", 0),
+                             prompt_cache_hit_tokens=self.usage.get("prompt_cache_hit_tokens", 0),
+                             prompt_cache_miss_tokens=self.usage.get("prompt_cache_miss_tokens", 0),
+                             reasoning_tokens=self.usage.get("reasoning_tokens", 0),
+                             extra=self.usage.get("extra", {}))
+        return result
+
+
+class ChatCompletionsAdapter:
+    """OpenAI 兼容 Chat Completions 协议适配器。"""
+
+    protocol = "chat_completions"
+
+    def generate(
+        self,
+        profile: AIProfile,
+        api_key: str,
+        *,
+        system: str,
+        messages: List,
+        web_search: bool,
+        reasoning: str,
+        max_tokens: int,
+        temperature: float,
+        json_mode: bool = False,
+        stop_event: Optional[Any] = None,
+        timeout: float = 120.0,
+    ) -> LLMResult:
+        base = (profile.base_url or "https://api.deepseek.com").rstrip("/")
+        url = f"{base}/chat/completions"
+
+        api_messages: List[Dict[str, Any]] = []
+        if system:
+            api_messages.append({"role": "system", "content": system})
+        for m in messages:
+            if not m.content:
+                continue
+            api_messages.append({"role": m.role, "content": m.content})
+
+        body: Dict[str, Any] = {
+            "model": profile.model,
+            "messages": api_messages,
+            "stream": True,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        # reasoning_effort / response_format 是 DeepSeek 特有参数；通用端点可能 400，只对 deepseek 发送
+        if reasoning != "off" and profile.provider == "deepseek":
+            body["reasoning_effort"] = REASONING_EFFORT.get(reasoning, "high")
+        if json_mode and profile.provider == "deepseek":
+            body["response_format"] = {"type": "json_object"}
+
+        headers = {"Authorization": f"Bearer {api_key}",
+                   "Content-Type": "application/json"}
+
+        resp = None
+        try:
+            resp = requests.post(url, headers=headers, json=body,
+                                 timeout=(10.0, timeout), stream=True)
+        except requests.Timeout:
+            return LLMResult(profile_id=profile.profile_id, model=profile.model,
+                             protocol=self.protocol,
+                             error=make_error("timeout", "读取超时"))
+        except requests.RequestException as exc:
+            return LLMResult(profile_id=profile.profile_id, model=profile.model,
+                             protocol=self.protocol,
+                             error=make_error("network_error",
+                                              f"无法连接 {url}：{exc.__class__.__name__}"))
+
+        try:
+            if resp.status_code != 200:
+                body_text = _safe_body(resp)
+                if is_protocol_unsupported(resp.status_code, body_text):
+                    raise ProtocolUnsupported(
+                        f"Chat Completions 不可用 HTTP {resp.status_code}：{body_text[:120]}",
+                        http_status=resp.status_code)
+                return LLMResult(profile_id=profile.profile_id, model=profile.model,
+                                 protocol=self.protocol,
+                                 error=map_http_error(resp.status_code, body_text[:200]))
+            consumer = _ChatConsumer(profile)
+            try:
+                for event in sse_events(resp):
+                    if stop_event is not None and stop_event.is_set():
+                        raise Canceled()
+                    consumer.feed(event)
+            except Canceled:
+                return LLMResult(profile_id=profile.profile_id, model=profile.model,
+                                 protocol=self.protocol,
+                                 error=make_error("canceled", "已取消"))
+            return consumer.finalize()
+        finally:
+            try:
+                resp.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def _safe_body(resp) -> str:
+    try:
+        return resp.text[:1000]
+    except Exception:  # noqa: BLE001
+        return ""
