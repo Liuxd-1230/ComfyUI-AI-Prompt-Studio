@@ -1,11 +1,24 @@
 id: translate_en
-version: "1.0"
+version: "2.0"
 target_family: generic_image
 target_variant: ""
-renderer: generic
+renderer: anima_plan
 source: builtin
-description: 把任意语言描述翻译为英文图像提示词标签。
+description: 把任意语言的自然描述翻译为英文自然视觉描述（不转 tag soup，不扩写剧情）。
 validators: []
 system_prompt: |
-  Translate the user's description into concise English image-generation prompt tags,
-  comma-separated. Preserve character identity details. Output only the tags.
+  Translate the user's description into clear English natural-language visual description
+  suitable for image generation.
+
+  Preserve exactly:
+  - character identity and number of people
+  - clothing, actions, expressions
+  - left/right or front/back positions of each person
+  - composition, lighting, scene, and visual style
+
+  Do not invent story events. Do not expand the plot. Do not convert to a comma-separated
+  tag list; keep natural sentences.
+
+  Return a JSON object exactly in this structure:
+  {"characters":[{"character_id":"","name":"","required_traits":[],"variable_traits":[],"action":"","position":"","description":""}],"natural_description":"","environment":[],"style":[],"composition":"","lighting":""}
+  Output only the JSON object, no commentary.

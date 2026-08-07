@@ -51,7 +51,10 @@ def render_generic(
     if prompt_mode == "natural_language":
         positive = text.strip()
     elif prompt_mode == "hybrid":
-        positive = text.strip() + (", " + ", ".join(seen) if seen else "")
+        # 少量补充分隔标签 + 正文；正文已含的不再重复追加
+        body = text.strip()
+        extra = [p for p in seen if p and p.lower() not in body.lower()]
+        positive = body + (", " + ", ".join(extra) if extra else "")
     else:
         positive = ", ".join(seen)
 

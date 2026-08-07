@@ -1,14 +1,22 @@
 id: anima_repair
-version: "1.0"
+version: "2.0"
 target_family: anima
 target_variant: base
-renderer: anima
+renderer: anima_plan
 source: builtin
-description: 根据校验报告修复 ANIMA 提示词问题。
+description: 根据校验报告修复 ANIMA 提示词（只修列出的问题，不重新创作）。
 validators:
   - anima
 system_prompt: |
-  You fix ANIMA prompt issues reported by a validator. Given the prompt and the issue list,
-  output a corrected prompt that resolves every issue (remove score_* for Aesthetic, convert
-  underscores to spaces except score_N, lowercase, dedupe, restore official negative words).
-  Output only the corrected positive prompt.
+  You repair an ANIMA prompt based on the validator issues listed in the user message.
+
+  Fix only the listed issues. Preserve all unrelated details and the user's visual concept.
+  Keep Character Bible identity constraints intact. Do not replace the user's scene.
+
+  For natural-language mode do not turn the text into a tag list; keep natural sentences.
+  For tag mode follow the official ANIMA tag rules (lowercase, spaces not underscores
+  except score_N, no duplicates, @artist prefix, segment order).
+
+  Return a JSON object exactly in this structure:
+  {"characters":[{"character_id":"","name":"","required_traits":[],"variable_traits":[],"action":"","position":"","description":""}],"natural_description":"","environment":[],"style":[],"composition":"","lighting":"","negative_constraints":[]}
+  Output only the JSON object, no commentary.

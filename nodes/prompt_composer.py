@@ -45,8 +45,8 @@ class APS_PromptComposer:
                                         "tooltip": "目标图像模型"}),
             "operation": (COMPOSER_OPERATIONS, {"default": "generate",
                                                 "tooltip": "generate=生成；expand=扩写；rewrite=改写；translate=翻译；audit=审计；repair=修复；convert=转换"}),
-            "prompt_mode": (PROMPT_MODES, {"default": "hybrid",
-                                           "tooltip": "tags=标签；natural_language=自然语言；hybrid=混合"}),
+            "prompt_mode": (PROMPT_MODES, {"default": "natural_language",
+                                           "tooltip": "natural_language=自然语言（默认，官方推荐）；tags=官方标签结构；hybrid=少量控制标签+自然正文"}),
             "negative": ("STRING", {"default": "", "multiline": True,
                                     "tooltip": "自定义负面提示词种子；留空使用目标模型默认负面"}),
             "content_tier": (CONTENT_TIERS, {"default": "safe",
@@ -131,10 +131,23 @@ class APS_PromptComposer:
         if operation in LLM_OPERATIONS:
             skill_id = {"expand": "anima_expand", "rewrite": "anima_rewrite",
                         "translate": "translate_en", "repair": "anima_repair"}[operation]
+            repair_issues = ""
+            if operation == "repair":
+                # repair 把校验问题作为输入传给 LLM（只修列出的问题）
+                from ..validators.anima import validate_anima
+
+                repair_issues = validate_anima(
+                    text, variant=variant, prompt_mode=prompt_mode).as_text()
             return self._llm_render(prof, api_key, skill_id, text, prompt_mode,
                                     negative, bible, lora, family="anima",
-                                    variant=variant)
-        # generate / convert：确定性渲染
+                                    variant=variant, content_tier=content_tier,
+                                    repair_issues=repair_issues)
+        if operation == "generate" and prompt_mode != "tags":
+            # ANIMA 默认自然语言：LLM 转换用户意图（产品决策 D16）
+            return self._llm_render(prof, api_key, "anima_expand", text, prompt_mode,
+                                    negative, bible, lora, family="anima",
+                                    variant=variant, content_tier=content_tier)
+        # generate(tags) / convert：确定性渲染
         out = _as_dict(render_anima(text, variant=variant, prompt_mode=prompt_mode,
                                     content_tier=content_tier, bible=bible,
                                     negative_override=negative,
@@ -148,9 +161,13 @@ class APS_PromptComposer:
         if operation in LLM_OPERATIONS:
             skill_id = {"expand": "anima_expand", "rewrite": "anima_rewrite",
                         "translate": "translate_en", "repair": "anima_repair"}[operation]
+            repair_issues = ""
+            if operation == "repair":
+                repair_issues = validate_anima(text, variant="base",
+                                               prompt_mode=prompt_mode).as_text()
             out = self._llm_render(prof, api_key, skill_id, text, prompt_mode,
                                    negative, bible, [], family=family,
-                                   variant=variant)
+                                   variant=variant, repair_issues=repair_issues)
         else:
             out = render_generic(text, family=family, variant=variant,
                                  prompt_mode=prompt_mode, bible=bible,
@@ -171,17 +188,35 @@ class APS_PromptComposer:
 
     # ------------------------------------------------------------ LLM + 渲染
     def _llm_render(self, prof, api_key, skill_id, text, prompt_mode, negative,
-                    bible, lora, family, variant):
+                    bible, lora, family, variant, content_tier="safe",
+                    repair_issues=""):
         skill = get_skill(skill_id)
+        user = text.strip()
+        if repair_issues and repair_issues.strip():
+            user = f"[校验问题]\n{repair_issues.strip()}\n[待修复提示词]\n{user}"
         req = GenerateRequest(system=skill.system_prompt,
-                              messages=[_msg(text.strip())],
+                              messages=[_msg(user)],
                               web_search="off", reasoning="medium",
                               max_tokens=4096, timeout=prof.timeout)
         result = Gateway().generate(prof, api_key, req)
         if result.has_error():
             raise ValueError(result.error.as_text)
         llm_out = result.text.strip()
-        if skill.renderer == "anima":
+        if skill.renderer == "anima_plan":
+            from ..renderers.anima import parse_anima_plan, render_anima_plan
+
+            plan = parse_anima_plan(llm_out, bible)
+            if family == "anima":
+                out = _as_dict(render_anima_plan(
+                    plan, variant=variant, prompt_mode=prompt_mode,
+                    content_tier=content_tier, negative_override=negative,
+                    lora_triggers=lora))
+            else:
+                body = plan.natural_body or llm_out
+                out = render_generic(body, family=family, variant=variant,
+                                     prompt_mode=prompt_mode, bible=bible,
+                                     negative_override=negative)
+        elif skill.renderer == "anima":
             out = _as_dict(render_anima(llm_out, variant=variant,
                                         prompt_mode=prompt_mode, bible=bible,
                                         negative_override=negative,

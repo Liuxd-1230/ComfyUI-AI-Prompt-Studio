@@ -1,0 +1,175 @@
+"""ANIMA 结构化 Prompt Plan 回归测试：natural 默认、Bible 自然融入、Hybrid 不重复、多人物绑定。"""
+import json
+
+from aps.renderers.anima import (
+    AnimaCharacter,
+    AnimaPromptPlan,
+    build_anima_plan,
+    parse_anima_plan,
+    render_anima,
+    render_anima_plan,
+)
+from aps.schemas.character import CharacterBible, CharacterTrait
+
+
+def make_bible(name="少女", traits=None):
+    bible = CharacterBible(name=name)
+    for t in traits or []:
+        bible.traits.append(CharacterTrait(**t))
+    return bible
+
+
+# ---------------------------------------------------------------- 默认模式
+
+def test_default_prompt_mode_is_natural_language():
+    r = render_anima("A girl sits beside a window under the rain.")
+    assert r.positive.startswith("masterpiece")
+    assert "A girl sits beside a window under the rain." in r.positive
+    # natural 模式不出现机械 tag 段
+    assert ", 1girl" not in r.positive
+
+
+# ---------------------------------------------------------------- Bible 自然融入
+
+def test_natural_mode_consumes_bible_traits():
+    bible = make_bible("A young woman", [
+        {"name": "hair", "value": "long straight black hair", "category": "stable", "locked": True},
+        {"name": "face", "value": "a soft round face", "category": "stable"},
+        {"name": "mark", "value": "a small mole below her left eye", "category": "stable"},
+        {"name": "clothing", "value": "a red evening dress", "category": "variable"},
+    ])
+    r = render_anima("She sits beside the window.", bible=bible,
+                     prompt_mode="natural_language")
+    # 锁定/稳定身份特征进入正文（自然句，而非 tag 列表）
+    assert "long straight black hair" in r.positive
+    assert "soft round face" in r.positive
+    assert "mole below her left eye" in r.positive
+    assert "red evening dress" in r.positive
+    assert "She sits beside the window." in r.positive
+    # 不是 tag soup：逗号分隔的裸标签列表不应存在
+    assert r.positive.count("long straight black hair") == 1
+
+
+def test_natural_mode_dedupes_bible_traits_already_in_body():
+    bible = make_bible("A young woman", [
+        {"name": "hair", "value": "long dark hair", "category": "stable", "locked": True}])
+    r = render_anima("A young woman with long dark hair walks in the rain.",
+                     bible=bible, prompt_mode="natural_language")
+    assert r.positive.count("long dark hair") == 1
+
+
+def test_build_anima_plan_separates_required_and_variable():
+    bible = make_bible("少女", [
+        {"name": "hair", "value": "black hair", "category": "stable", "locked": True},
+        {"name": "dress", "value": "red dress", "category": "variable"},
+        {"name": "smile", "value": "smiling", "category": "current"},
+    ])
+    plan = build_anima_plan("She walks in.", bible)
+    c = plan.characters[0]
+    assert c.required_traits == ["black hair"]
+    assert set(c.variable_traits) == {"red dress", "smiling"}
+
+
+# ---------------------------------------------------------------- Hybrid 不重复
+
+def test_hybrid_no_duplication_with_llm_plan():
+    plan = AnimaPromptPlan(
+        control_tags=["1girl", "masterpiece"],
+        natural_body="A girl with long black hair and blue eyes stands by the window.")
+    r = render_anima_plan(plan, variant="base", prompt_mode="hybrid")
+    # 控制标签块出现一次，正文出现一次，正文绝不再次被当标签追加
+    assert r.positive.count("long black hair") == 1
+    assert r.positive.count("1girl") == 1
+    assert r.positive.count("stands by the window") == 1
+    body_dup = plan.natural_body.split(" by the window")[0]
+    assert r.positive.count(body_dup) == 1
+
+
+def test_hybrid_input_text_not_reappended_as_tags():
+    # 确定性路径：Hybrid 不应把输入正文再当标签重复追加（旧 bug 回归）
+    r = render_anima("1girl, long black hair, blue eyes", variant="base",
+                     prompt_mode="hybrid")
+    assert r.positive.count("long black hair") == 1
+    assert r.positive.count("blue eyes") == 1
+
+
+# ---------------------------------------------------------------- 多人物绑定
+
+def test_multi_character_binding_preserved():
+    plan = AnimaPromptPlan(
+        characters=[
+            AnimaCharacter(character_id="char_01", name="A",
+                           description="On the left, a young woman with short black hair "
+                                       "wearing a white uniform holds B's hand.",
+                           position="left"),
+            AnimaCharacter(character_id="char_02", name="B",
+                           description="On the right, a woman with long blonde hair "
+                                       "wearing a black evening dress.",
+                           position="right"),
+        ],
+        natural_body="The two stand facing each other.",
+        environment=["a dim bar interior"])
+    r = render_anima_plan(plan, variant="base", prompt_mode="natural_language")
+    pos = r.positive
+    # 白色制服属于 A、黑色礼服属于 B，且不互相串位
+    assert "short black hair" in pos
+    assert "white uniform" in pos
+    assert "long blonde hair" in pos
+    assert "black evening dress" in pos
+    # 黑发/黑裙不能都被绑定到同一句（A 句含白制服，B 句含黑裙）
+    a_ok = "white uniform" not in pos.split("long blonde hair")[1]
+    assert a_ok
+
+
+def test_llm_plan_json_parse_multi_character():
+    raw = json.dumps({
+        "characters": [
+            {"character_id": "char_01", "name": "A",
+             "required_traits": ["short black hair"],
+             "variable_traits": ["white uniform"], "action": "grabbing B's hand",
+             "position": "left", "description": "A with short black hair in a white uniform."},
+            {"character_id": "char_02", "name": "B",
+             "required_traits": ["long blonde hair"],
+             "variable_traits": ["black dress"], "position": "right",
+             "description": "B with long blonde hair in a black dress."},
+        ],
+        "natural_description": "They face each other in a corridor.",
+        "environment": ["school corridor"], "lighting": "soft window light",
+        "style": ["anime"],
+    })
+    plan = parse_anima_plan(raw)
+    assert len(plan.characters) == 2
+    assert plan.characters[0].character_id == "char_01"
+    assert plan.natural_body == "They face each other in a corridor."
+    assert plan.environment == ["school corridor"]
+    assert plan.lighting == "soft window light"
+    r = render_anima_plan(plan, prompt_mode="natural_language")
+    assert "white uniform" in r.positive and "black dress" in r.positive
+    assert "school corridor." in r.positive
+    assert "soft window light." in r.positive
+
+
+def test_parse_anima_plan_fallback_plain_text():
+    plan = parse_anima_plan("A girl walks into a cafe.")
+    assert plan.natural_body == "A girl walks into a cafe."
+    assert plan.characters == []
+
+
+def test_parse_anima_plan_fallback_keeps_bible():
+    bible = make_bible("少女", [{"name": "hair", "value": "black hair",
+                                "category": "stable"}])
+    plan = parse_anima_plan("some raw text", bible)
+    assert plan.characters and plan.characters[0].required_traits == ["black hair"]
+
+
+# ---------------------------------------------------------------- Tags 从 Plan
+
+def test_tags_mode_from_plan_control_tags():
+    plan = AnimaPromptPlan(control_tags=["score_7", "safe", "masterpiece"],
+                           character_tags=["1girl"],
+                           visual_tags=["long_hair"],
+                           artist_tags=["@big chungus"])
+    r = render_anima_plan(plan, variant="base", prompt_mode="tags")
+    assert r.positive.startswith("masterpiece, best quality, score_7, safe, ")
+    assert "long hair" in r.positive  # 下划线规范化
+    assert "@big chungus" in r.positive

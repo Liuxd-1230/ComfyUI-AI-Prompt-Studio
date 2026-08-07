@@ -50,7 +50,8 @@ def test_artist_tag_ordered_before_general():
 
 
 def test_underscore_normalization():
-    r = render_anima("long_hair, red_dress, score_7", variant="base")
+    r = render_anima("long_hair, red_dress, score_7", variant="base",
+                     prompt_mode="tags")
     assert "long hair" in r.positive
     assert "red dress" in r.positive
     assert "long_hair" not in r.positive
@@ -61,7 +62,8 @@ def test_dedupe_bible_and_input():
     bible = CharacterBible(name="少女")
     bible.traits.append(CharacterTrait(name="hair", value="long dark hair",
                                        category="stable"))
-    r = render_anima("long dark hair, 1girl", variant="base", bible=bible)
+    r = render_anima("long dark hair, 1girl", variant="base", bible=bible,
+                     prompt_mode="tags")
     assert r.positive.count("long dark hair") == 1
 
 
