@@ -53,6 +53,7 @@ class CharacterCandidate(Schema):
     candidate_id: str = ""
     name: str = ""
     traits: List[CharacterTrait] = dataclasses.field(default_factory=list)
+    conflicts: List[CharacterConflict] = dataclasses.field(default_factory=list)
     analysis_mode: str = "character_full"
     sources: List[str] = dataclasses.field(default_factory=list)   # 资产引用或文字锚点
     confidence: float = 0.5

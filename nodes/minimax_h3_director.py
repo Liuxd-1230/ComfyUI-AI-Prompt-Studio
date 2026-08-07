@@ -19,6 +19,7 @@ from ..schemas.storyboard import Storyboard
 from ..renderers.minimax_h3 import render_h3
 from ..services.gateway import Gateway, GenerateRequest
 from ..services.h3_plan import (
+    H3_SYSTEM_PROMPT,
     build_plan_prompt,
     convert_storyboard,
     map_image_assets,
@@ -107,7 +108,7 @@ class APS_MiniMaxH3Director:
             storyboard=sb, bible=bible, book=book, manifest=manifest,
             image_count=img_count, repair_issues=repair_issues)
         req = GenerateRequest(
-            system="You are a MiniMax H3 prompt specialist. Output only JSON.",
+            system=H3_SYSTEM_PROMPT,
             messages=[_msg(prompt)], web_search="off", reasoning="high",
             max_tokens=8192, timeout=prof.timeout)
         result = Gateway().generate(prof, api_key, req)
@@ -170,8 +171,8 @@ class APS_MiniMaxH3Director:
             storyboard=sb, bible=bible, book=book, manifest=manifest,
             image_count=img_count, repair_issues=report.as_text())
         req = GenerateRequest(
-            system="You are a MiniMax H3 prompt specialist. Fix the reported issues only. "
-                   "Output only JSON.",
+            system=H3_SYSTEM_PROMPT + "\nFix only the reported issues. "
+                   "Preserve all unrelated details, structure, and the user's concept.",
             messages=[_msg(prompt)], web_search="off", reasoning="medium",
             max_tokens=8192, timeout=prof.timeout)
         result = Gateway().generate(prof, api_key, req)

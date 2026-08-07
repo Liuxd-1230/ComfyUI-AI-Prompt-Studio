@@ -1,0 +1,34 @@
+{
+  "name": "Case 4: H3 R2V 英文正文要求（中文语义段必须被检出，英文通过）",
+  "pipeline": "h3_r2v_english",
+  "input": {
+    "chinese_plan": {
+      "style_opening": "一种安静的绘画风格，柔和的窗光。",
+      "summary": "[reference generation] 一个女孩走进咖啡馆。",
+      "speakers": [],
+      "subjects": [],
+      "assets": [],
+      "retention": [],
+      "soundscape": "咖啡馆里轻轻响着说话声。",
+      "non_diegetic_music": "N/A",
+      "shots": [{"index": 1, "start_time": null, "description": ["The girl walks in."], "camera": "", "characters": [], "dialogues": []}]
+    },
+    "english_plan": {
+      "style_opening": "A quiet painterly style with soft window light.",
+      "summary": "[reference generation] A girl enters a cafe.",
+      "speakers": [],
+      "subjects": [],
+      "assets": [],
+      "retention": [],
+      "soundscape": "The cafe hums softly.",
+      "non_diegetic_music": "N/A",
+      "shots": [{"index": 1, "start_time": null, "description": ["The girl walks in."], "camera": "", "characters": [], "dialogues": []}]
+    }
+  },
+  "expect": {
+    "chinese_flagged": true,
+    "english_flagged": false,
+    "section_order_ok": true
+  },
+  "note": "R2V 六段顺序固定；语义段必须是英文；<d> 对白/歌词/画面文字保留原语言（不做假装翻译）。"
+}

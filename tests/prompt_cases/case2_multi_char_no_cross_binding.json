@@ -1,0 +1,22 @@
+{
+  "name": "Case 2: 多人物 Character Bible → ANIMA 自然提示词，属性不得串位",
+  "pipeline": "anima_multi_char",
+  "input": {
+    "characters": [
+      {"character_id": "c1", "name": "A", "traits": [{"name": "hair", "value": "red hair", "category": "stable"}, {"name": "dress", "value": "blue dress", "category": "stable"}]},
+      {"character_id": "c2", "name": "B", "traits": [{"name": "hair", "value": "blond hair", "category": "stable"}, {"name": "jacket", "value": "green jacket", "category": "stable"}]}
+    ],
+    "prompt_mode": "natural_language"
+  },
+  "expect": {
+    "red_in_A": true,
+    "red_in_B": false,
+    "blue_in_A": true,
+    "blue_in_B": false,
+    "blond_in_B": true,
+    "blond_in_A": false,
+    "green_in_B": true,
+    "green_in_A": false
+  },
+  "note": "每个人物的稳定特征只能出现在自己的描述块里，绝不串到他人（no cross-assignment）。"
+}

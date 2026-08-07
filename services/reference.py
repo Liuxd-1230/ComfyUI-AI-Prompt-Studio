@@ -123,6 +123,7 @@ def consensus_of(candidates: List[CharacterCandidate]) -> CharacterCandidate:
             merged.traits.append(CharacterTrait(
                 name=name, value=t.value, category=t.category,
                 confidence=t.confidence, sources=list(t.sources)))
+    merged.conflicts = conflicts  # 冲突对调用方可见（Bible 合并/UI 展示）
     return merged
 
 

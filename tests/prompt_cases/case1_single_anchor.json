@@ -1,0 +1,13 @@
+{
+  "name": "Case 1: 单一文字锚点（Reference Analyzer 文字路径）",
+  "pipeline": "reference_anchor",
+  "input": {
+    "text_anchor": "红发少女，蓝裙子，白袜"
+  },
+  "expect": {
+    "trait_count": 3,
+    "all_stable": true,
+    "all_sources_text_anchor": true
+  },
+  "note": "文字锚点确定性切分为 stable 特征，全部 source=text_anchor；无图片时不允许出现 uncertain 猜测。"
+}

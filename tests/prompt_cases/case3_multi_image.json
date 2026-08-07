@@ -1,0 +1,17 @@
+{
+  "name": "Case 3: 多图身份判断（同一人物两张图，冲突 → uncertain + conflict）",
+  "pipeline": "multi_image_consensus",
+  "input": {
+    "candidates": [
+      {"name": "girl", "traits": [{"name": "hair", "value": "black hair", "category": "stable", "confidence": 0.9, "sources": ["image:0"]}]},
+      {"name": "girl", "traits": [{"name": "hair", "value": "brown hair", "category": "stable", "confidence": 0.8, "sources": ["image:1"]}]}
+    ]
+  },
+  "expect": {
+    "hair_category": "uncertain",
+    "conflict_count": 1,
+    "subject_count": 1,
+    "asset_count": 2
+  },
+  "note": "同一特征多图不一致 → 降级 uncertain 并记录 conflict，不武断取一个；Manifest 保留两张图资产。"
+}
