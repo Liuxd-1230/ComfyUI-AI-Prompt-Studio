@@ -132,7 +132,7 @@ class APS_PromptComposer:
         else:
             positive, neg, tags, warnings, gprofile = self._generic(
                 prof, base_text, family, variant, operation,
-                prompt_mode, negative, bible, book_context)
+                prompt_mode, negative, bible, book, book_context)
             validation = empty_report()
 
         plan = PromptPlan(target_family=family, target_variant=variant,
@@ -191,7 +191,7 @@ class APS_PromptComposer:
 
     # ------------------------------------------------------------ 通用家族
     def _generic(self, prof, text, family, variant, operation,
-                 prompt_mode, negative, bible, book_context=""):
+                 prompt_mode, negative, bible, book, book_context=""):
         if operation in LLM_OPERATIONS:
             skill_id = {"expand": "anima_expand", "rewrite": "anima_rewrite",
                         "translate": "translate_en", "repair": "anima_repair"}[operation]
@@ -202,11 +202,12 @@ class APS_PromptComposer:
             out = self._llm_render(prof, skill_id, text, prompt_mode,
                                    negative, bible, [], family=family,
                                    variant=variant, repair_issues=repair_issues,
-                                   book_context=book_context)
+                                   book_context=book_context, book=book)
         else:
-            # 确定性渲染（完全离线）；CharacterBook 多人物信息由 render_generic 经 bible 传入
+            # 确定性渲染（完全离线）；CharacterBook 多人物信息由 render_generic 经 book 传入
+            # （0.2.1a：全部人物进最终 prompt，不再只取第一个档案）
             out = render_generic(text, family=family, variant=variant,
-                                 prompt_mode=prompt_mode, bible=bible,
+                                 prompt_mode=prompt_mode, bible=bible, book=book,
                                  negative_override=negative)
         return (out["positive"], out["negative"], out.get("tags", []),
                 out.get("warnings", []), out["profile"])
@@ -225,7 +226,7 @@ class APS_PromptComposer:
     # ------------------------------------------------------------ LLM + 渲染
     def _llm_render(self, prof, skill_id, text, prompt_mode, negative,
                     bible, lora, family, variant, safety_tag="none",
-                    repair_issues="", book_context=""):
+                    repair_issues="", book_context="", book=None):
         skill = get_skill(skill_id)
         api_key = require_api_key(prof)  # LLM 路径才要求 API Key（0.2.1）
         user = text.strip()
@@ -253,7 +254,7 @@ class APS_PromptComposer:
             else:
                 body = plan.natural_body or llm_out
                 out = render_generic(body, family=family, variant=variant,
-                                     prompt_mode=prompt_mode, bible=bible,
+                                     prompt_mode=prompt_mode, bible=bible, book=book,
                                      negative_override=negative)
         elif skill.renderer == "anima":
             out = _as_dict(render_anima(llm_out, variant=variant,
@@ -262,7 +263,7 @@ class APS_PromptComposer:
                                         lora_triggers=lora))
         else:
             out = _as_dict(render_generic(llm_out, family=family, variant=variant,
-                                          prompt_mode=prompt_mode, bible=bible,
+                                          prompt_mode=prompt_mode, bible=bible, book=book,
                                           negative_override=negative))
         return (out["positive"], out["negative"], out["tags"], out["warnings"],
                 out["profile"])

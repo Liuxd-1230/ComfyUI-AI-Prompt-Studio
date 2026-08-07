@@ -145,3 +145,14 @@
 
 - **官方结论**（用户提供 R2V 手册 §4.2）：音频 marker 完整集合 = `fully_copy` / `partially_copy` / `reference` / **`weak_reference`**（"Broad similarity only"）。`weak_reference` 同时是视觉 marker（"Only broad similarity in style/atmosphere retained"）。
 - **实现决定**：RETENTION_MARKERS 已含 weak_reference（视觉与音频共用，validator 按资产类型判定）；系统提示词改为分别列 visual/audio marker 集（不再把 weak_reference 只归为视觉）。
+
+### 8.7 0.2.1a 补丁查证（2026-08-07）
+
+- **LM Studio v1 模型标识字段是 `key`**（lmstudio.ai/docs/developer/rest/list 官方复核）：`GET /api/v1/models` 每个条目 `{"type", "publisher", "key", "display_name", ..., "loaded_instances": [{"id", "config"}]}` —— 模型标识是 **key**，`id` 只出现在 `loaded_instances` 里（实例标识）。v0 才是 `data` + `id`。此前实现与测试都用 `id` 匹配模型（与官方结构不符）→ 独立 unload 时按 `loaded_instances` 反查 instance_id 会找不到。
+- **实现决定**：v1 解析 `m.get("key") or m.get("id")`（兼容两代）；`loaded_instances[].id` 仍为实例标识；测试改用官方真实结构（`key` + `loaded_instances[].id`）。
+- **VLM 多图身份判断为权威**：节点第 3 步改为 `identity_consensus_with_verdict`——same_subject=True 直接合并全部候选（VLM confidence 写入），False 禁止全量合并（防串绑），VLM 失败才回退字符串一致度启发式；旧字符串算法不再覆盖 VLM 结论。
+- **CharacterBook 全量消费**：render_generic 新增 `book` 参数，CharacterBook 传入时渲染全部人物（不再只取 first_bible）；Composer 确定性/LLM 路径均传 book。
+- **Responses adapter 补 `import json`**：function_call arguments 为 dict 时序列化（此前 NameError）。
+- **附件两处修正**：`_document_extractable` 扩展名比较改为无点小写（"pdf"/"docx"）；`local_extract_document` 截断按 UTF-8 **字节**并回退到有效字符边界（此前按字符数截断，中文长文档会超 512 KB）。
+- **Gateway 降级重算 Structured Output**：协议切换（Responses→Chat 等）时按新协议重新计算结构化输出策略（deepseek-v4-flash Responses→Chat fallback 不再把 json_schema 发给 Chat）；约束注入幂等。
+- **来源**：https://lmstudio.ai/docs/developer/rest/list （官方，2026-08-07 访问）

@@ -69,6 +69,27 @@ class Gateway:
             self._store = get_store()
         return self._store
 
+    # ------------------------------------------------------------ 结构化输出策略
+    def _structured_output_for(self, profile: AIProfile, req: GenerateRequest,
+                               protocol: str, caps: dict) -> Optional[Dict[str, Any]]:
+        """按当前协议应用结构化输出策略，返回应发给 adapter 的 output_schema。
+
+        协议原生支持（supports_native_structured_output）→ 保留 schema；
+        否则 → 提示词约束 + json_mode 兜底，schema 置 None。
+        0.2.1a：每次切换协议（含降级）都重新计算；约束只注入一次（幂等）。
+        """
+        output_schema = req.output_schema
+        if output_schema and not capability_probe.supports_native_structured_output(
+                profile, caps, protocol):
+            if "[输出约束]" not in (req.system or ""):
+                schema_text = json.dumps(output_schema, ensure_ascii=False)
+                req.system = (req.system or "") + (
+                    "\n\n[输出约束]\n必须输出合法的 JSON 对象，"
+                    f"严格符合以下 JSON Schema：\n{schema_text}")
+                req.json_mode = True
+            output_schema = None
+        return output_schema
+
     # ------------------------------------------------------------ 协议选择
     def _select_protocol(self, profile: AIProfile) -> str:
         if profile.protocol != "auto":
@@ -122,20 +143,14 @@ class Gateway:
 
         protocol = self._select_protocol(profile)
 
-        # 结构化输出（0.2.1 P0-3）：按「当前协议」判定原生支持——
+        # 结构化输出（0.2.1 P0-3 + 0.2.1a）：按「当前协议」判定原生支持——
         # responses → caps.structured_output_responses；chat → structured_output_chat。
         # 支持 → 协议层 schema（text.format / response_format json_schema）；
         # 否则 → 提示词约束 + json_mode 兜底（DeepSeek Chat 未文档化 json_schema）。
-        output_schema = req.output_schema
+        # 每次切换协议（含 ProtocolUnsupported 降级）都重新计算，绝不把
+        # 某协议不支持的 schema 继续发给另一协议（0.2.1a 修复）。
         caps = self.store.get_capabilities(profile.profile_id)
-        if output_schema and not capability_probe.supports_native_structured_output(
-                profile, caps, protocol):
-            schema_text = json.dumps(output_schema, ensure_ascii=False)
-            req.system = (req.system or "") + (
-                "\n\n[输出约束]\n必须输出合法的 JSON 对象，"
-                f"严格符合以下 JSON Schema：\n{schema_text}")
-            req.json_mode = True
-            output_schema = None
+        output_schema = self._structured_output_for(profile, req, protocol, caps)
 
         tool_defs = tools_svc.tool_definitions() if req.tools else []
 
@@ -149,6 +164,8 @@ class Gateway:
             warnings.append(f"协议 {protocol} 不可用（{exc}），已降级到 {other}")
             logger.info("gateway 降级 %s -> %s（%s）", protocol, other, exc)
             try:
+                # 0.2.1a：降级后按新协议重新计算结构化输出策略
+                output_schema = self._structured_output_for(profile, req, other, caps)
                 result = self._call_with_tools(
                     profile, api_key, other, req, web_search=web_search,
                     output_schema=output_schema, tool_defs=tool_defs)

@@ -207,6 +207,42 @@ def test_gate_scanned_pdf_without_files_errors():
     assert err and "无法发送" in err and "扫描" in err
 
 
+def test_document_extractable_bare_extension():
+    """0.2.1a：无点小写扩展名（pdf/docx）必须被识别（此前误与带点集合比较）。"""
+    assert att_svc._document_extractable("terms.pdf", "") is True
+    assert att_svc._document_extractable("report.docx", "") is True
+    assert att_svc._document_extractable("archive.PDF", "") is True    # 大小写不敏感
+    assert att_svc._document_extractable("a.bin", "") is False
+    assert att_svc._document_extractable("a.pptx", "") is False        # 不在支持范围
+    # MIME 兜底仍有效
+    assert att_svc._document_extractable("noext", "application/pdf") is True
+
+
+def test_local_extract_truncates_by_utf8_bytes(monkeypatch, tmp_path):
+    """0.2.1a：提取文本按 UTF-8 **字节**截断（此前按字符数截断，中文会超上限）；
+    且不在多字节字符中间切断。"""
+    import docx as _docx
+    long_text = "合同条款：" + "违约责任与付款方式说明。" * 30  # 每个汉字 3 字节
+    doc = _docx.Document()
+    doc.add_paragraph(long_text)
+    buf = tmp_path / "long.docx"
+    doc.save(str(buf))
+    att = Attachment.from_base64(base64.b64encode(buf.read_bytes()).decode(),
+                                 name="long.docx",
+                                 mime_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    monkeypatch.setattr(att_svc, "MAX_TEXT_BYTES", 100)   # 远小于正文字节数
+    extracted = att_svc.local_extract_document(att)
+    assert extracted is not None
+    text_att, note = extracted
+    assert text_att.kind == "text"
+    encoded = text_att.content.encode("utf-8")
+    assert len(encoded) <= 100                      # 字节数不超上限
+    assert "截断" in note
+    # 未在多字节字符中间切断：UTF-8 往返解码无损（无 replacement 字符）
+    assert text_att.content.encode("utf-8").decode("utf-8") == text_att.content
+    assert "\ufffd" not in text_att.content
+
+
 def test_gateway_pdf_degrades_to_text_with_warning(monkeypatch, store):
     store.create_profile({"profile_id": "p1"})
     store.set_capabilities("p1", {"responses": True, "files": False})

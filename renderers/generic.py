@@ -2,12 +2,13 @@
 
 仅做确定性整理（去重、大小写规范、正负拆分），不做官方档案级处理
 （各模型没有统一官方规范；ANIMA 专属规则在 renderers/anima.py）。
+0.2.1a：CharacterBook 传入时渲染**全部**人物（不再只取第一个档案）。
 """
 from __future__ import annotations
 
 from typing import List, Optional
 
-from ..schemas.character import CharacterBible
+from ..schemas.character import CharacterBible, CharacterBook
 from ..schemas.prompt_plan import GenerationProfile
 
 FAMILY_PROFILES = {
@@ -27,9 +28,13 @@ def render_generic(
     variant: str = "",
     prompt_mode: str = "tags",
     bible: Optional[CharacterBible] = None,
+    book: Optional[CharacterBook] = None,
     negative_override: str = "",
 ) -> dict:
-    """返回 {positive, negative, tags, warnings, profile}。"""
+    """返回 {positive, negative, tags, warnings, profile}。
+
+    book（CharacterBook）优先：渲染容器内全部人物；bible 作为单人物兼容路径。
+    """
     profile = (FAMILY_PROFILES.get(family) or
                GenerationProfile(target_family=family, target_variant=variant))
     if variant and family in FAMILY_PROFILES:
@@ -39,8 +44,16 @@ def render_generic(
 
     warnings: List[str] = []
     parts: List[str] = []
-    if bible is not None and bible.character_prompt():
-        parts.extend(p.strip() for p in bible.character_prompt().split(",") if p.strip())
+    # 0.2.1a：CharacterBook → 全部人物特征；单人物 bible 兜底
+    char_sources: List[CharacterBible] = []
+    if book is not None and book.characters:
+        char_sources = list(book.characters)
+    elif bible is not None:
+        char_sources = [bible]
+    for b in char_sources:
+        cp = b.character_prompt()
+        if cp:
+            parts.extend(p.strip() for p in cp.split(",") if p.strip())
     parts.extend(p.strip() for p in (text or "").split(",") if p.strip())
 
     seen: List[str] = []

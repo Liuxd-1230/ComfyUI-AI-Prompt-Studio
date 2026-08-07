@@ -110,8 +110,9 @@ def _document_extractable(name: str, mime_type: str) -> bool:
     if mime in ("application/pdf",
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document"):
         return True
+    # 0.2.1a：ext 取的是无点小写（"pdf"/"docx"），不要和带点集合比较
     ext = (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
-    return ext in (".pdf", ".docx")
+    return ext in ("pdf", "docx")
 
 
 def _extract_text_from_payload(att: Attachment) -> str:
@@ -165,8 +166,18 @@ def local_extract_document(att: Attachment) -> Optional[Tuple[Attachment, str]]:
     if not text or not text.strip():
         return None  # 扫描件无文本层，不假装识别
     note = ""
-    if len(text.encode("utf-8")) > MAX_TEXT_BYTES:
-        text = text[:MAX_TEXT_BYTES]
+    encoded = text.encode("utf-8")
+    if len(encoded) > MAX_TEXT_BYTES:
+        # 0.2.1a：按 UTF-8 **字节**截断（此前按字符数截断，汉字等会超过 512 KB）；
+        # 回退到最近的有效字符边界，绝不从多字节字符中间切断
+        encoded = encoded[:MAX_TEXT_BYTES]
+        while encoded:
+            try:
+                encoded.decode("utf-8")
+                break
+            except UnicodeDecodeError:
+                encoded = encoded[:-1]
+        text = encoded.decode("utf-8")
         note = f"（提取文本已截断至 {MAX_TEXT_BYTES} 字节）"
     out = Attachment(kind="text", name=att.name, mime_type="text/plain",
                      content=text, size_bytes=len(text.encode("utf-8")),

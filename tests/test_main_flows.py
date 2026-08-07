@@ -213,19 +213,25 @@ def test_flow3_multi_character_book_storyboard_anima(monkeypatch, store):
 
 @pytest.mark.parametrize("target", ["generic_image", "sdxl", "flux_kontext"])
 def test_flow4_5_6_composer_generic_families(store, target):
-    """CharacterBook → Storyboard → Composer generic_image/sdxl/flux 必须成功（0.2.1 P0-1 回归）。"""
+    """CharacterBook → Storyboard → Composer generic_image/sdxl/flux 必须成功（0.2.1 P0-1 回归）。
+
+    0.2.1a：text 只写剧情（不预写任何人物特征）——两个角色的外貌特征
+    必须来自 CharacterBook 本身（全部人物进最终 prompt，不再只取第一个档案）。
+    """
     payload = make_profile(store)
     book = two_char_book()
     comp = pc_mod.APS_PromptComposer()
     positive, negative, plan_json_out, profile_json, validation = comp.compose(
-        AI_PROFILE=payload, text="A holds B's hand, black short hair, "
-                                 "white military uniform, long blonde hair, black dress",
+        AI_PROFILE=payload, text="A holds B's hand",
         target=target, operation="generate", prompt_mode="tags", negative="",
         safety_tag="none", character_bible=None, character_book=book.to_json())
     # 不再抛 TypeError/NameError；产出合法提示词
     assert positive and positive.strip()
+    # 两个角色的特征都来自 CharacterBook（text 不含任何外貌特征）
     assert "black short hair" in positive
+    assert "white military uniform" in positive
     assert "long blonde hair" in positive
+    assert "black dress" in positive
     plan = PromptPlan.from_json(plan_json_out)
     assert plan.target_family in ("generic_image", "sdxl", "flux")
 

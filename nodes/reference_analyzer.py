@@ -196,7 +196,7 @@ class APS_ReferenceAnalyzer:
             return (analysis.to_json(), candidate.to_json(), manifest.to_json(),
                     "", "0.0", analysis.raw, images)
 
-        # 3) 多图身份判断 + 共识（P0-14：VLM 整体判断优先，字符串一致度作 fallback）
+        # 3) 多图身份判断 + 共识（P0-14 + 0.2.1a：VLM 结论**权威**，字符串一致度只作 fallback）
         image_consensus = None
         if len(image_candidates) == 1:
             image_consensus = image_candidates[0]
@@ -205,23 +205,27 @@ class APS_ReferenceAnalyzer:
                 vision_prof, vision_key, image_list)
             if verdict is None:
                 # VLM 判断失败/未配置 → 回退 deterministic heuristic（0.2.1 P0-14）
-                verdict = reference_svc.judge_identity(image_candidates)
+                fallback = reference_svc.judge_identity(image_candidates)
+                image_consensus = reference_svc.identity_consensus_with_verdict(
+                    image_candidates, fallback)
                 analysis.warnings.append(
                     "VLM 整体身份判断不可用，已回退基于可观察稳定特征的字符串一致度")
             else:
                 for e in verdict.get("evidence", []):
                     analysis.raw = (analysis.raw + f"\n[identity]\n{e}").strip()
-            if verdict["same_subject"]:
-                image_consensus = reference_svc.identity_consensus(image_candidates)
+                # 0.2.1a：VLM 结论直接控制合并（same=true→全部合并；false→防串绑），
+                # 字符串一致度不再覆盖 VLM 判断
+                image_consensus = reference_svc.identity_consensus_with_verdict(
+                    image_candidates, verdict)
+            if image_consensus.same_subject:
                 analysis.warnings.append(
                     f"多图共识：{len(image_candidates)} 张图指向同一主体"
-                    f"（身份一致度 {verdict['confidence']:.2f}），冲突已标记 uncertain")
+                    f"（身份一致度 {image_consensus.identity_confidence:.2f}），"
+                    "冲突已标记 uncertain")
             else:
-                image_consensus = reference_svc.identity_consensus(image_candidates)
                 analysis.warnings.append(
-                    f"多图身份判断：{len(image_candidates)} 张图指向"
-                    f"{verdict.get('clusters', 2)} 个不同主体；已取最高一致度分组合并，"
-                    f"其余图未并入该人物（防跨主体串绑）")
+                    f"多图身份判断：{len(image_candidates)} 张图指向不同主体，"
+                    "已取最高一致度分组作为主人物，其余图未并入（防跨主体串绑）")
             for conflict in image_consensus.conflicts:
                 analysis.warnings.append(
                     f"特征冲突 {conflict.trait_name}: "

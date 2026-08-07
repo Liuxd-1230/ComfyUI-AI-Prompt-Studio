@@ -89,6 +89,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 ## 兼容性
 
 - **ComfyUI 0.30.x**：已隔离 `comfy.logging → comfy.internal_logging` 破坏性变更（本扩展不 import 核心日志）。
+- **本地运行时**：Ollama / llama.cpp / LM Studio（v1 官方推荐；模型标识按官方 `key` 字段，`id` 仅存在于已加载实例 `loaded_instances` 条目；未达 v1 的旧版自动降级为 v0 只读状态查询）。
 - **无 GPU 环境**：提示词相关功能只依赖 `requests` + `PyYAML`，可离线加载；联网功能（网关/探测）在无网络时明确报错，不伪装。
 - **第三方共存**：MiniMax H3 采样三件套（Turbo / DualClock / TE-Speed）——H3 Director 只输出 STRING，不重复采样后端；ANIMA_BOOSTER 未安装时软检测提示，不硬依赖。
 - 详见 `docs/compatibility.md`。

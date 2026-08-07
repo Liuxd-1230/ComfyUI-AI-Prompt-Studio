@@ -1,9 +1,10 @@
 """LM Studio 后端（docs/research.md：v1 官方推荐；v0 只读降级）。
 
-官方 REST（2026-08-07 查证，docs/research.md §8）：
+官方 REST（2026-08-07 查证，docs/research.md §8；0.2.1a 复核 lmstudio.ai/docs/developer/rest/list）：
 - 版本探测：v1 优先（GET /api/v1/models）→ 失败再试 v0（GET /api/v0/models）→ 都失败 unavailable；
-- v1 列表：GET /api/v1/models → {"models": [{..., "loaded_instances": [{"id": ..., "config": ...}]}]}
-  （注意 v1 顶层是 models 键，v0 是 data 键）；
+- v1 列表：GET /api/v1/models → {"models": [{..., "key": ..., "loaded_instances": [{"id": ..., "config": ...}]}]}
+  （注意 v1 模型标识字段是 **key**（非 id），顶层是 models 键；v0 是 data 键 + id 字段；
+  实现同时接受 key/id，兼容两代官方结构）；
 - load：POST /api/v1/models/load，请求体 {"model": ...}；响应含 instance_id；
 - unload：POST /api/v1/models/unload，请求体 {"instance_id": ...}（官方唯一字段，不能用 model）。
 - v0：状态/列表只读；load/unload 给出可读错误。
@@ -46,17 +47,27 @@ class LMStudioBackend(RuntimeBackend):
         entries = payload.get("models") or payload.get("data") or []
         ids = []
         for m in entries:
-            if isinstance(m, dict) and m.get("id"):
-                ids.append(m["id"])
+            if not isinstance(m, dict):
+                continue
+            # v1 官方模型标识字段是 key（v0 是 id）；同时兼容两代官方结构
+            model_key = m.get("key") or m.get("id")
+            if model_key:
+                ids.append(str(model_key))
         return ids
 
     def _loaded_instance_id_for(self, model: str) -> str:
-        """在 v1 已加载实例里找 model 对应的 instance_id（官方：loaded_instances[].id）。"""
+        """在 v1 已加载实例里找 model 对应的 instance_id（官方：loaded_instances[].id）。
+
+        model 参数按 v1 的 key 字段匹配（兼容 v0 的 id 字段）。
+        """
         res = self._request("GET", "/api/v1/models")
         if not res.get("ok"):
             return ""
         for m in res.get("json", {}).get("models", []) or []:
-            if not isinstance(m, dict) or m.get("id") != model:
+            if not isinstance(m, dict):
+                continue
+            model_key = m.get("key") or m.get("id")
+            if model_key != model:
                 continue
             for inst in m.get("loaded_instances") or []:
                 if isinstance(inst, dict) and inst.get("id"):

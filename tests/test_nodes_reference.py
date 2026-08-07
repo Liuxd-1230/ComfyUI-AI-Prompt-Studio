@@ -109,6 +109,74 @@ def test_analyzer_vlm_identity_fallback_on_failure(monkeypatch, store):
     assert any("回退" in w for w in anl["warnings"])
 
 
+def test_analyzer_vlm_same_subject_authoritative(monkeypatch, store):
+    """0.2.1a：VLM 判断同一主体（conf 0.95）→ 即使 stable 字符串不一致
+    （'black short hair' vs 'short black hair'）也合并为同一个人物。"""
+    payload = setup_profile(store)
+    responses = iter([
+        json.dumps({"name": "A", "traits": [
+            {"name": "hair", "value": "black short hair", "category": "stable",
+             "confidence": 0.9}]}),
+        json.dumps({"name": "A", "traits": [
+            {"name": "hair", "value": "short black hair", "category": "stable",
+             "confidence": 0.9}]}),
+        '{"same_subject": true, "confidence": 0.95, '
+        '"evidence": ["same face proportions", "same hairline"], "reasons_if_different": []}',
+    ])
+    monkeypatch.setattr(ra_mod.vision_svc, "call_vision",
+                        lambda *a, **k: {"ok": True, "text": next(responses),
+                                         "raw": "raw"})
+    node = ra_mod.APS_ReferenceAnalyzer()
+    imgs = [np.random.rand(16, 16, 3).astype(np.float32),
+            np.random.rand(16, 16, 3).astype(np.float32)]
+    analysis, candidate, _, _, _, _, _ = node.analyze(
+        AI_PROFILE=payload, analysis_mode="character_full",
+        text_anchor="", images=imgs, character_bible=None, custom_prompt="")
+    cand = CharacterCandidate.from_json(candidate)
+    anl = analysis if isinstance(analysis, dict) else json.loads(analysis)
+    # VLM same=true：同一个人物，identity_confidence 取 VLM 的 0.95
+    assert cand.same_subject is True
+    assert cand.identity_confidence == 0.95
+    assert any("指向同一主体" in w for w in anl["warnings"])
+    # 字符串不一致不再是「不同主体」的证据（VLM 权威）
+    assert not any("不同主体" in w for w in anl["warnings"])
+
+
+def test_analyzer_vlm_different_subject_blocks_merge(monkeypatch, store):
+    """0.2.1a：VLM 判断不同主体 → 即使 stable 字符串碰巧一致也不合并
+    （VLM 结论优先，旧字符串算法不再覆盖）。"""
+    payload = setup_profile(store)
+    responses = iter([
+        json.dumps({"name": "X", "traits": [
+            {"name": "hair", "value": "long dark hair", "category": "stable",
+             "confidence": 0.9},
+            {"name": "face", "value": "round face", "category": "stable",
+             "confidence": 0.9}]}),
+        json.dumps({"name": "Y", "traits": [
+            {"name": "hair", "value": "long dark hair", "category": "stable",
+             "confidence": 0.9},
+            {"name": "face", "value": "round face", "category": "stable",
+             "confidence": 0.9}]}),
+        '{"same_subject": false, "confidence": 0.1, '
+        '"evidence": ["different facial structure"], "reasons_if_different": ["different bone structure"]}',
+    ])
+    monkeypatch.setattr(ra_mod.vision_svc, "call_vision",
+                        lambda *a, **k: {"ok": True, "text": next(responses),
+                                         "raw": "raw"})
+    node = ra_mod.APS_ReferenceAnalyzer()
+    imgs = [np.random.rand(16, 16, 3).astype(np.float32),
+            np.random.rand(16, 16, 3).astype(np.float32)]
+    analysis, candidate, _, _, _, _, _ = node.analyze(
+        AI_PROFILE=payload, analysis_mode="character_full",
+        text_anchor="", images=imgs, character_bible=None, custom_prompt="")
+    cand = CharacterCandidate.from_json(candidate)
+    anl = analysis if isinstance(analysis, dict) else json.loads(analysis)
+    # VLM same=false：不合并为同一人物（字符串一致不再覆盖 VLM）
+    assert cand.same_subject is False
+    assert any(w.startswith("特征冲突 __subject_identity__") for w in anl["warnings"])
+    assert any("不同主体" in w for w in anl["warnings"])
+
+
 def test_analyzer_text_priority_over_images(monkeypatch, store):
     payload = setup_profile(store)
 

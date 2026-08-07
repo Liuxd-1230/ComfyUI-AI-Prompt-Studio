@@ -150,3 +150,12 @@
 - **多图身份判断增加一次 VLM 整体判断**：`batch_identity_check`（最多 6 张代表图；"Do these images show the same visual subject?"，只比较可观察身份特征，服装/背景/姿势为弱辅助）；VLM 失败回退 deterministic heuristic；身份判断提示词禁止以「衣服/背景/姿势相同」为主要依据。
 - **H3/Storyboard 原生 Structured Output**：`H3_SCHEMA` / `STORYBOARD_SCHEMA` 作为 `GenerateRequest.output_schema`（Provider 支持时走协议层，否则自动降级提示词约束），避免 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复。
 - **Schema.from_json 接受 JSON 字符串**：ComfyUI 自定义类型输入可能以 JSON 字符串到达（之前对 str 直接抛 SchemaError 导致自定义类型无法接线）；现在字符串先解析为 dict 再反序列化，保持输入容错。
+
+## D25. 0.2.1a 小补丁决策（2026-08-07）
+
+- **LM Studio v1 模型标识以官方 `key` 为准**：官方 `GET /api/v1/models` 条目的模型标识字段是 `key`（`id` 只存在于 `loaded_instances` 实例条目）；解析兼容 `key`/`id` 两代结构，测试改用官方真实结构（此前测试 mock 与代码用了同一错误字段，掩盖了独立 unload 找不到 instance 的缺陷）。
+- **VLM 身份判断为 merge 权威**：`identity_consensus_with_verdict` —— same_subject=True 直接合并全部候选（VLM confidence 写入 identity_confidence）；False 禁止全量合并（主主体 + `__subject_identity__` 冲突，防串绑）；VLM 失败才回退字符串一致度启发式。旧字符串算法只作 fallback，不再覆盖 VLM 结论。
+- **CharacterBook 全量进 Generic/SDXL/FLUX**：render_generic 新增 `book` 参数，多人物全部渲染（不再只取 first_bible）；Composer 确定性/LLM 路径都传 book；主链路测试改为 text 只写剧情、特征全部来自 CharacterBook。
+- **Responses adapter 补 `import json`**：兼容端点 function_call arguments 为 dict 时不再 NameError。
+- **附件：无点扩展名比较 + UTF-8 字节截断**：`_document_extractable` 用无点小写（pdf/docx）；`local_extract_document` 按 UTF-8 字节截断并回退到有效字符边界（中文长文档不再超 512 KB）。
+- **Gateway 降级重算 Structured Output**：协议切换（ProtocolUnsupported 降级）时按新协议重新调用 `_structured_output_for`，绝不把某协议不支持的 json_schema 发给另一协议（deepseek-v4-flash Responses→Chat 场景）；提示词约束注入幂等。

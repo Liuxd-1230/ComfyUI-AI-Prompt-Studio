@@ -147,6 +147,25 @@ def test_responses_function_call_preserves_call_id(monkeypatch):
     assert tc.arguments == '{"city": "Paris"}'
 
 
+def test_responses_function_call_dict_arguments(monkeypatch):
+    """0.2.1a：兼容端点把 arguments 直接给 dict 时也能序列化（此前缺 import json → NameError）。"""
+    events = [
+        {"type": "response.output_item.done",
+         "item": {"type": "function_call", "id": "fc_x", "call_id": "call_9",
+                  "name": "search", "arguments": {"q": "dict args"},
+                  "status": "completed"}},
+    ]
+    make_post_fake(monkeypatch, lines=sse(events))
+    result = ResponsesAdapter().generate(profile(), "sk", system="",
+                                         messages=[], web_search=False,
+                                         reasoning="off", max_tokens=100,
+                                         temperature=1.0)
+    assert len(result.tool_calls) == 1
+    tc = result.tool_calls[0]
+    assert tc.id == "call_9"
+    assert json.loads(tc.arguments) == {"q": "dict args"}
+
+
 def test_responses_multiple_tool_calls(monkeypatch):
     """0.2.1 P0-7：并行多个 function call 的 call_id 与参数互不串扰。"""
     events = [

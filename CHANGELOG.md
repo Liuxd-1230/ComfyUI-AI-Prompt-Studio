@@ -2,6 +2,16 @@
 
 本项目按阶段（Phase 0-6）迭代，每阶段完成即提交并推送（master）。
 
+## [0.2.1a] - 2026-08-07 — 小补丁（LM Studio 字段 / VLM 权威 / 多人物 / 附件 / 降级）
+
+- **LM Studio v1 模型字段修正（P0）**：官方 `GET /api/v1/models` 的模型标识是 **`key`**（`id` 只存在于 `loaded_instances` 实例条目；v0 才是 `data`+`id`）。此前实现与测试都用 `id` 匹配模型（mock 与代码同错）→ 独立执行 unload 时按 `loaded_instances` 反查 instance_id 找不到。现解析 `m.get("key") or m.get("id")` 兼容两代，测试改用官方真实结构；新增「模型 key 未找到 → 可读错误且不发卸载请求」用例。
+- **VLM 多图身份判断接管 merge（P1）**：新增 `identity_consensus_with_verdict`——VLM same_subject=True 直接合并全部候选（VLM confidence 写入），False 禁止全量合并（主主体 + `__subject_identity__` 冲突，防串绑），VLM 失败才回退字符串一致度启发式；旧字符串算法不再覆盖 VLM 结论。
+- **Generic/SDXL/FLUX 消费完整 CharacterBook（P1）**：render_generic 新增 `book` 参数，多人物特征全部进最终 prompt（此前只取 first_bible，第二个人物可能丢失）；Composer 确定性/LLM 路径均传 book；主链路测试改为 text 只写剧情、特征全部来自 CharacterBook。
+- **Responses adapter 补 `import json`**：兼容端点 function_call arguments 为 dict 时不再 NameError。
+- **附件两处修正**：`_document_extractable` 扩展名比较改为无点小写（pdf/docx）；`local_extract_document` 按 UTF-8 **字节**截断并回退到有效字符边界（中文长文档不再超 512 KB）。
+- **Gateway 降级重算 Structured Output**：ProtocolUnsupported 降级到另一协议时按新协议重新计算结构化输出策略（deepseek-v4-flash Responses→Chat fallback 不再把 json_schema 发给 Chat）；约束注入幂等。
+- 文档：research.md §8.7（含官方来源）、decisions.md D25、known-limitations.md（key 字段 / VLM 权威 / 字节截断）、README 兼容性节、CHANGELOG。
+
 ## [0.2.1] - 2026-08-07 — 加固轮（无新功能、无架构重构）
 
 ### P0 修复（运行时 / 协议 / 数据）

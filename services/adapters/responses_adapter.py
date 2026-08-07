@@ -6,6 +6,7 @@ function tool 调用、citations（web_search 输出容错提取）、usage。
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Optional
 

@@ -280,3 +280,32 @@ def test_generic_openai_structured_output(store):
     req = GenerateRequest(messages=[], output_schema={"type": "object"})
     gw.generate(store.get_profile("p1"), "k", req)
     assert r.calls[0]["output_schema"] == {"type": "object"}
+
+
+def test_gateway_fallback_recomputes_structured_output_for_new_protocol(store):
+    """0.2.1a：Responses 原生 schema → 临时 ProtocolUnsupported 降级到 Chat 时，
+    必须按 Chat 能力**重新计算**结构化输出策略，绝不把 Chat 不支持的
+    json_schema 继续发给 Chat（deepseek-v4-flash 场景）。"""
+    store.create_profile({"profile_id": "p1", "provider": "deepseek",
+                          "model": "deepseek-v4-flash"})
+    # flash：Responses 原生支持，Chat 不支持
+    store.set_capabilities("p1", {"responses": True, "chat_completions": True,
+                                  "structured_output_responses": True,
+                                  "structured_output_chat": False})
+
+    def fail_responses(*a, **k):
+        raise ProtocolUnsupported("Responses 接口不可用 HTTP 404")
+
+    r = FakeAdapter("responses").script(fail_responses)
+    c = FakeAdapter("chat_completions")
+    gw = Gateway(store=store)
+    gw._responses = r
+    gw._chat = c
+    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    result = gw.generate(store.get_profile("p1"), "k", req)
+    assert result.text == "from-chat_completions"   # 降级成功
+    assert any("降级" in w for w in result.warnings)
+    # Chat 收到的是 None（提示词约束），不是 responses 的 schema
+    kw = c.calls[0]
+    assert "output_schema" not in kw or kw.get("output_schema") is None
+    assert "JSON Schema" in req.system

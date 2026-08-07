@@ -15,12 +15,13 @@
 ## 2. 本地运行时
 
 - 只控制**独立运行的本地服务**（Ollama / llama.cpp / LM Studio / 自定义兼容服务），不把模型加载进 ComfyUI 进程。
-- Ollama 无官方 load/unload 端点：以「空请求预热 + `keep_alive:0` 卸载 + `/api/ps` 状态」模拟；LM Studio v0 只读（状态可读，load/unload 明确报错不伪装）。
+- Ollama 无官方 load/unload 端点：以「空请求预热 + `keep_alive:0` 卸载 + `/api/ps` 状态」模拟；LM Studio v0 只读（状态可读，load/unload 明确报错不伪装）；**LM Studio v1（0.2.1a）**模型标识以官方 `key` 字段为准（`id` 仅存在于 `loaded_instances` 实例条目；v0 才是 `data`+`id`），实现兼容 key/id 两代。
 - `unload_policy` 仅对 `provider=local` 生效（after_request / after_success / never）；卸载失败只追加 warning，不影响生成结果。
 
 ## 3. 多图身份判断
 
 - 身份判断流程（0.2.1）：先做一次 **VLM 整体判断**（最多 6 张代表图；只比较可观察身份特征——脸型比例/发际线/眼形/鼻口几何/明显印记/身体比例，服装/背景/姿势为弱辅助）→ 失败时回退「stable 特征名与值」文本一致度启发式。两者都是判断依据，不是视觉重识别。
+- **VLM 结论为 merge 权威（0.2.1a）**：VLM same_subject=True → 合并全部候选（即使 stable 字符串不一致，冲突标记 uncertain）；False → 禁止全量合并（主主体 + `__subject_identity__` 冲突，防跨主体串绑）；字符串一致度启发式只在 VLM 不可用时作 fallback，不再覆盖 VLM 结论。
 - 多主体场景：只合并最高一致度分组，其余图不并入该人物（`__subject_identity__` 冲突记录），不会把不同主体的特征混合进同一个人物。
 
 ## 4. 附件 / 文件
@@ -28,6 +29,7 @@
 - 附件文件路径只允许相对 ComfyUI input 目录；绝对路径或 `..` 穿越被拒绝。大小上限：文本 512KB / 图片 20MB / 文件 20MB。
 - 附件内容**不进日志**；data URI 只在请求体与节点间传递。
 - **文档解析（0.2.1）**：Provider 无 file 能力时，**PDF / DOCX 支持本地提取文本**（pypdf / python-docx，可选依赖）→ 文本附件 + warning「已本地提取文本发送」。**不 OCR**：扫描 PDF 无文本层 → 明确报错，不假装识别。**PPTX / XLSX 不做本地提取**（需要 Provider 原生 file 能力，否则报错）。文本类附件（TXT/MD/JSON/CSV/HTML 等）始终直接作为文本发送。
+- **提取截断（0.2.1a）**：本地提取文本按 UTF-8 **字节**截断并回退到有效字符边界（此前按字符数截断，中文长文档会超过 512 KB）。
 - **附件 warning 必达节点**（0.2.1）：路径越界 / 文件不存在 / 超限 / 被跳过 / 本地提取降级，全部出现在 LLM Generate 的 `warnings` 输出，不静默丢弃。
 
 ## 5. Prompt Skill
