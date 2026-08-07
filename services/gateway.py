@@ -25,14 +25,18 @@ logger = logging.getLogger("ai_prompt_studio.gateway")
 
 @dataclass
 class GenerateRequest:
-    """一次生成请求（协议无关）。"""
+    """一次生成请求（协议无关）。
+
+    采样参数为 None 时不在请求中发送该字段（交给 provider 默认值）——
+    产品决策：采样参数不进普通节点 UI，只在档案高级设置里配置。
+    """
 
     system: str = ""
     messages: List[ChatMessage] = field(default_factory=list)
     web_search: str = "off"          # off | auto | always
     reasoning: str = "high"
-    max_tokens: int = 4096
-    temperature: float = 1.0
+    max_tokens: Optional[int] = None
+    temperature: Optional[float] = None
     json_mode: bool = False
     stop_event: Any = None
     timeout: float = 120.0
