@@ -30,7 +30,8 @@ class LlamaCppBackend(RuntimeBackend):
     def load(self, model: str) -> Dict[str, Any]:
         if not model:
             return {"ok": False, "error": "model 不能为空"}
-        res = self._request("POST", "/models/load", json={"id": model})
+        # llama.cpp 官方 body 字段是 {"model": ...}（不是 {"id": ...}），已按源码查证
+        res = self._request("POST", "/models/load", json={"model": model})
         if not res.get("ok"):
             return self._check_missing(res, model)
         return {"ok": True, "model": model, "detail": "已加载"}
@@ -38,7 +39,7 @@ class LlamaCppBackend(RuntimeBackend):
     def unload(self, model: str) -> Dict[str, Any]:
         if not model:
             return {"ok": False, "error": "model 不能为空"}
-        res = self._request("POST", "/models/unload", json={"id": model})
+        res = self._request("POST", "/models/unload", json={"model": model})
         if not res.get("ok"):
             return self._check_missing(res, model)
         return {"ok": True, "model": model, "detail": "已卸载"}

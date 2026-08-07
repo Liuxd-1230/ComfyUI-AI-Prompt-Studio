@@ -47,6 +47,25 @@ def test_protocol_local_uses_chat(store):
     assert c.calls and not r.calls
 
 
+def test_protocol_deepseek_per_model_when_caps_unknown(store):
+    """未探测时按具体模型兜底：v4-flash→responses；v4-pro 与未知模型→chat。"""
+    gw = Gateway(store=store)
+
+    def run(model, want_responses):
+        store.create_profile({"profile_id": model, "model": model})
+        r = FakeAdapter("responses")
+        c = FakeAdapter("chat_completions")
+        gw._responses = r
+        gw._chat = c
+        gw.generate(store.get_profile(model), "k", GenerateRequest())
+        assert bool(r.calls) is want_responses
+        assert bool(c.calls) is (not want_responses)
+
+    run("deepseek-v4-flash", want_responses=True)
+    run("deepseek-v4-pro", want_responses=False)
+    run("deepseek-unknown-model", want_responses=False)
+
+
 def test_protocol_explicit_override(store):
     store.create_profile({"profile_id": "p1", "protocol": "chat_completions"})
     store.set_capabilities("p1", {"responses": True})

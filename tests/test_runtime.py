@@ -74,8 +74,10 @@ def test_llamacpp_load_unload(monkeypatch):
     backend.load("q4.gguf")
     backend.unload("q4.gguf")
     assert calls[0]["url"] == "http://127.0.0.1:8080/models/load"
-    assert calls[0]["kwargs"]["json"] == {"id": "q4.gguf"}
+    # llama.cpp 官方 body 是 {"model": ...}（按 README/源码查证，非 {"id": ...}）
+    assert calls[0]["kwargs"]["json"] == {"model": "q4.gguf"}
     assert calls[1]["url"] == "http://127.0.0.1:8080/models/unload"
+    assert calls[1]["kwargs"]["json"] == {"model": "q4.gguf"}
 
 
 def test_llamacpp_status_lists_ids(monkeypatch):

@@ -37,6 +37,7 @@
 - **来源**：https://api-docs.deepseek.com/quick_start/pricing ；https://api-docs.deepseek.com/guides/responses_api（en/zh-cn）；https://api-docs.deepseek.com/api/create-response ；https://api-docs.deepseek.com/api/create-chat-completion ；https://api-docs.deepseek.com/api/list-models ；https://api-docs.deepseek.com/quick_start/error_codes ；https://api-docs.deepseek.com/sitemap.xml
 - **冲突记录**：官方文档在「base URL 是否带 /v1」与「错误 JSON 结构」上无明确说明；按「无 /v1、按状态码」执行，并兼容 `/v1` 前缀（OpenAI SDK 默认路径）。
 - **对实现的影响**：默认模型字面量 `deepseek-v4-flash`；联网搜索只走 Responses；能力探测用 `GET /models`（list-models 仅返回两模型）；错误归一化以状态码为主。
+- **实现基线（2026-08-07）**：能力按**具体模型**判定，不再 provider==deepseek 一刀切——`deepseek-v4-flash` → responses=True / native_web_search=True（仅 Responses 路径）/ vision=False / files=False；`deepseek-v4-pro` → responses=False（Responses 计划 2026-08 初上线，当前不可用）/ web_search=False；未知 DeepSeek 模型 → 保守（responses 未知，网关按静态表 `deepseek_known_responses()` 兜底，未知模型走 chat_completions）。Chat `response_format` 仅 json_object（json_schema 未文档化）→ structured_output 走提示词约束+解析+修复，不承诺严格 schema。
 
 ## 3. ANIMA 提示词
 

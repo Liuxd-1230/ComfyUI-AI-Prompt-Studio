@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from ..schemas.profile import AIProfile
 from ..schemas.results import ChatMessage, LLMResult, make_error
 from ..server.config_store import ConfigStore
-from . import search
+from . import capability_probe, search
 from .adapters.base import ProtocolUnsupported
 from .adapters.chat_adapter import ChatCompletionsAdapter
 from .adapters.responses_adapter import ResponsesAdapter
@@ -65,9 +65,14 @@ class Gateway:
         if r is True:
             return "responses"
         if r in ("unknown", None):
-            # 未探测/未知：DeepSeek 官方基线默认 responses 可用；失败会降级到 chat
+            # 未探测/未知：DeepSeek 按「具体模型」能力表兜底（flash→responses，
+            # v4-pro→chat，未知模型保守走 chat；失败仍可被 ProtocolUnsupported 降级）
             if profile.provider == "deepseek":
-                return "responses"
+                known = capability_probe.deepseek_known_responses(profile.model)
+                if known is True:
+                    return "responses"
+                if known is False:
+                    return "chat_completions"
             return "chat_completions"
         return "chat_completions"
 

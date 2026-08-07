@@ -46,6 +46,40 @@ def test_probe_generic_endpoint(monkeypatch):
     assert caps["native_web_search"] is False
 
 
+def test_probe_deepseek_v4_pro_responses_false(monkeypatch):
+    """能力按具体模型判定：v4-pro 当前不支持 Responses（官方 2026-08-07 查证）。"""
+    profile = S.AIProfile(profile_id="p1", provider="deepseek",
+                          model="deepseek-v4-pro")
+    monkeypatch.setattr(requests, "get",
+                        lambda *a, **k: FakeResponse(200, {"data": [{"id": "deepseek-v4-pro"}]}))
+    caps = capability_probe.probe_profile(profile, "sk-test")
+    assert caps["responses"] is False
+    assert caps["chat_completions"] is True
+    assert caps["native_web_search"] is False
+    assert caps["capability_basis"] == "per_model:deepseek-v4-pro"
+
+
+def test_probe_deepseek_unknown_model_conservative(monkeypatch):
+    """未知 DeepSeek 模型：responses 未知，不再默认 Responses。"""
+    profile = S.AIProfile(profile_id="p1", provider="deepseek",
+                          model="deepseek-xyz-new")
+    monkeypatch.setattr(requests, "get",
+                        lambda *a, **k: FakeResponse(200, {"data": []}))
+    caps = capability_probe.probe_profile(profile, "sk-test")
+    assert caps["responses"] == "unknown"
+    assert caps["chat_completions"] is True
+    assert caps["native_web_search"] is False
+    assert caps["capability_basis"] == "deepseek_unknown_model_conservative"
+
+
+def test_deepseek_known_responses_table():
+    assert capability_probe.deepseek_known_responses("deepseek-v4-flash") is True
+    assert capability_probe.deepseek_known_responses("deepseek-v4-pro") is False
+    assert capability_probe.deepseek_known_responses("deepseek-unknown") is None
+    # 含变体后缀也能匹配（如 deepseek-v4-flash-ctx128k）
+    assert capability_probe.deepseek_known_responses("deepseek-v4-flash-latest") is True
+
+
 def test_probe_vision_config_marked(monkeypatch):
     profile = S.AIProfile(profile_id="p1", vision_model="qwen-vl-max")
     monkeypatch.setattr(requests, "get",
