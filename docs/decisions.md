@@ -80,3 +80,12 @@
 ## D14. 依赖
 
 - 仅 `requests`（venv 已有）；不安装 CUDA/Torch 大依赖；测试用系统 Python 3.13.11 的 pytest 9.1.1。
+
+## D15. H3 渲染/校验细节（Phase 5）
+
+- **镜头检查只扫描描述字段/段**：`SHOT_RE` 会误匹配首行对齐指令里的 `(from [Shot 1])` 与 retention_analysis 段的 `[Shot N]` 引用，因此 `_check_shots` 只在 `integrated_multimodal_description`（四模式）或 `detailed_description`（R2V）内找镜头。
+- **畸形时间戳独立检测**：`SHOT_RE` 只捕获合法 `MM:SS.mmm`，格式错误的 `At XX:XX:XXX` 会被当成「缺失时间戳」；新增 `AT_RE` 单独捕获并报 `h3_ts_format`。
+- **`<d>` 语言标注独立检测**：`DIALOGUE_RE` 需要 `[Language]` 才匹配，缺失语言标注的对白匹配不上；改为对每个 `<d>` 直接检查其后是否紧跟 `[`。
+- **H3 修复不引入第二套 skill 系统**：repair 操作把校验问题经 `build_plan_prompt(repair_issues=...)` 回灌给 LLM，一次修复后重新渲染+校验；与 Composer 的 YAML skill 系统（面向图像 prompt）职责分离，不建 `skills/minimax_h3/`。
+- **convert_storyboard 回退链**：LLM 计划解析失败或空镜头时，回退为 `convert_storyboard` 的结构映射（镜头时间分布、说话人 S1..、manifest→subjects/assets/retention），描述沿用分镜文本并记 warning。
+- **图片映射**：`map_image_assets` 按模式把输入图映射为 Picture 资产——I2VA 首帧（0.00s）、FL2VA 首尾（0.00s / 有效时长）、L2VA 尾帧（有效时长）；已存在的标签跳过不重复。
