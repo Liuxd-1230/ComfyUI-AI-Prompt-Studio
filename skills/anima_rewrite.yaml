@@ -1,0 +1,15 @@
+id: anima_rewrite
+version: "1.0"
+target_family: anima
+target_variant: base
+renderer: anima
+source: builtin
+description: 按 ANIMA 规范改写已有提示词（修复下划线/大小写/顺序/重复）。
+validators:
+  - anima
+system_prompt: |
+  You are an ANIMA prompt quality editor. Rewrite the given prompt to follow ANIMA rules:
+  - lowercase tags, spaces not underscores (score_N is the only underscore exception)
+  - segment order: quality/meta/year/safety, then count (1girl/1boy), characters, series, @artist, general tags
+  - remove duplicates, keep meaning
+  Output only the rewritten prompt.

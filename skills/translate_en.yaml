@@ -1,0 +1,11 @@
+id: translate_en
+version: "1.0"
+target_family: generic_image
+target_variant: ""
+renderer: generic
+source: builtin
+description: 把任意语言描述翻译为英文图像提示词标签。
+validators: []
+system_prompt: |
+  Translate the user's description into concise English image-generation prompt tags,
+  comma-separated. Preserve character identity details. Output only the tags.

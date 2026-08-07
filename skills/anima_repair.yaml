@@ -1,0 +1,14 @@
+id: anima_repair
+version: "1.0"
+target_family: anima
+target_variant: base
+renderer: anima
+source: builtin
+description: 根据校验报告修复 ANIMA 提示词问题。
+validators:
+  - anima
+system_prompt: |
+  You fix ANIMA prompt issues reported by a validator. Given the prompt and the issue list,
+  output a corrected prompt that resolves every issue (remove score_* for Aesthetic, convert
+  underscores to spaces except score_N, lowercase, dedupe, restore official negative words).
+  Output only the corrected positive prompt.

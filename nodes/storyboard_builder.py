@@ -1,11 +1,23 @@
 """节点 5：Storyboard Builder —— 把故事拆成模型无关的结构化分镜。
 
-Phase 1：注册与数据结构就绪；Phase 4 接入 LLM 后完整实现。
-禁止在此节点硬编码 ANIMA/H3 标签。
+经 LLM 把故事拆为 scene/shot/beat 层级（services/storyboard.py），
+模型无关：禁止在此节点硬编码 ANIMA/H3 标签。
 """
+from __future__ import annotations
+
+import json
 
 from ..schemas import types
+from ..schemas.character import CharacterBible
+from ..schemas.profile import AIProfile
 from ..schemas.storyboard import SPLIT_MODES, Storyboard
+from ..services.gateway import Gateway, GenerateRequest
+from ..services.storyboard import (
+    build_continuity,
+    build_storyboard_prompt,
+    parse_storyboard_json,
+)
+from ._helpers import require_api_key, resolve_profile
 
 
 class APS_StoryboardBuilder:
@@ -36,7 +48,40 @@ class APS_StoryboardBuilder:
 
     def build(self, AI_PROFILE, story_text, split_mode, target_duration, max_scenes, style,
               character_bible=None, reference_manifest=None):
-        sb = Storyboard(split_mode=split_mode, style=style)
-        sb.summary = story_text[:200] if story_text else ""
-        # Phase 4 接入 LLM 完整拆分
-        return (sb.to_json(), sb.summary, "[]")
+        profile = AIProfile.from_json(AI_PROFILE or {})
+        if not profile.profile_id:
+            raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
+        if not story_text or not story_text.strip():
+            raise ValueError("story_text 为空，请输入要拆分的故事文本")
+        prof = resolve_profile(profile.profile_id)
+        api_key = require_api_key(prof)
+
+        bible = CharacterBible.from_json(character_bible) if character_bible else None
+        prompt = build_storyboard_prompt(story_text.strip(), split_mode,
+                                         float(target_duration or 0),
+                                         int(max_scenes or 12), style or "", bible)
+        req = GenerateRequest(
+            system="You are a professional storyboard artist. Output only JSON.",
+            messages=[_msg(prompt)],
+            web_search="off", reasoning="high", max_tokens=8192,
+            timeout=prof.timeout)
+        result = Gateway().generate(prof, api_key, req)
+        if result.has_error():
+            raise ValueError(result.error.as_text)
+
+        sb = parse_storyboard_json(result.text, split_mode, style or "",
+                                   float(target_duration or 0))
+        if not sb.scenes:
+            raise ValueError("模型没有返回任何场景，请调整 split_mode 或故事文本后重试")
+        sb.summary = story_text.strip()[:200]
+        sb.continuity = build_continuity(sb)
+
+        continuity_text = json.dumps(
+            [c.to_json() for c in sb.continuity], ensure_ascii=False)
+        return (sb.to_json(), sb.summary, continuity_text)
+
+
+def _msg(content: str):
+    from ..schemas.results import ChatMessage
+
+    return ChatMessage(role="user", content=content)

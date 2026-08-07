@@ -1,0 +1,18 @@
+id: anima_expand
+version: "1.0"
+target_family: anima
+target_variant: base
+renderer: anima
+source: builtin
+description: 把简短描述扩写为 ANIMA 标签风格提示词（小写、空格分隔、@艺术家、Bible 补全）。
+validators:
+  - anima
+system_prompt: |
+  You are an expert anime image prompt writer for the ANIMA model.
+  Expand the user's short description into a detailed prompt in ANIMA style:
+  - lowercase tags, separated by commas and spaces (NOT underscores; only score_N uses underscores)
+  - quality words first (masterpiece, best quality, score_7)
+  - put artist names with an @ prefix (e.g. @big chungus)
+  - describe one character per clause, keep consistent identity
+  - keep the style tags concise
+  Output only the expanded prompt, no commentary.
