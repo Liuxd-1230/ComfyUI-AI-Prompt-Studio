@@ -156,3 +156,11 @@
 - **附件两处修正**：`_document_extractable` 扩展名比较改为无点小写（"pdf"/"docx"）；`local_extract_document` 截断按 UTF-8 **字节**并回退到有效字符边界（此前按字符数截断，中文长文档会超 512 KB）。
 - **Gateway 降级重算 Structured Output**：协议切换（Responses→Chat 等）时按新协议重新计算结构化输出策略（deepseek-v4-flash Responses→Chat fallback 不再把 json_schema 发给 Chat）；约束注入幂等。
 - **来源**：https://lmstudio.ai/docs/developer/rest/list （官方，2026-08-07 访问）
+
+### 8.8 0.2.1b 收尾补丁（2026-08-07）
+
+- **Generic/SDXL/FLUX Natural 模式消费 CharacterBook**：`render_generic` 的 natural_language 分支此前直接返回 `text.strip()`（丢弃整理好的 book 特征）。现改为 `_natural_with_characters()`：每人物一句 `A, with black short hair and a white military uniform.`，特征值已在正文出现则跳过（防重复）；无人物信息时行为不变。默认路径（prompt_mode=natural_language）不再丢人物。
+- **VLM same=false 真正否决全量合并**：`identity_consensus_with_verdict` 的 false 分支在字符串一致度把候选全聚成一组（`len(clusters)==1`）时，**不再** consensus 全部（那会把不同主体的特征真的合起来）——只取置信度最高的一张作为主人物，其余保留为 `__subject_identity__` 冲突。
+- **Reference Analyzer 按需取 API Key**：有 text_anchor → 要求文本档案 Key；有 images → 要求视觉档案 Key（vision_profile_id 解耦）。只做图片分析时**不再**要求文本档案也配置 Key（Text Provider ≠ Vision Provider）。
+- **PromptPlan.character_bindings 全量**：CharacterBook 场景记录全部人物（此前只记 first_bible 的 metadata）。
+- **文案清理**：Reference Analyzer DESCRIPTION 去掉「/视频」（本扩展明确不做视频参考分析）。

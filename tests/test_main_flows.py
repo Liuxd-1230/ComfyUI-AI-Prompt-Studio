@@ -211,19 +211,22 @@ def test_flow3_multi_character_book_storyboard_anima(monkeypatch, store):
 
 # ================================================================ Flow 4/5/6：Generic / SDXL / FLUX
 
-@pytest.mark.parametrize("target", ["generic_image", "sdxl", "flux_kontext"])
-def test_flow4_5_6_composer_generic_families(store, target):
+@pytest.mark.parametrize("target,prompt_mode", [
+    (t, m) for t in ["generic_image", "sdxl", "flux_kontext"]
+    for m in ["tags", "natural_language"]])
+def test_flow4_5_6_composer_generic_families(store, target, prompt_mode):
     """CharacterBook → Storyboard → Composer generic_image/sdxl/flux 必须成功（0.2.1 P0-1 回归）。
 
     0.2.1a：text 只写剧情（不预写任何人物特征）——两个角色的外貌特征
     必须来自 CharacterBook 本身（全部人物进最终 prompt，不再只取第一个档案）。
+    0.2.1b：natural_language 模式也必须消费 CharacterBook（不再丢弃为 tag soup）。
     """
     payload = make_profile(store)
     book = two_char_book()
     comp = pc_mod.APS_PromptComposer()
     positive, negative, plan_json_out, profile_json, validation = comp.compose(
         AI_PROFILE=payload, text="A holds B's hand",
-        target=target, operation="generate", prompt_mode="tags", negative="",
+        target=target, operation="generate", prompt_mode=prompt_mode, negative="",
         safety_tag="none", character_bible=None, character_book=book.to_json())
     # 不再抛 TypeError/NameError；产出合法提示词
     assert positive and positive.strip()
@@ -232,8 +235,17 @@ def test_flow4_5_6_composer_generic_families(store, target):
     assert "white military uniform" in positive
     assert "long blonde hair" in positive
     assert "black dress" in positive
+    if prompt_mode == "natural_language":
+        # 自然语句而非 tag soup：正文保留 + 人物特征以自然句形式在前
+        assert "A holds B's hand" in positive
+        assert "with" in positive
+        assert not positive.startswith(",")
     plan = PromptPlan.from_json(plan_json_out)
     assert plan.target_family in ("generic_image", "sdxl", "flux")
+    # 0.2.1b：PROMPT_PLAN metadata 记录全部人物（不只是第一个档案）
+    assert len(plan.character_bindings) == 2
+    names = {b["character"] for b in plan.character_bindings}
+    assert names == {"A", "B"}
 
 
 # ================================================================ Flow 7：H3 全链路

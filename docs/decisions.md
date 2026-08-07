@@ -159,3 +159,10 @@
 - **Responses adapter 补 `import json`**：兼容端点 function_call arguments 为 dict 时不再 NameError。
 - **附件：无点扩展名比较 + UTF-8 字节截断**：`_document_extractable` 用无点小写（pdf/docx）；`local_extract_document` 按 UTF-8 字节截断并回退到有效字符边界（中文长文档不再超 512 KB）。
 - **Gateway 降级重算 Structured Output**：协议切换（ProtocolUnsupported 降级）时按新协议重新调用 `_structured_output_for`，绝不把某协议不支持的 json_schema 发给另一协议（deepseek-v4-flash Responses→Chat 场景）；提示词约束注入幂等。
+
+## D26. 0.2.1b 收尾决策（2026-08-07）
+
+- **Natural 模式也消费 CharacterBook（默认路径修复）**：`render_generic` natural_language 分支由「原样返回 text」改为 `_natural_with_characters()`（每人物一句 `A, with <特征…>`，正文已含特征跳过）；Composer 全局默认 prompt_mode=natural_language 时 Generic/SDXL/FLUX 不再丢人物信息。
+- **VLM same=false 在启发式无法分组时只取单图**：字符串一致度全聚成一组 ≠ 允许全量合并——取置信度最高的一张作主人物，其余保留身份冲突（真正的「VLM 否决合并」）。
+- **Reference Analyzer 按需取 Key**：文本/视觉两个 Profile 各自按需 require（Text Provider ≠ Vision Provider）；只做图片分析时文本档案无 Key 也可运行。
+- **PromptPlan metadata 全量**：character_bindings 记录 CharacterBook 全部人物（不只 first_bible）；Reference Analyzer 描述去掉「视频」文案。

@@ -134,7 +134,7 @@ class APS_ReferenceAnalyzer:
                     "caption", "confidence", "raw", "IMAGES")
     FUNCTION = "analyze"
     CATEGORY = "AI Prompt Studio"
-    DESCRIPTION = "使用视觉模型分析图片/批次/视频与文字锚点，反推结构化参考信息与人物候选（保留原始资产透传）。"
+    DESCRIPTION = "使用视觉模型分析图片/批次与文字锚点，反推结构化参考信息与人物候选（保留原始资产透传）。"
 
     def analyze(self, AI_PROFILE, analysis_mode, text_anchor,
                 images=None, character_bible=None, custom_prompt=""):
@@ -142,10 +142,15 @@ class APS_ReferenceAnalyzer:
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
         prof = resolve_profile(profile.profile_id)
-        api_key = require_api_key(prof)
-        # 视觉/文本 Profile 解耦（P1/D）：vision_profile_id 指向另一档案时，视觉用该档案
+        # 视觉/文本 Profile 解耦（P1/D + 0.2.1b）：按需取 API Key——
+        # 有 text_anchor → 文本档案密钥；有 images → 视觉档案密钥（vision_profile_id 解耦）。
+        # 只做图片分析时**不再要求**文本档案也配置 Key（Text Provider ≠ Vision Provider）。
+        has_anchor = bool(text_anchor and text_anchor.strip())
+        image_list = _to_image_list(images)
+        has_images = bool(image_list)
+        api_key = require_api_key(prof) if has_anchor else ""
         vision_prof = vision_svc.resolve_vision_profile(prof)
-        vision_key = require_api_key(vision_prof) if vision_prof is not prof else api_key
+        vision_key = require_api_key(vision_prof) if has_images else ""
 
         analysis = ReferenceAnalysis(mode=analysis_mode, profile_id=prof.profile_id)
         base_prompt = MODE_PROMPTS.get(analysis_mode) or custom_prompt
@@ -174,7 +179,6 @@ class APS_ReferenceAnalyzer:
 
         # 2) 逐图视觉分析
         image_candidates: List[CharacterCandidate] = []
-        image_list = _to_image_list(images)
         for i, img in enumerate(image_list):
             data_url = vision_svc.image_to_data_url(img)
             res = vision_svc.call_vision(

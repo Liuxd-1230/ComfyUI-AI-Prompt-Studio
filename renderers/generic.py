@@ -62,7 +62,9 @@ def render_generic(
             seen.append(p)
 
     if prompt_mode == "natural_language":
-        positive = text.strip()
+        # 0.2.1b：Natural 模式也消费 CharacterBook——人物特征拼成自然语句，
+        # 而不是 tag soup；正文已含的特征不再重复。
+        positive = _natural_with_characters(text, char_sources)
     elif prompt_mode == "hybrid":
         # 少量补充分隔标签 + 正文；正文已含的不再重复追加
         body = text.strip()
@@ -74,3 +76,32 @@ def render_generic(
     negative = negative_override.strip() or ""
     return {"positive": positive, "negative": negative, "tags": seen,
             "warnings": warnings, "profile": profile}
+
+
+def _natural_with_characters(body: str, char_sources: List[CharacterBible]) -> str:
+    """把人物档案拼成自然语言描述，追加到正文前。
+
+    格式（示例）：
+      "A, with black short hair and a white military uniform. B, with long blonde hair and a black dress. A holds B's hand."
+    - 每人物一句；多个特征用 and 连接；人物无名字时用 "the character"；
+    - 特征值已在正文中出现（子串）则跳过，避免重复；
+    - 无人物信息时原样返回正文（与旧行为一致）。
+    """
+    body = body.strip()
+    clauses: List[str] = []
+    for b in char_sources:
+        name = (b.name or "").strip() or "the character"
+        attrs = [t.value.strip() for t in b.traits
+                 if t.category != "uncertain" and t.value.strip()
+                 and t.value.strip().lower() not in body.lower()]
+        if not attrs:
+            continue
+        if len(attrs) == 1:
+            clause = f"{name}, with {attrs[0]}"
+        else:
+            clause = f"{name}, with {' and '.join(attrs[:-1])} and {attrs[-1]}"
+        clauses.append(clause)
+    if not clauses:
+        return body
+    head = ". ".join(clauses) + ". "
+    return (head + body) if body else head.strip()

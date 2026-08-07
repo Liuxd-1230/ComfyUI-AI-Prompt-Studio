@@ -2,6 +2,16 @@
 
 本项目按阶段（Phase 0-6）迭代，每阶段完成即提交并推送（master）。
 
+## [0.2.1b] - 2026-08-07 — 收尾补丁（默认路径 Natural / VLM 否决 / 按需 Key / metadata）
+
+- **Generic/SDXL/FLUX Natural 模式消费 CharacterBook（默认路径修复）**：`render_generic` natural_language 分支此前直接返回 `text.strip()`，把整理好的全部人物特征丢弃；而 Composer 默认 `prompt_mode=natural_language`。现改为 `_natural_with_characters()`——每人物一句 `A, with black short hair and a white military uniform.`，正文已含特征跳过（防重复），无人物时行为不变。
+- **VLM same=false 真正否决全量合并**：`identity_consensus_with_verdict` false 分支在字符串一致度把候选全聚成一组时，不再 `consensus_of(全部)`（那会把不同主体的 traits 真的合起来）——只取置信度最高的一张作主人物，其余保留为 `__subject_identity__` 冲突。
+- **Reference Analyzer 按需取 API Key**：有 text_anchor → 要求文本档案 Key；有 images → 要求视觉档案 Key（vision_profile_id 解耦）。只做图片分析时**不再**要求文本档案配置 Key（Text Provider ≠ Vision Provider）。
+- **PromptPlan.character_bindings 全量**：CharacterBook 场景记录全部人物（此前只记 first_bible）。
+- **文案清理**：Reference Analyzer DESCRIPTION 去掉「/视频」。
+- 测试：main-flows Flow 4/5/6 参数化 prompt_mode（tags + natural，断言 natural 消费 book + bindings 全量）；新增「VLM 不同主体单簇否决合并」「图片-only 无文本 Key」「有锚点必须文本 Key」；全量 443 passed。
+- 文档：research.md §8.8、decisions.md D26、known-limitations.md。
+
 ## [0.2.1a] - 2026-08-07 — 小补丁（LM Studio 字段 / VLM 权威 / 多人物 / 附件 / 降级）
 
 - **LM Studio v1 模型字段修正（P0）**：官方 `GET /api/v1/models` 的模型标识是 **`key`**（`id` 只存在于 `loaded_instances` 实例条目；v0 才是 `data`+`id`）。此前实现与测试都用 `id` 匹配模型（mock 与代码同错）→ 独立执行 unload 时按 `loaded_instances` 反查 instance_id 找不到。现解析 `m.get("key") or m.get("id")` 兼容两代，测试改用官方真实结构；新增「模型 key 未找到 → 可读错误且不发卸载请求」用例。

@@ -282,33 +282,49 @@ def identity_consensus_with_verdict(candidates: List[CharacterCandidate],
         return merged
     # VLM 判定不同主体（或调用方明确传 same_subject=False）：防串绑
     clusters = cluster_by_identity(candidates)
-    primary = max(clusters, key=lambda cl: (
-        sum(identity_agreement(a, b) for a in cl for b in cl if a is not b),
-        len(cl)))
-    merged = consensus_of(primary)
-    merged.sources = []
-    for c in primary:
-        merged.sources.extend(s for s in c.sources if s not in merged.sources)
-    merged.same_subject = False
-    merged.identity_confidence = 0.0
-    merged.confidence = 0.5
-    others = [c for cl in clusters if cl is not primary for c in cl]
-    if others:
-        merged.conflicts.append(CharacterConflict(
-            trait_name="__subject_identity__",
-            values=[f"主体 {len(clusters)} 个"],
-            reason=f"VLM 整体身份判断：{len(candidates)} 张图指向不同主体，"
-                   f"已取最高一致度分组（{len(primary)} 张）作为主人物；"
-                   f"其余 {len(others)} 张未并入（防跨主体串绑）",
-            resolution_hint="请按主体分别分析，或分组后分别传入"))
-    else:
-        # VLM 说不同主体、字符串一致度却只聚出一组：以 VLM 为准，不合并并给出提示
+    if len(clusters) == 1 and len(clusters[0]) == len(candidates):
+        # 0.2.1b：VLM 判定不同主体，但字符串一致度无法把候选分组（全聚成一组）——
+        # 此时**不允许** consensus 全部（那会把不同主体的特征真的合起来）。
+        # 只取置信度最高的一张作为主人物，其余全部保留为 identity 冲突。
+        top = max(candidates, key=lambda c: (c.confidence, len(c.traits)))
+        merged = consensus_of([top])
+        merged.sources = list(top.sources)
+        others = [c for c in candidates if c is not top]
         merged.conflicts.append(CharacterConflict(
             trait_name="__subject_identity__",
             values=[f"主体 {len(candidates)} 张"],
-            reason="VLM 判断这些图指向不同主体，但特征文本一致度较高，"
-                   "未合并为同一人物（VLM 结论优先）",
-            resolution_hint="请人工确认是否同一人物，或补充更清晰的参考图"))
+            reason=f"VLM 判断这些图指向不同主体，且特征文本一致度无法分组；"
+                   f"未合并为同一人物（VLM 结论优先），只取置信度最高的 1 张"
+                   f"（{len(others)} 张保留为身份冲突）",
+            resolution_hint="请按主体分别分析，或分组后分别传入"))
+    else:
+        primary = max(clusters, key=lambda cl: (
+            sum(identity_agreement(a, b) for a in cl for b in cl if a is not b),
+            len(cl)))
+        merged = consensus_of(primary)
+        merged.sources = []
+        for c in primary:
+            merged.sources.extend(s for s in c.sources if s not in merged.sources)
+        others = [c for cl in clusters if cl is not primary for c in cl]
+        if others:
+            merged.conflicts.append(CharacterConflict(
+                trait_name="__subject_identity__",
+                values=[f"主体 {len(clusters)} 个"],
+                reason=f"VLM 整体身份判断：{len(candidates)} 张图指向不同主体，"
+                       f"已取最高一致度分组（{len(primary)} 张）作为主人物；"
+                       f"其余 {len(others)} 张未并入（防跨主体串绑）",
+                resolution_hint="请按主体分别分析，或分组后分别传入"))
+        else:
+            # VLM 说不同主体、字符串一致度却只聚出一组：以 VLM 为准，不合并并给出提示
+            merged.conflicts.append(CharacterConflict(
+                trait_name="__subject_identity__",
+                values=[f"主体 {len(candidates)} 张"],
+                reason="VLM 判断这些图指向不同主体，但特征文本一致度较高，"
+                       "未合并为同一人物（VLM 结论优先）",
+                resolution_hint="请人工确认是否同一人物，或补充更清晰的参考图"))
+    merged.same_subject = False
+    merged.identity_confidence = 0.0
+    merged.confidence = 0.5
     return merged
 
 

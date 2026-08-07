@@ -177,6 +177,81 @@ def test_analyzer_vlm_different_subject_blocks_merge(monkeypatch, store):
     assert any("不同主体" in w for w in anl["warnings"])
 
 
+def test_analyzer_vlm_different_subject_single_cluster_vetoes_merge(monkeypatch, store):
+    """0.2.1b：VLM 判定不同主体，但 stable 字符串一致度恰好把候选聚成一组时，
+    **必须真正否决全量合并**——只取置信度最高的一张作为主人物，其余保留为
+    身份冲突（不再把两个人的 traits 合进同一个 candidate）。"""
+    payload = setup_profile(store)
+    responses = iter([
+        json.dumps({"name": "X", "traits": [
+            {"name": "hair", "value": "long dark hair", "category": "stable",
+             "confidence": 0.95},
+            {"name": "face", "value": "round face", "category": "stable",
+             "confidence": 0.95}]}),
+        json.dumps({"name": "Y", "traits": [
+            {"name": "hair", "value": "long dark hair", "category": "stable",
+             "confidence": 0.5},
+            {"name": "face", "value": "round face", "category": "stable",
+             "confidence": 0.5}]}),
+        '{"same_subject": false, "confidence": 0.1, "evidence": [], "reasons_if_different": []}',
+    ])
+    monkeypatch.setattr(ra_mod.vision_svc, "call_vision",
+                        lambda *a, **k: {"ok": True, "text": next(responses),
+                                         "raw": "raw"})
+    node = ra_mod.APS_ReferenceAnalyzer()
+    imgs = [np.random.rand(16, 16, 3).astype(np.float32),
+            np.random.rand(16, 16, 3).astype(np.float32)]
+    analysis, candidate, _, _, _, _, _ = node.analyze(
+        AI_PROFILE=payload, analysis_mode="character_full",
+        text_anchor="", images=imgs, character_bible=None, custom_prompt="")
+    cand = CharacterCandidate.from_json(candidate)
+    anl = analysis if isinstance(analysis, dict) else json.loads(analysis)
+    assert cand.same_subject is False
+    # 未全量合并：主人物只来自一张图（sources 只有 image:0 或 image:1 一个来源）
+    img_sources = [s for s in cand.sources if s.startswith("image:")]
+    assert len(img_sources) == 1, f"期望只取一张图作为主人物，实际来源: {img_sources}"
+    # 其余图保留为身份冲突，警告明确说明「未合并」
+    assert any(w.startswith("特征冲突 __subject_identity__") for w in anl["warnings"])
+    assert any("未合并" in w for w in anl["warnings"])
+
+
+def test_analyzer_images_only_without_text_api_key(monkeypatch, store):
+    """0.2.1b：只做图片分析时，文本档案无 API Key 也可运行（密钥来自视觉档案）。"""
+    store.create_profile({"profile_id": "textprof", "name": "Text",
+                          "vision_profile_id": "visprof"})   # 无 API Key
+    store.create_profile({"profile_id": "visprof", "name": "Vision",
+                          "vision_base_url": "http://v:8000/v1",
+                          "vision_model": "qwen-vl-max"})
+    store.set_api_key("visprof", "sk-vis-123")
+    payload = store.get_profile("textprof").node_payload()
+    responses = iter([
+        json.dumps({"name": "A", "traits": [
+            {"name": "hair", "value": "red hair", "category": "stable",
+             "confidence": 0.9}]}),
+    ])
+    monkeypatch.setattr(ra_mod.vision_svc, "call_vision",
+                        lambda *a, **k: {"ok": True, "text": next(responses),
+                                         "raw": "raw"})
+    node = ra_mod.APS_ReferenceAnalyzer()
+    analysis, candidate, _, _, _, _, _ = node.analyze(
+        AI_PROFILE=payload, analysis_mode="character_full",
+        text_anchor="", images=[np.random.rand(8, 8, 3).astype(np.float32)],
+        character_bible=None, custom_prompt="")
+    cand = CharacterCandidate.from_json(candidate)
+    assert cand.traits[0].value == "red hair"   # 未因文本档案无 Key 报错
+
+
+def test_analyzer_text_anchor_requires_text_key(monkeypatch, store):
+    """0.2.1b：有 text_anchor 时必须要求文本档案的 API Key（仍不因 Key 缺失而绕过）。"""
+    store.create_profile({"profile_id": "nokey", "name": "NoKey"})   # 无 Key
+    payload = store.get_profile("nokey").node_payload()
+    node = ra_mod.APS_ReferenceAnalyzer()
+    with pytest.raises(ValueError, match="API Key"):
+        node.analyze(AI_PROFILE=payload, analysis_mode="character_full",
+                     text_anchor="红发少女", images=None,
+                     character_bible=None, custom_prompt="")
+
+
 def test_analyzer_text_priority_over_images(monkeypatch, store):
     payload = setup_profile(store)
 

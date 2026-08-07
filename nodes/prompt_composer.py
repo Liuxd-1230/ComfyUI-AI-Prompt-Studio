@@ -135,10 +135,18 @@ class APS_PromptComposer:
                 prompt_mode, negative, bible, book, book_context)
             validation = empty_report()
 
+        # 0.2.1b：character_bindings 记录全部人物（CharacterBook 场景不再只记 first_bible）
+        if book is not None and book.characters:
+            bindings = [_binding(b) for b in book.characters]
+        elif bible is not None:
+            bindings = [_binding(bible)]
+        else:
+            bindings = []
+
         plan = PromptPlan(target_family=family, target_variant=variant,
                           operation=operation, prompt_mode=prompt_mode,
                           positive=positive, negative=neg,
-                          character_bindings=[_binding(bible)] if bible else [],
+                          character_bindings=bindings,
                           tags=tags, lora_triggers=lora,
                           warnings=warnings, validation=validation)
         return (positive, neg, plan.to_json(), gprofile.to_json(),

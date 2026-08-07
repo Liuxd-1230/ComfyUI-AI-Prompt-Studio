@@ -21,7 +21,8 @@
 ## 3. 多图身份判断
 
 - 身份判断流程（0.2.1）：先做一次 **VLM 整体判断**（最多 6 张代表图；只比较可观察身份特征——脸型比例/发际线/眼形/鼻口几何/明显印记/身体比例，服装/背景/姿势为弱辅助）→ 失败时回退「stable 特征名与值」文本一致度启发式。两者都是判断依据，不是视觉重识别。
-- **VLM 结论为 merge 权威（0.2.1a）**：VLM same_subject=True → 合并全部候选（即使 stable 字符串不一致，冲突标记 uncertain）；False → 禁止全量合并（主主体 + `__subject_identity__` 冲突，防跨主体串绑）；字符串一致度启发式只在 VLM 不可用时作 fallback，不再覆盖 VLM 结论。
+- **VLM 结论为 merge 权威（0.2.1a）**：VLM same_subject=True → 合并全部候选（即使 stable 字符串不一致，冲突标记 uncertain）；False → 禁止全量合并（主主体 + `__subject_identity__` 冲突，防跨主体串绑）；字符串一致度启发式只在 VLM 不可用时作 fallback，不再覆盖 VLM 结论。**0.2.1b**：启发式无法把候选分组（全聚成一组）时也绝不全量合并——只取置信度最高的一张作主人物，其余保留身份冲突。
+- **图片-only 分析不要求文本档案 Key（0.2.1b）**：Reference Analyzer 按需取密钥——有 text_anchor 才要求文本档案 Key，有 images 才要求视觉档案 Key（支持 vision_profile_id 解耦）；Text Provider ≠ Vision Provider。
 - 多主体场景：只合并最高一致度分组，其余图不并入该人物（`__subject_identity__` 冲突记录），不会把不同主体的特征混合进同一个人物。
 
 ## 4. 附件 / 文件
