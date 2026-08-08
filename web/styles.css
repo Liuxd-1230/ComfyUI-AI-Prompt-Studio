@@ -177,6 +177,10 @@
   color: #888;
   font-size: 12px;
 }
+
+.aps-key-status { display: block; margin-top: 4px; font-size: 12px; }
+.aps-key-saved { color: #45c486; }
+.aps-key-missing { color: #d99a4e; }
 .aps-bottom {
   display: grid;
   grid-template-columns: 1fr 1fr;

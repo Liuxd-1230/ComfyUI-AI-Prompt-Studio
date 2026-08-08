@@ -26,6 +26,7 @@ API_PREFIX = "/ai_prompt_studio"
 def _profile_public(profile: AIProfile, store: ConfigStore) -> Dict[str, Any]:
     data = profile.to_json()
     data["api_key_masked"] = store.masked_api_key(profile.profile_id)
+    data["has_api_key"] = store.has_api_key(profile.profile_id)
     data["capabilities"] = store.get_capabilities(profile.profile_id)
     return data
 
@@ -112,12 +113,13 @@ def handle_set_api_key(profile_id: str, payload: Dict[str, Any], store: ConfigSt
     if not key:
         raise ValueError("api_key 不能为空")
     store.set_api_key(profile_id, key)
-    return {"ok": True, "masked": store.masked_api_key(profile_id)}
+    return {"ok": True, "masked": store.masked_api_key(profile_id),
+            "has_api_key": store.has_api_key(profile_id)}
 
 
 def handle_clear_api_key(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
     store.delete_api_key(profile_id)
-    return {"ok": True}
+    return {"ok": True, "has_api_key": False}
 
 
 def handle_probe(profile_id: str, store: ConfigStore) -> Dict[str, Any]:

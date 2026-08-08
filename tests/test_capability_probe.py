@@ -329,9 +329,13 @@ def test_route_handlers(store):
 
     r = routes.handle_set_api_key("p1", {"api_key": "sk-abc123456789"}, store)
     assert r["masked"] == "sk-***6789"
-    assert routes.handle_get_profile("p1", store)["api_key_masked"] == "sk-***6789"
+    assert r["has_api_key"] is True
+    public = routes.handle_get_profile("p1", store)
+    assert public["api_key_masked"] == "sk-***6789"
+    assert public["has_api_key"] is True
 
-    routes.handle_clear_api_key("p1", store)
+    cleared = routes.handle_clear_api_key("p1", store)
+    assert cleared["has_api_key"] is False
     assert store.get_api_key("p1") is None
 
     # 探测路由（无 key → 可读错误，不抛异常）

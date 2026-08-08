@@ -125,7 +125,10 @@ export function el(tag, attrs = {}, children = []) {
     else if (k === "style" && typeof v === "object") Object.assign(node.style, v);
     else if (k.startsWith("on")) node.addEventListener(k.slice(2).toLowerCase(), v);
     else if (k === "text") node.textContent = v;
-    else node.setAttribute(k, v);
+    // HTML 布尔属性按“是否存在”解释，disabled="false" 仍会禁用按钮。
+    // 对 DOM 自带属性直接赋布尔值，才能正确表达 false；checked 同理。
+    else if (typeof v === "boolean" && k in node) node[k] = v;
+    else if (v != null) node.setAttribute(k, v);
   }
   for (const c of [].concat(children)) {
     if (c == null) continue;

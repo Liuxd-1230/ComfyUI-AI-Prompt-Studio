@@ -102,6 +102,7 @@ class ConfigStore:
         for p in self._profiles_list():
             item = dict(p)
             item["api_key_masked"] = self._secrets.masked(item.get("profile_id", ""))
+            item["has_api_key"] = self._secrets.has(item.get("profile_id", ""))
             result.append(item)
         return result
 
@@ -209,6 +210,12 @@ class ConfigStore:
             return self._secrets.masked(validate_profile_id(profile_id))
         except ValueError:
             return ""
+
+    def has_api_key(self, profile_id: str) -> bool:
+        try:
+            return self._secrets.has(validate_profile_id(profile_id))
+        except ValueError:
+            return False
 
     def delete_api_key(self, profile_id: str) -> None:
         pid = validate_profile_id(profile_id)

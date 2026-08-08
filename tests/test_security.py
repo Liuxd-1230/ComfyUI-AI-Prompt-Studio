@@ -31,9 +31,11 @@ def test_secrets_file_separated_from_config(store):
 
 def test_masked_api_key_in_list(store):
     store.create_profile({"profile_id": "p1"})
+    assert store.list_profiles()[0]["has_api_key"] is False
     store.set_api_key("p1", "sk-abcdef1234567890")
     profiles = store.list_profiles()
     assert profiles[0]["api_key_masked"] == "sk-***7890"
+    assert profiles[0]["has_api_key"] is True
     assert profiles[0].get("api_key") is None
 
 

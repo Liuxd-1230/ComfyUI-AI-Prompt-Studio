@@ -266,7 +266,13 @@ function buildEditorForm(p) {
   const searchUrl = textInput(p.search_url, "https://…/search");
   const supportsVision = checkboxInput(p.supports_vision, "主模型支持图片附件（覆盖能力探测的保守判定）");
   const supportsFiles = checkboxInput(p.supports_files, "端点支持文件内容部分（附件 type:file）");
-  const keyInput = el("input", { type: "password", placeholder: t("api_key_placeholder"), title: t("api_tooltip") });
+  const keySaved = !!p.has_api_key;
+  const keyMask = maskDisplay(p.api_key_masked);
+  const keyInput = el("input", {
+    type: "password",
+    placeholder: keySaved ? `已保存 ${keyMask}；输入新值可替换` : t("api_key_placeholder"),
+    title: t("api_tooltip"),
+  });
 
   wrap.appendChild(inputRow("name", name, "档案名称"));
   wrap.appendChild(inputRow("provider", provider, "deepseek=官方 API；openai_compatible=任意 OpenAI 兼容端点；local=本地服务"));
@@ -303,6 +309,11 @@ function buildEditorForm(p) {
   const keyRow = el("div", { class: "aps-field" });
   keyRow.appendChild(fieldLabel("api_key", t("api_tooltip")));
   keyRow.appendChild(keyInput);
+  keyRow.appendChild(el("small", {
+    id: "aps-key-status",
+    class: keySaved ? "aps-key-status aps-key-saved" : "aps-key-status aps-key-missing",
+    text: keySaved ? `✓ 密钥已保存（${keyMask}）` : "未保存密钥",
+  }));
   const keyBtns = el("div", { class: "aps-btn-row" }, [
     el("button", { class: "aps-btn aps-btn-primary", text: t("set_key"), disabled: isNew, onClick: async () => {
       const val = keyInput.value.trim();
@@ -317,7 +328,7 @@ function buildEditorForm(p) {
         refreshAll();
       } catch (e) { toast(t("error") + ": " + e.message, true); }
     } }),
-    el("button", { class: "aps-btn", text: t("clear_key"), disabled: isNew, onClick: async () => {
+    el("button", { class: "aps-btn", text: t("clear_key"), disabled: isNew || !keySaved, onClick: async () => {
       try {
         await api("/profiles/" + encodeURIComponent(p.profile_id) + "/api_key", { method: "DELETE" });
         toast(t("key_ok"));

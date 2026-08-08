@@ -95,3 +95,12 @@ def test_chinese_help_mentions_every_public_node_port(loaded):
         port_names.update(getattr(node_class, "RETURN_NAMES", ()))
         missing = sorted(name for name in port_names if name not in text)
         assert not missing, f"{node_name} 中文帮助未说明端口: {missing}"
+
+
+def test_settings_editor_exposes_saved_key_state():
+    """密码框不能回填明文，但编辑器必须明确显示服务端的保存状态。"""
+    source = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    assert "has_api_key" in source
+    assert "aps-key-status" in source
+    helper = (PROJECT_ROOT / "web" / "profile_widgets.js").read_text(encoding="utf-8")
+    assert 'typeof v === "boolean" && k in node' in helper
