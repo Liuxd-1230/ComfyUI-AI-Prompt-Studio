@@ -38,7 +38,7 @@
 
 ## APS_StoryboardSelect · 分镜选择/批处理
 
-输入：`storyboard`；`select_mode` 选择 scene/shot/range/all；`scene_id`、`shot_id` 用结构中的稳定 ID；`range` 用 `1-3` 等序号范围。输出 `STORY_ITEM` 单项；`STORY_ITEM_LIST` 容器；`scene_text` 可读文本；`character_ids`；`batch_count`；`STORY_ITEMS` 是 ComfyUI 真列表输出，可驱动列表感知节点。
+输入：`storyboard`；`select_mode` 选择 scene/shot/range/all；`scene_id` 可填 `1`、`scene_01`、`场景1` 或结构中的真实 ID，`shot_id` 可填扁平序号、`shot_01`、`镜头1` 或真实 ID；`range` 用 `1-3` 等扁平镜头序号范围。输出 `STORY_ITEM` 单项；`STORY_ITEM_LIST` 容器；`scene_text` 可读文本；`character_ids`；`batch_count`；`STORY_ITEMS` 是 ComfyUI 真列表输出，可驱动列表感知节点。
 
 ## APS_PromptComposer · 模型提示词编排
 

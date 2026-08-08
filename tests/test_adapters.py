@@ -11,7 +11,7 @@ import requests
 
 from aps.schemas.profile import AIProfile
 from aps.schemas.results import ChatMessage
-from aps.services.adapters.base import ProtocolUnsupported
+from aps.services.adapters.base import ProtocolUnsupported, sse_events
 from aps.services.adapters.chat_adapter import ChatCompletionsAdapter
 from aps.services.adapters.responses_adapter import ResponsesAdapter
 
@@ -27,6 +27,16 @@ class FakeResponse:
 
     def close(self):
         pass
+
+
+def test_sse_repairs_lmstudio_unescaped_newline_and_decodes_utf8():
+    """LM Studio 偶尔把 content 内换行直接拆成无 data: 前缀的续行。"""
+    first = 'data: {"choices":[{"delta":{"content":"第一行'.encode("utf-8")
+    continuation = '第二行"},"finish_reason":null}]}'.encode("utf-8")
+    response = FakeResponse(lines=[first, continuation, b""])
+    events = list(sse_events(response))
+    assert len(events) == 1
+    assert events[0]["choices"][0]["delta"]["content"] == "第一行\n第二行"
 
 
 def sse(payloads):

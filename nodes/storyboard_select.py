@@ -4,6 +4,7 @@
 """
 
 import json
+import re
 
 from ..schemas import types
 from ..schemas.storyboard import SELECT_MODES, Scene, Shot, StoryItem, StoryItemList, Storyboard
@@ -54,6 +55,22 @@ def _parse_range(range_text: str) -> list[int]:
     return indexes
 
 
+def _selection_index(value: str, kind: str) -> int | None:
+    """把 1 / scene_01 / 场景1 / shot-2 / 镜头2 解析为一基序号。"""
+    text = (value or "").strip().lower()
+    if not text:
+        return None
+    label = "场景" if kind == "scene" else "镜头"
+    match = re.fullmatch(
+        rf"(?:{kind}|{label})?[\s_-]*0*(\d+)", text, flags=re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
+def _available(items, id_attr: str) -> str:
+    return "、".join(f"{index}:{getattr(item, id_attr)}"
+                     for index, item in enumerate(items, start=1)) or "（空）"
+
+
 def select_items(storyboard: Storyboard, select_mode: str,
                  scene_id: str = "", shot_id: str = "", range_text: str = ""):
     """返回 (items, single)。single 为第一项或 None。"""
@@ -63,19 +80,33 @@ def select_items(storyboard: Storyboard, select_mode: str,
         return [(sc, sh) for sc in storyboard.scenes for sh in sc.shots]
 
     if select_mode == "scene":
-        for sc in storyboard.scenes:
-            if scene_id and sc.scene_id == scene_id:
+        requested = _selection_index(scene_id, "scene")
+        for position, sc in enumerate(storyboard.scenes, start=1):
+            if scene_id and (sc.scene_id == scene_id or requested == position):
                 items.append(_scene_item(sc))
                 break
             if not scene_id:
                 items.append(_scene_item(sc))
+        if scene_id and not items:
+            raise ValueError(
+                f"未找到场景 {scene_id!r}；可填写序号 1-{len(storyboard.scenes)}，"
+                f"或实际 ID。当前场景：{_available(storyboard.scenes, 'scene_id')}")
     elif select_mode == "shot":
-        for sc, sh in flat_shots():
-            if shot_id and sh.shot_id == shot_id:
+        shots = flat_shots()
+        requested = _selection_index(shot_id, "shot")
+        for position, (sc, sh) in enumerate(shots, start=1):
+            if shot_id and (sh.shot_id == shot_id or requested == position):
                 items.append(_shot_item(sc, sh))
                 break
             if not shot_id:
                 items.append(_shot_item(sc, sh))
+        if shot_id and not items:
+            available = "、".join(
+                f"{index}:{shot.shot_id}" for index, (_, shot) in enumerate(shots, start=1)
+            ) or "（空）"
+            raise ValueError(
+                f"未找到镜头 {shot_id!r}；可填写扁平序号 1-{len(shots)}，"
+                f"或实际 ID。当前镜头：{available}")
     elif select_mode == "range":
         shots = flat_shots()
         for idx in _parse_range(range_text):
@@ -101,8 +132,8 @@ class APS_StoryboardSelect:
             "storyboard": (types.STORYBOARD,),
             "select_mode": (SELECT_MODES, {"default": "all",
                                            "tooltip": "scene=按场景；shot=按镜头；range=镜头序号区间（1-3 / 1,2,5）；all=全部镜头"}),
-            "scene_id": ("STRING", {"default": "", "tooltip": "select_mode=scene 时的场景 id"}),
-            "shot_id": ("STRING", {"default": "", "tooltip": "select_mode=shot 时的镜头 id"}),
+            "scene_id": ("STRING", {"default": "", "tooltip": "scene 模式：填 1、scene_01 或实际场景 ID；留空选择全部场景"}),
+            "shot_id": ("STRING", {"default": "", "tooltip": "shot 模式：填扁平序号 1、shot_01 或实际镜头 ID；留空选择全部镜头"}),
             "range": ("STRING", {"default": "", "tooltip": "select_mode=range 时的扁平镜头序号区间，如 1-3 或 1,2,5"}),
         }}
 

@@ -102,6 +102,17 @@ def test_storyboard_select_node(ext, storyboard):
         scene_id="s2", shot_id="", range="")
     assert batch == 1 and item_list["items"][0]["scene_id"] == "s2"
 
+    # 面向用户的序号与常见标签也必须可用，不能要求先猜模型生成的内部 ID。
+    item, item_list, _, _, batch, _ = node.select(
+        storyboard=storyboard.to_json(), select_mode="scene",
+        scene_id="1", shot_id="", range="")
+    assert batch == 1 and item_list["items"][0]["scene_id"] == "s1"
+
+    item, item_list, _, _, batch, _ = node.select(
+        storyboard=storyboard.to_json(), select_mode="shot",
+        scene_id="", shot_id="shot_3", range="")
+    assert batch == 1 and item_list["items"][0]["shot_id"] == "s2sh1"
+
     item, item_list, _, _, batch, items = node.select(
         storyboard=storyboard.to_json(), select_mode="range",
         scene_id="", shot_id="", range="1-2")
@@ -122,6 +133,9 @@ def test_storyboard_select_invalid(ext, storyboard):
     with pytest.raises(ValueError):
         node.select(storyboard=storyboard.to_json(), select_mode="bogus",
                     scene_id="", shot_id="", range="")
+    with pytest.raises(ValueError, match="可填写序号 1-2.*s1.*s2"):
+        node.select(storyboard=storyboard.to_json(), select_mode="scene",
+                    scene_id="99", shot_id="", range="")
 
 
 def json_loads(s):

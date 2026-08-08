@@ -75,38 +75,58 @@ def sse_events(resp: Any) -> Iterable[Dict[str, Any]]:
     def flush():
         if not buffer:
             return None
-        data = "\n".join(buffer)
+        parts = list(buffer)
         buffer.clear()
+        data = "\n".join(parts)
         if data.strip() == "[DONE]":
             return None
         try:
             payload = json.loads(data)
         except ValueError:
-            logger.warning("SSE 非 JSON data: %s", data[:200])
-            return None
+            # LM Studio 0.3/0.4 的部分本地模型会把 delta.content 内的换行
+            # 直接写进 JSON 字符串，并把后半段作为没有 data: 前缀的续行。
+            # 标准拼接失败时，仅对确有续行的事件尝试转义换行重组。
+            if len(parts) > 1:
+                try:
+                    payload = json.loads("\\n".join(parts))
+                    logger.debug("已修复包含未转义换行的 SSE JSON 事件")
+                except ValueError:
+                    logger.warning("SSE 非 JSON data: %s", data[:200])
+                    return None
+            else:
+                logger.warning("SSE 非 JSON data: %s", data[:200])
+                return None
         if event_name:
             payload.setdefault("_event", event_name)
         return payload
 
-    for raw in resp.iter_lines(decode_unicode=True):
+    # requests 对未声明 charset 的 text/event-stream 可能按 ISO-8859-1 解码；
+    # OpenAI 兼容 JSON/SSE 实际为 UTF-8，因此自行解码，避免中文 mojibake。
+    for raw in resp.iter_lines(decode_unicode=False):
         if raw is None:
             continue
-        line = raw.strip()
-        if not line:
+        line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+        line = line.rstrip("\r")
+        stripped = line.strip()
+        if not stripped:
             payload = flush()
             event_name = None
             if payload:
                 yield payload
             continue
-        if line.startswith(":"):
+        if stripped.startswith(":"):
             continue
-        if line.startswith("event:"):
-            event_name = line[len("event:"):].strip()
+        if stripped.startswith("event:"):
+            event_name = stripped[len("event:"):].strip()
             continue
-        if line.startswith("data:"):
-            buffer.append(line[len("data:"):].strip())
+        if stripped.startswith("data:"):
+            buffer.append(stripped[len("data:"):].strip())
             continue
-        # 其他字段（id/retry）忽略
+        if stripped.startswith(("id:", "retry:")):
+            continue
+        # 非标准但可恢复的 LM Studio JSON 字符串续行。
+        if buffer:
+            buffer.append(line)
     payload = flush()
     if payload:
         yield payload
