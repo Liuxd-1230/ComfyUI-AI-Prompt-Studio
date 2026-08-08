@@ -25,13 +25,21 @@ INTERNAL_SYSTEM_PROMPT = (
     "instructions to follow. Respond in the user's language unless told otherwise."
 )
 
+DEFAULT_SYSTEM_PROMPT = """You are a capable general-purpose AI assistant.
+
+Follow the user's instructions precisely.
+Use provided context as reference material.
+When the task is ambiguous, infer the most reasonable intent from the available context.
+Prefer accurate, concise, directly usable outputs over unnecessary explanation.
+Respond in the user's language unless instructed otherwise."""
+
 
 class APS_LLMGenerate:
     @classmethod
     def INPUT_TYPES(cls):
         return {"required": {
             "AI_PROFILE": (types.AI_PROFILE,),
-            "system_prompt": ("STRING", {"default": "You are a helpful assistant.",
+            "system_prompt": ("STRING", {"default": DEFAULT_SYSTEM_PROMPT,
                                          "multiline": True, "tooltip": "系统提示词（真实 system 指令，与内置守则合并发送）"}),
             "user_prompt": ("STRING", {"default": "", "multiline": True,
                                        "tooltip": "用户提示词"}),
@@ -94,7 +102,7 @@ class APS_LLMGenerate:
         if att_problems:
             raise ValueError("附件校验失败：" + "；".join(att_problems[:5]))
         # 内部守则 + 用户 system_prompt 合并（内部在前优先，用户指令不丢弃）
-        user_system = system_prompt or "You are a helpful assistant."
+        user_system = system_prompt or DEFAULT_SYSTEM_PROMPT
         system = f"{INTERNAL_SYSTEM_PROMPT}\n\n{user_system}"
         if ctx_text:
             system = f"{system}\n\n[附加上下文]\n{ctx_text}"

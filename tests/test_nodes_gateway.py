@@ -51,6 +51,18 @@ def test_llm_generate_happy_path(monkeypatch, store):
     assert warnings == ""
 
 
+def test_llm_generate_uses_capable_default_system_prompt(monkeypatch, store):
+    payload = setup_profile(store)
+    fake = FakeGateway(LLMResult(text="ok", profile_id="p1"))
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: fake)
+    default = llm_chat_mod.APS_LLMGenerate.INPUT_TYPES()["required"]["system_prompt"][1]["default"]
+    assert default == llm_chat_mod.DEFAULT_SYSTEM_PROMPT
+    llm_chat_mod.APS_LLMGenerate().generate(
+        AI_PROFILE=payload, system_prompt="", user_prompt="问", context="",
+        history_mode="off", output_mode="text", json_schema="")
+    assert llm_chat_mod.DEFAULT_SYSTEM_PROMPT in fake.req.system
+
+
 def test_llm_generate_raises_on_error(monkeypatch, store):
     payload = setup_profile(store)
     result = LLMResult(profile_id="p1",
