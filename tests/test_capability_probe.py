@@ -127,7 +127,6 @@ def test_probe_uses_linked_vision_profile_endpoint_and_key(monkeypatch, store):
     store.create_profile({
         "profile_id": "vision", "provider": "openai_compatible",
         "base_url": "https://vision.example/v1", "model": "vision-a",
-        "vision_model": "vision-a",
     })
     store.create_profile({
         "profile_id": "text", "provider": "openai_compatible",
@@ -163,6 +162,7 @@ def test_probe_uses_linked_vision_profile_endpoint_and_key(monkeypatch, store):
     assert result["vision"] is False
     assert result["vision_service"] is True
     assert result["checks"]["vision_service"]["endpoint"].startswith("https://vision.example")
+    assert "洋红" in result["checks"]["vision_service"]["detail"]
 
 
 def test_probe_success_deepseek(monkeypatch):
@@ -198,6 +198,51 @@ def test_probe_generic_endpoint(monkeypatch):
     assert caps["native_web_search"] is False
     assert caps["structured_output_responses"] is False
     assert caps["structured_output_chat"] is False
+
+
+def test_probe_discovers_and_persists_openai_v1_root(monkeypatch, store):
+    """LM Studio 根地址会 200+error；探测应验证 /v1 并保存可执行根地址。"""
+    store.create_profile({
+        "profile_id": "lm", "provider": "local",
+        "base_url": "http://127.0.0.1:1234", "model": "qwen-local",
+    })
+    store.set_api_key("lm", "lm-studio")
+
+    def fake_get(url, **kwargs):
+        if "/v1/" in url:
+            return FakeResponse(200, {"data": [{"id": "qwen-local"}]})
+        return FakeResponse(200, {"models": [{"key": "qwen-local"}]})
+
+    def fake_post(url, headers=None, json=None, timeout=None, **kwargs):
+        if "/v1/" not in url:
+            return FakeResponse(200, {"error": {"message": "Unexpected endpoint"}})
+        if url.endswith("/responses"):
+            return FakeResponse(404, {"error": {"message": "not found"}})
+        content = (json.get("messages") or [{}])[-1].get("content", "")
+        if isinstance(content, list) or json.get("response_format") or json.get("tools"):
+            return FakeResponse(400, {"error": {"message": "unsupported"}})
+        return FakeResponse(200, {"choices": [{"message": {"content": "APS_OK"}}]})
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    monkeypatch.setattr(requests, "post", fake_post)
+    result = routes.handle_probe("lm", store)
+
+    assert result["ok"] is True
+    assert result["chat_completions"] is True
+    assert result["resolved_base_url"] == "http://127.0.0.1:1234/v1"
+    assert store.get_profile("lm").base_url == "http://127.0.0.1:1234/v1"
+    assert result["checks"]["base_url_discovery"]["ok"] is True
+
+
+def test_http_200_error_payload_is_reported(monkeypatch):
+    profile = S.AIProfile(profile_id="p1", provider="local",
+                          base_url="http://localhost:1234/v1", model="m")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse(200, {"data": []}))
+    monkeypatch.setattr(requests, "post", lambda *a, **k: FakeResponse(
+        200, {"error": {"message": "model is not loaded"}}))
+    caps = capability_probe.probe_profile(profile, "key", exhaustive=False)
+    assert caps["chat_completions"] is False
+    assert caps["checks"]["chat_completions"]["detail"] == "model is not loaded"
 
 
 def test_third_party_deepseek_proxy_does_not_inherit_official_schema_caps(monkeypatch):

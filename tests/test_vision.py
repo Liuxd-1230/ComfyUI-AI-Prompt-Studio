@@ -90,14 +90,15 @@ def test_resolve_vision_profile_no_ref_returns_self():
 
 
 def test_resolve_vision_profile_to_target(store):
-    """vision_profile_id 指向另一档案 → 视觉使用该档案（文本档案自身无需视觉配置）。"""
-    store.create_profile({"profile_id": "vision1", "vision_base_url": "http://v:9000/v1",
-                          "vision_model": "qwen-vl-max"})
+    """关联视觉档案直接使用目标档案的主 endpoint/model/key。"""
+    store.create_profile({"profile_id": "vision1", "base_url": "http://v:9000/v1",
+                          "model": "qwen-vl-max"})
     store.create_profile({"profile_id": "text1", "vision_profile_id": "vision1"})
     text_prof = store.get_profile("text1")
     vision_prof = vision.resolve_vision_profile(text_prof)
     assert vision_prof.profile_id == "vision1"
     assert vision_prof.vision_model == "qwen-vl-max"
+    assert vision.require_vision(vision_prof) == "http://v:9000/v1"
 
 
 def test_resolve_vision_profile_missing_target_raises(store):

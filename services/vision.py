@@ -114,7 +114,21 @@ def resolve_vision_profile(profile: AIProfile) -> AIProfile:
         raise VisionUnavailable(
             f"vision_profile_id={profile.vision_profile_id!r} 指向的档案不存在，"
             "请在设置面板检查")
-    return target
+    return linked_vision_profile(target)
+
+
+def linked_vision_profile(target: AIProfile) -> AIProfile:
+    """把关联档案规范成视觉调用配置。
+
+    关联档案本身就是一个完整服务档案，因此默认直接使用它的主 endpoint/model/key；
+    若它显式配置了 vision_*，则显式配置优先。这样 vision_profile_id 不再要求用户
+    在目标档案中重复填写一遍相同模型。
+    """
+    resolved = AIProfile.from_json(target.to_json())
+    resolved.vision_base_url = target.vision_base_url or target.base_url
+    resolved.vision_model = target.vision_model or target.model
+    resolved.vision_profile_id = ""
+    return resolved
 
 
 def call_vision(profile: AIProfile, api_key: str, messages: List[Dict[str, Any]],

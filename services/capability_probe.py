@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import requests
 
 from ..schemas.profile import AIProfile
+from .vision import linked_vision_profile
 
 DEFAULT_TIMEOUT = 15.0
 PROBE_OUTPUT_TOKENS = 32
@@ -166,7 +167,7 @@ def _post_probe(endpoint: str, headers: Dict[str, str], body: Dict[str, Any],
         "POST", endpoint, headers, timeout=timeout, body=body)
     text = parser(payload) if status == 200 else ""
     if status == 200 and not text:
-        detail = "HTTP 200，但响应中没有可用的模型文本"
+        detail = _error_message(payload) or "HTTP 200，但响应中没有可用的模型文本"
     return status, payload, detail, text
 
 
@@ -367,6 +368,10 @@ def _probe_vision_service(profile: AIProfile, headers: Dict[str, str], timeout: 
         endpoint, headers, _chat_body(profile.vision_model, "", content=content),
         timeout, _chat_text)
     ok = status == 200 and any(word in text.upper() for word in ("MAGENTA", "PURPLE"))
+    if ok:
+        detail = "已发送 8×8 洋红测试图，模型正确识别为 MAGENTA/PURPLE"
+    elif status == 200 and text:
+        detail = "模型返回了文本，但未正确识别 8×8 洋红测试图"
     caps["vision_service"] = ok
     caps["vision_model_available"] = ok or profile.vision_model in caps["vision_models"]
     caps["checks"]["vision_service"] = _check(status, endpoint, ok, detail)
@@ -386,7 +391,7 @@ def probe_profile(profile: AIProfile, api_key: str,
         "vision_service", "files", "files_chat", "files_responses",
     )
     caps: Dict[str, Any] = {field: False for field in boolean_fields}
-    effective_vision = vision_profile or profile
+    effective_vision = linked_vision_profile(vision_profile) if vision_profile else profile
     caps.update({
         "vision_configured": bool(effective_vision.vision_model),
         "vision_models": [], "vision_model_available": False,
@@ -414,6 +419,44 @@ def probe_profile(profile: AIProfile, api_key: str,
         status, f"{base}/models", status == 200, detail)
 
     _probe_protocols(profile, headers, timeout, caps, exhaustive=exhaustive)
+
+    # LM Studio 等本地 OpenAI 兼容服务的管理 API 位于根路径，但推理 API 位于
+    # /v1。用户很容易把 http://127.0.0.1:1234 当成推理根地址；部分版本还会
+    # 对错误端点返回 HTTP 200 + {error: ...}。仅在原地址两种协议都失败时实测
+    # /v1，成功才采用，避免按端口或 provider 猜测。
+    base_path = (urlparse(base).path or "").rstrip("/")
+    if (not caps["chat_completions"] and not caps["responses"] and
+            not base_path.endswith("/v1")):
+        candidate_base = f"{base}/v1"
+        candidate = AIProfile.from_json(profile.to_json())
+        candidate.base_url = candidate_base
+        candidate_caps: Dict[str, Any] = {field: False for field in boolean_fields}
+        candidate_caps["checks"] = {}
+        _probe_protocols(candidate, headers, timeout, candidate_caps,
+                         exhaustive=exhaustive)
+        if candidate_caps["chat_completions"] or candidate_caps["responses"]:
+            v1_status, v1_payload, v1_detail = _request_json(
+                "GET", f"{candidate_base}/models", headers, timeout=timeout)
+            v1_entries = _catalog_entries(v1_payload) if v1_status == 200 else []
+            caps.update(candidate_caps)
+            caps["http_status"] = v1_status
+            caps["models"] = [value for item in v1_entries
+                              if (value := _model_id(item))]
+            caps["model_listing"] = v1_status == 200
+            caps["checks"]["model_listing"] = _check(
+                v1_status, f"{candidate_base}/models",
+                v1_status == 200, v1_detail)
+            caps["checks"]["base_url_discovery"] = {
+                "ok": True, "endpoint": candidate_base, "http_status": 200,
+                "detail": f"原地址不是推理 API；已实测并采用 {candidate_base}",
+            }
+            caps["resolved_base_url"] = candidate_base
+            caps["base_url_autocorrected"] = True
+            profile = candidate
+            base = candidate_base
+            if vision_profile is None:
+                effective_vision = profile
+
     vision_base = (effective_vision.vision_base_url or effective_vision.base_url).rstrip("/")
     vision_headers = headers if effective_vision is profile else {
         "Authorization": f"Bearer {vision_api_key}", "Content-Type": "application/json"}

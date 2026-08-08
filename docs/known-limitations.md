@@ -5,7 +5,7 @@
 
 ## 1. 模型 / API 能力
 
-- **视觉模型**：必须由用户在档案中配置 `vision_base_url` + `vision_model`（OpenAI 兼容多模态端点）或 `vision_profile_id`（视觉/文本 Profile 解耦）。未配置时 Reference Analyzer 明确报错，不会把文本模型伪装成视觉模型。
+- **视觉模型**：可在当前档案配置 `vision_base_url` + `vision_model`，也可用 `vision_profile_id` 关联一个以主 `base_url + model + key` 提供视觉能力的完整档案。两种方式互斥，关联档案优先；未配置或洋红测试图识别失败时 Reference Analyzer 明确报错，不会把文本模型伪装成视觉模型。
 - **DeepSeek 结构化输出（0.2.1）**：Responses 路径原生支持 `text.format` json_schema（`structured_output_responses=True`，flash）；Chat 路径官方未文档化 json_schema → 自动降级为「提示词约束 + 客户端解析校验」（`structured_output_chat=False`）。**不再**因 `provider==deepseek` 统一禁止原生结构化输出。
 - **DeepSeek 附件能力（0.2.1）**：`deepseek-v4-flash` **不支持图片/文件输入**（官方：`input_image` 被替换为占位文本，`input_file` 未文档化）——能力表诚实标记 vision=False / files=False；图片附件明确报错，PDF/DOCX 走本地文本提取降级。
 - **DeepSeek 按具体模型能力**：`deepseek-v4-flash`（responses/web_search 原生）；`deepseek-v4-pro`（responses 当前不可用）等以 `DEEPSEEK_MODEL_CAPS` 表与能力探测缓存为准；未知模型保守走 chat_completions。

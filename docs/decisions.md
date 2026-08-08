@@ -135,7 +135,7 @@
 ## D23. Batch D：多图身份判断 / 视觉文本 Profile 解耦 / Manifest 消费 / Skill 管理（2026-08-07）
 
 - 多图身份判断：`identity_agreement`（stable 特征名与值一致比例）→ `cluster_by_identity` 贪心聚类 → `judge_identity` 判定 `same_subject`；多主体时只合并最高一致度分组（防跨主体串绑），其余图记 `__subject_identity__` 冲突。
-- 视觉/文本 Profile 解耦：`AIProfile.vision_profile_id` 指向另一档案时，视觉分析使用该档案的 vision_* 配置与密钥；留空用本档案。文本生成始终用本档案 base_url/model。
+- 视觉/文本 Profile 解耦：`AIProfile.vision_profile_id` 指向另一档案时，视觉分析默认直接使用目标档案的主 `base_url + model + key`（目标档案显式设置 `vision_*` 时优先）；留空才使用本档案的 `vision_base_url + vision_model + key`。设置页在关联状态停用会被忽略的本地视觉字段。文本生成始终使用原文本档案。
 - Storyboard 消费 Manifest：character 类 Subject 补成 `[角色表（来自参考清单）]` 并沿用真实 subject_id；已有 CharacterBook 时以 book 为准不重复注入；其余资产/主体进 `[可用参考资产]`。
 - Prompt Skill 管理：内置（仓库 skills/，只读）+ 自定义（用户配置目录 skills/，可增删改/启停/复制内置）；字段白名单 + renderer/family 枚举校验 + hash 审计；新增 `/skills` 路由（list/get/create/update/delete/enabled）。
 

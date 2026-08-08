@@ -144,13 +144,19 @@ def handle_probe(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
             "ok": False, "endpoint": "", "http_status": 0,
             "detail": f"视觉档案 {profile.vision_profile_id!r} 不存在",
         }
+    profile_updates: Dict[str, Any] = {}
+    resolved_base = str(caps.get("resolved_base_url", "") or "").rstrip("/")
+    if resolved_base and resolved_base != profile.base_url.rstrip("/"):
+        profile_updates["base_url"] = resolved_base
     # 手动开关只是在尚未探测时的声明。真实多模态探针跑过后，以实测结果
     # 回写勾选状态，避免 UI 显示支持而 Gateway 继续发送必失败的附件。
     if "chat_completions" in caps.get("checks", {}):
-        store.update_profile(profile_id, {
-            "supports_vision": bool(caps.get("vision")),
-            "supports_files": bool(caps.get("files")),
-        })
+        profile_updates.update(
+            supports_vision=bool(caps.get("vision")),
+            supports_files=bool(caps.get("files")),
+        )
+    if profile_updates:
+        store.update_profile(profile_id, profile_updates)
     if caps.get("error"):
         # 失败结果也覆盖旧缓存，避免设置页/网关继续使用上一次的成功能力。
         store.set_capabilities(profile_id, caps)

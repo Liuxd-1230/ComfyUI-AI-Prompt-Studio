@@ -256,6 +256,17 @@ function buildEditorForm(p) {
     ["", ...profileRecords.map((record) => record.profile_id).filter((id) => id && id !== p.profile_id)],
     p.vision_profile_id,
   );
+  const visionLinkNote = el("small", { class: "aps-muted" });
+  const syncVisionSource = () => {
+    const linked = !!visionProfileId.value;
+    visionUrl.disabled = linked;
+    visionModel.disabled = linked;
+    visionLinkNote.textContent = linked
+      ? `Reference Analyzer 将使用关联档案 ${visionProfileId.value} 的主 API URL、主模型和密钥；上面两个视觉字段已停用。`
+      : "未关联视觉档案：Reference Analyzer 使用本档案的视觉 URL、视觉模型和密钥。";
+  };
+  visionProfileId.addEventListener("change", syncVisionSource);
+  syncVisionSource();
   const timeout = textInput(p.timeout != null ? String(p.timeout) : "120", "120");
   // 高级采样参数（D19）：留空 = 不发送该字段，交给 provider 默认值
   const temperature = textInput(p.temperature != null ? String(p.temperature) : "", "空=默认");
@@ -289,6 +300,7 @@ function buildEditorForm(p) {
   visionModelRow.appendChild(visionChoice.datalist);
   wrap.appendChild(visionModelRow);
   wrap.appendChild(inputRow("vision_profile_id", visionProfileId, "视觉/文本 Profile 解耦：从已有档案选择；留空使用本档案的 vision_* 配置与密钥"));
+  wrap.appendChild(visionLinkNote);
   wrap.appendChild(inputRow("timeout", timeout, "请求超时（秒）"));
 
   // 高级采样区（不进普通节点 UI）
