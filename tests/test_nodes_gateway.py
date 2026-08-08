@@ -13,8 +13,10 @@ class FakeGateway:
     def __init__(self, result):
         self.result = result
         self.req = None
+        self.profile = None
 
     def generate(self, profile, api_key, req):
+        self.profile = profile
         self.req = req
         return self.result
 
@@ -141,6 +143,52 @@ def test_llm_generate_history_off_keeps_session(monkeypatch, store):
     assert len(restored.messages) == 1  # off 不改动原会话
 
 
+def test_llm_generate_replace_replaces_returned_history(monkeypatch, store):
+    payload = setup_profile(store)
+    fake = FakeGateway(LLMResult(text="新回答", profile_id="p1"))
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: fake)
+    sess = ChatSession(profile_id="p1")
+    sess.append(llm_chat_mod.ChatMessage(role="user", content="旧消息"))
+    out = llm_chat_mod.APS_LLMGenerate().generate(
+        AI_PROFILE=payload, system_prompt="", user_prompt="新消息", context="",
+        session=sess.to_json(), history_mode="replace", output_mode="text",
+        json_schema="")
+    restored = ChatSession.from_json(out[2])
+    assert [m.content for m in restored.messages] == ["新消息", "新回答"]
+
+
+def test_profile_node_overrides_and_sampling_reach_gateway(monkeypatch, store):
+    store.create_profile({"profile_id": "p1", "model": "stored",
+                          "top_p": 0.7, "frequency_penalty": 0.2,
+                          "presence_penalty": -0.1})
+    store.set_api_key("p1", "sk-test")
+    payload = store.get_profile("p1").node_payload()
+    payload.update({"model": "override", "protocol": "chat_completions",
+                    "reasoning": "low", "web_search": "off",
+                    "unload_policy": "after_request"})
+    fake = FakeGateway(LLMResult(text="ok", profile_id="p1"))
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: fake)
+    llm_chat_mod.APS_LLMGenerate().generate(
+        AI_PROFILE=payload, system_prompt="", user_prompt="x", context="",
+        history_mode="off", output_mode="text", json_schema="")
+    assert fake.profile.model == "override"
+    assert fake.profile.unload_policy == "after_request"
+    assert fake.req.top_p == 0.7
+    assert fake.req.frequency_penalty == 0.2
+    assert fake.req.presence_penalty == -0.1
+
+
+def test_context_only_is_not_duplicated_as_user_instruction(monkeypatch, store):
+    payload = setup_profile(store)
+    fake = FakeGateway(LLMResult(text="ok", profile_id="p1"))
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: fake)
+    llm_chat_mod.APS_LLMGenerate().generate(
+        AI_PROFILE=payload, system_prompt="", user_prompt="", context="DATA-ONLY",
+        history_mode="off", output_mode="text", json_schema="")
+    assert fake.req.system.count("DATA-ONLY") == 1
+    assert fake.req.messages[-1].content == "请根据上方附加上下文完成任务。"
+
+
 def test_runtime_control_load(monkeypatch):
     class FakeBackend:
         kind = "ollama"
@@ -174,6 +222,21 @@ def test_runtime_control_unknown_backend():
                                     url="", model="", AI_PROFILE=None)
     op = json.loads(op_json)
     assert op["ok"] is False and "未知运行时后端" in op["error"]
+
+
+def test_runtime_list_models_unavailable_is_not_false_success(monkeypatch):
+    class OfflineBackend:
+        def status(self):
+            return {"available": False, "models": [], "error": "offline"}
+
+        def list_models(self):
+            raise AssertionError("offline 时不应继续列表请求")
+
+    from aps.services.runtime import control as runtime_ctrl
+    monkeypatch.setattr(runtime_ctrl, "create_backend", lambda *args: OfflineBackend())
+    result = runtime_ctrl.run_runtime_action("ollama", "list_models")
+    assert result["ok"] is False
+    assert result["error"] == "offline"
 
 
 def test_runtime_control_load_requires_model():

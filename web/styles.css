@@ -35,6 +35,29 @@
   font-size: 12px;
   margin-bottom: 10px;
 }
+.aps-guide {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(74, 144, 217, 0.65);
+  border-radius: 6px;
+  background: rgba(74, 144, 217, 0.1);
+}
+.aps-guide h3,
+.aps-guide p {
+  margin: 0 0 6px;
+}
+.aps-guide p:last-child {
+  margin-bottom: 0;
+}
+.aps-guide code {
+  display: block;
+  margin-bottom: 6px;
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: #16161a;
+  color: #9ecbff;
+  white-space: normal;
+}
 .aps-cols {
   display: grid;
   grid-template-columns: 300px 1fr;
@@ -186,6 +209,23 @@
   background: rgba(210, 153, 34, 0.25);
   color: #e3b341;
 }
+.aps-cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+  gap: 6px;
+}
+.aps-cap-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #494c54;
+  border-radius: 5px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.aps-cap-check.ok { border-color: rgba(46, 160, 67, .75); color: #7ee787; }
+.aps-cap-check.no { color: #f97583; }
+.aps-cap-check input { margin: 0; accent-color: #2ea043; }
 .aps-pre {
   background: #16161a;
   border-radius: 4px;
@@ -226,4 +266,51 @@
 }
 .aps-toast-error {
   background: #a33;
+}
+.aps-error {
+  color: #ff8b8b;
+  white-space: pre-wrap;
+}
+.aps-skill-editor {
+  border: 1px solid #59636f;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: #1b1c20;
+}
+.aps-skill-editor textarea {
+  width: 100%;
+  min-height: 180px;
+  resize: vertical;
+}
+.aps-director-overlay {
+  position: fixed; inset: 0; z-index: 10001; display: flex;
+  align-items: center; justify-content: center; background: rgba(0,0,0,.68);
+}
+.aps-director-panel {
+  width: min(920px, 94vw); max-height: 92vh; overflow: auto;
+  color: #eee; background: #202126; border: 1px solid #59636f;
+  border-radius: 10px; padding: 18px;
+}
+.aps-director-field { display: grid; gap: 4px; margin: 8px 0; font-size: 12px; }
+.aps-director-field input, .aps-director-field textarea {
+  color: #eee; background: #15161a; border: 1px solid #50545c;
+  border-radius: 4px; padding: 7px; resize: vertical;
+}
+.aps-director-shot { border: 1px solid #3f4650; border-radius: 7px; padding: 10px; margin: 10px 0; }
+.aps-director-shot-head, .aps-director-actions { display: flex; justify-content: space-between; gap: 8px; }
+.aps-director-actions { justify-content: flex-end; position: sticky; bottom: 0; background: #202126; padding-top: 10px; }
+
+@media (max-width: 720px) {
+  .aps-panel {
+    width: 96vw;
+    padding: 12px;
+  }
+  .aps-cols,
+  .aps-bottom {
+    grid-template-columns: 1fr;
+  }
+  .aps-section:last-child {
+    grid-column: auto;
+  }
 }

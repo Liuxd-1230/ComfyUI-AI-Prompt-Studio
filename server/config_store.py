@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import threading
@@ -30,6 +31,15 @@ def _persistable(profile: AIProfile) -> Dict[str, Any]:
     data = profile.to_json()
     data.pop("api_key_ref", None)
     return data
+
+
+def _capability_fingerprint(profile: AIProfile) -> str:
+    fields = {key: getattr(profile, key, None) for key in (
+        "provider", "base_url", "model", "protocol", "vision_base_url",
+        "vision_model", "vision_profile_id", "supports_vision", "supports_files")}
+    fields["active_probe_version"] = 2
+    raw = json.dumps(fields, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def default_config_dir() -> Path:
@@ -132,6 +142,9 @@ class ConfigStore:
         now = time.strftime("%Y-%m-%dT%H:%M:%S")
         profile.created_at = profile.created_at or now
         profile.updated_at = now
+        problems = profile.validate()
+        if problems:
+            raise ValueError("；".join(problems))
         with self._lock:
             profiles = self._profiles_list()
             if any(p.get("profile_id") == pid for p in profiles):
@@ -151,12 +164,16 @@ class ConfigStore:
         merged = AIProfile.from_json({**existing.to_json(), **clean})
         merged.profile_id = pid
         merged.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        problems = merged.validate()
+        if problems:
+            raise ValueError("；".join(problems))
         with self._lock:
             profiles = self._profiles_list()
             for i, p in enumerate(profiles):
                 if p.get("profile_id") == pid:
                     profiles[i] = _persistable(merged)
                     break
+            self._config.setdefault("capability_cache", {}).pop(pid, None)
             self._save_config()
         return merged
 
@@ -181,6 +198,7 @@ class ConfigStore:
         if not self.get_profile(pid):
             raise KeyError(f"profile 不存在: {pid}")
         self._secrets.set(pid, key)
+        self.clear_capabilities(pid)
 
     def get_api_key(self, profile_id: str) -> Optional[str]:
         pid = validate_profile_id(profile_id)
@@ -195,16 +213,28 @@ class ConfigStore:
     def delete_api_key(self, profile_id: str) -> None:
         pid = validate_profile_id(profile_id)
         self._secrets.delete(pid)
+        self.clear_capabilities(pid)
 
     # ---------- 能力缓存 ----------
     def get_capabilities(self, profile_id: str) -> Dict[str, Any]:
         cache = self._config.get("capability_cache", {})
-        return dict(cache.get(validate_profile_id(profile_id), {}))
+        pid = validate_profile_id(profile_id)
+        caps = dict(cache.get(pid, {}))
+        profile = self.get_profile(pid)
+        if not profile or caps.get("_profile_fingerprint") != _capability_fingerprint(profile):
+            return {}
+        caps.pop("_profile_fingerprint", None)
+        return caps
 
     def set_capabilities(self, profile_id: str, caps: Dict[str, Any]) -> None:
         pid = validate_profile_id(profile_id)
+        profile = self.get_profile(pid)
+        if profile is None:
+            raise KeyError(f"profile 不存在: {pid}")
+        stored = dict(caps or {})
+        stored["_profile_fingerprint"] = _capability_fingerprint(profile)
         with self._lock:
-            self._config.setdefault("capability_cache", {})[pid] = caps
+            self._config.setdefault("capability_cache", {})[pid] = stored
             self._save_config()
 
     def clear_capabilities(self, profile_id: str) -> None:

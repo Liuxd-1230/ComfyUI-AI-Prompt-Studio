@@ -11,7 +11,7 @@ from typing import Any, List, Optional
 from .base import Schema
 from .prompt_plan import ValidationReport, empty_validation
 
-H3_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "R2V"]
+H3_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA", "R2V"]
 H3_OPERATIONS = ["generate", "rewrite", "convert_storyboard", "audit", "repair"]
 
 # R2V 六段固定顺序
@@ -40,6 +40,9 @@ class H3Dialogue(Schema):
     text: str = ""
     speaker_ids: List[str] = dataclasses.field(default_factory=list)  # S1 / S2 / S1,S2
     kind: str = "speech"            # speech | singing | voiceover
+    prefix_marker: str = ""          # <scenetrans>（跨切后半句）
+    suffix_marker: str = ""          # <scenetrans> | <cutoff>
+    lips_closed: bool = False         # voiceover 时必须为 True
 
 
 @dataclasses.dataclass
@@ -50,10 +53,15 @@ class H3Shot(Schema):
     start_time: Optional[float] = None   # 秒；Shot 1 为 None
     description: List[str] = dataclasses.field(default_factory=list)  # 描述句（英文）
     camera: str = ""                     # 自然英文相机运动
+    camera_motion: str = ""              # push_in / pan_right / tracking / static ...
+    camera_amplitude: str = ""           # small | normal | large
+    camera_speed: str = ""               # slow | normal | fast
+    camera_target: str = ""
     characters: List[str] = dataclasses.field(default_factory=list)   # speaker_ids 出现于本镜头
     dialogues: List[H3Dialogue] = dataclasses.field(default_factory=list)
     references: List[str] = dataclasses.field(default_factory=list)   # 用到的标签，如 "<Picture 1>"
     audio_notes: str = ""                # 本镜头内的音效/声音说明
+    on_screen_text: List[str] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
@@ -112,7 +120,7 @@ class H3PromptPlan(Schema):
     """H3 结构化计划：LLM 产出内容决策，Python renderer 拼装最终格式。"""
 
     plan_id: str = ""
-    mode: str = "T2VA"               # T2VA | I2VA | FL2VA | L2VA | R2V
+    mode: str = "T2VA"               # T2VA | I2VA | FL2VA | L2VA | Ref2VA（R2V 兼容）
     operation: str = "generate"
     duration_seconds: float = 0.0    # 有效视频时长 S.SS（两位小数）
     style_opening: str = ""          # R2V 在 [Shot 1] 之前的风格开场（1-2 句）
@@ -122,6 +130,7 @@ class H3PromptPlan(Schema):
     assets: List[H3Asset] = dataclasses.field(default_factory=list)
     retention: List[H3Retention] = dataclasses.field(default_factory=list)
     soundscape: str = ""             # overall_soundscape 正文
+    explicit_silence: bool = False    # 仅用户明确要求全片静音时允许 soundscape=N/A
     non_diegetic_music: str = ""     # non_diegetic_music 正文（N/A 表示无）
     summary: str = ""                # R2V summary 段（含任务前缀）
     storyboard_id: str = ""

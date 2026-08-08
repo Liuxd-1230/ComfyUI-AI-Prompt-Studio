@@ -103,6 +103,9 @@ class ChatCompletionsAdapter:
         reasoning: str,
         max_tokens: Optional[int],
         temperature: Optional[float],
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
         json_mode: bool = False,
         attachments: Optional[List] = None,
         output_schema: Optional[Dict[str, Any]] = None,
@@ -159,6 +162,12 @@ class ChatCompletionsAdapter:
             body["max_tokens"] = max_tokens
         if temperature is not None:
             body["temperature"] = temperature
+        if top_p is not None:
+            body["top_p"] = top_p
+        if frequency_penalty is not None:
+            body["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            body["presence_penalty"] = presence_penalty
         # reasoning_effort / response_format 是 DeepSeek 特有参数；通用端点可能 400，只对 deepseek 发送
         if reasoning != "off" and profile.provider == "deepseek":
             body["reasoning_effort"] = REASONING_EFFORT.get(reasoning, "high")

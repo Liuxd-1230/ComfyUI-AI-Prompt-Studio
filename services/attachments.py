@@ -226,7 +226,8 @@ def gate_attachments(attachments: List[Attachment], caps: dict,
             else:
                 errors.append(
                     f"图片附件 {a.name!r} 无法发送：当前档案不支持视觉"
-                    "（可配置视觉档案或开启档案高级设置 supports_vision）")
+                    "（这里要求主模型能直接接图；Reference Analyzer 的独立视觉档案"
+                    "不会自动转发通用 LLM 附件。确认端点支持后可开启 supports_vision）")
         elif a.kind == "file":
             if files_ok:
                 sendable.append(a)

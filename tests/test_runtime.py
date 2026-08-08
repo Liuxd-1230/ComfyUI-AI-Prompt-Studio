@@ -125,7 +125,8 @@ def test_lmstudio_v1_probe_prefers_v1(monkeypatch):
     backend = create_backend("lmstudio")
     st = backend.status()
     assert st["version"] == "v1"
-    assert st["models"] == ["m1", "m2"]  # v1 顶层是 models 键、标识是 key（v0 才是 data+id）
+    assert st["models"] == []  # status 只列已加载实例，不把模型目录伪装成显存占用
+    assert backend.list_models() == ["m1", "m2"]
     assert calls[0].endswith("/api/v1/models")
 
 
@@ -174,6 +175,24 @@ def test_lmstudio_v1_unload_falls_back_to_loaded_instances(monkeypatch):
     assert unload_call["j"] == {"instance_id": "inst-7"}
 
 
+def test_lmstudio_unloads_every_loaded_instance_for_model(monkeypatch):
+    calls = []
+
+    def responder(method, url, **kwargs):
+        if url.endswith("/api/v1/models"):
+            return FakeResp(200, {"models": [{"key": "m1", "loaded_instances": [
+                {"id": "inst-a"}, {"id": "inst-b"}]}]})
+        if url.endswith("/api/v1/models/unload"):
+            calls.append(kwargs["json"]["instance_id"])
+        return FakeResp(200, {})
+
+    make_request_fake(monkeypatch, responder=responder)
+    result = create_backend("lmstudio").unload("m1")
+    assert result["ok"] is True
+    assert result["instance_ids"] == ["inst-a", "inst-b"]
+    assert calls == ["inst-a", "inst-b"]
+
+
 def test_lmstudio_v1_model_key_not_found(monkeypatch):
     """按 key 匹配：找不到模型 → 可读错误，不误把别的模型卸载。"""
     calls = []
@@ -217,6 +236,17 @@ def test_unreachable(monkeypatch):
     st = create_backend("ollama").status()
     assert st["available"] is False
     assert "无法连接" in st["error"]
+
+
+def test_lmstudio_unload_unreachable_reports_connection_error(monkeypatch):
+    def responder(m, u, **k):
+        raise requests.ConnectionError("refused")
+
+    make_request_fake(monkeypatch, responder=responder)
+    res = create_backend("lmstudio").unload("m1")
+    assert res["ok"] is False
+    assert "无法连接或认证" in res["error"]
+    assert "v0（只读）" not in res["error"]
 
 
 def test_unload_all(monkeypatch):

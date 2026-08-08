@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List
 
 from .base import RuntimeBackend
@@ -23,8 +24,17 @@ class LMStudioBackend(RuntimeBackend):
     def __init__(self, base_url: str = ""):
         super().__init__(base_url)
         self._version: str | None = None  # "v0" | "v1"，探测一次后缓存
+        self._probe_error = ""
         # load 成功时保存的 instance_id（model → instance_id）；unload 优先使用
         self._instance_ids: Dict[str, str] = {}
+
+    def _request(self, method: str, path: str, **kwargs) -> Dict[str, Any]:
+        token = os.environ.get("LM_STUDIO_API_TOKEN", "").strip()
+        if token:
+            headers = dict(kwargs.pop("headers", {}) or {})
+            headers["Authorization"] = f"Bearer {token}"
+            kwargs["headers"] = headers
+        return super()._request(method, path, **kwargs)
 
     def _detect_version(self) -> str:
         if self._version:
@@ -34,11 +44,13 @@ class LMStudioBackend(RuntimeBackend):
         if res.get("ok"):
             self._version = "v1"
             return self._version
+        first_error = res.get("error", "")
         res = self._request("GET", "/api/v0/models")
         if res.get("ok"):
             self._version = "v0"
             return self._version
         self._version = "unavailable"
+        self._probe_error = "；".join(x for x in (first_error, res.get("error", "")) if x)
         return self._version
 
     def _model_ids(self, path: str) -> List[str]:
@@ -55,14 +67,29 @@ class LMStudioBackend(RuntimeBackend):
                 ids.append(str(model_key))
         return ids
 
-    def _loaded_instance_id_for(self, model: str) -> str:
+    def _loaded_model_keys(self) -> List[str]:
+        """v1 模型目录中只返回确有 loaded_instances 的模型 key。"""
+        res = self._request("GET", "/api/v1/models")
+        if not res.get("ok"):
+            return []
+        loaded: List[str] = []
+        for model in res.get("json", {}).get("models", []) or []:
+            if not isinstance(model, dict) or not (model.get("loaded_instances") or []):
+                continue
+            key = model.get("key") or model.get("id")
+            if key:
+                loaded.append(str(key))
+        return loaded
+
+    def _loaded_instance_ids_for(self, model: str) -> List[str]:
         """在 v1 已加载实例里找 model 对应的 instance_id（官方：loaded_instances[].id）。
 
         model 参数按 v1 的 key 字段匹配（兼容 v0 的 id 字段）。
         """
         res = self._request("GET", "/api/v1/models")
         if not res.get("ok"):
-            return ""
+            return []
+        ids: List[str] = []
         for m in res.get("json", {}).get("models", []) or []:
             if not isinstance(m, dict):
                 continue
@@ -71,19 +98,21 @@ class LMStudioBackend(RuntimeBackend):
                 continue
             for inst in m.get("loaded_instances") or []:
                 if isinstance(inst, dict) and inst.get("id"):
-                    return str(inst["id"])
-        return ""
+                    ids.append(str(inst["id"]))
+        return ids
 
     def status(self) -> Dict[str, Any]:
         version = self._detect_version()
         if version == "unavailable":
             return {"available": False, "models": [], "version": "unavailable",
-                    "error": "无法探测 LM Studio（v1 与 v0 models 接口均不可达）"}
+                    "error": self._probe_error or
+                    "无法探测 LM Studio（v1 与 v0 models 接口均不可达）"}
         path = "/api/v0/models" if version == "v0" else "/api/v1/models"
         res = self._request("GET", path)
         if not res.get("ok"):
             return {"available": False, "models": [], "error": res.get("error", "")}
-        return {"available": True, "models": self._model_ids(path),
+        models = self._model_ids(path) if version == "v0" else self._loaded_model_keys()
+        return {"available": True, "models": models,
                 "version": version, "error": ""}
 
     def list_models(self) -> List[str]:
@@ -96,7 +125,10 @@ class LMStudioBackend(RuntimeBackend):
     def load(self, model: str) -> Dict[str, Any]:
         if not model:
             return {"ok": False, "error": "model 不能为空"}
-        if self._detect_version() != "v1":
+        version = self._detect_version()
+        if version == "unavailable":
+            return {"ok": False, "error": "无法连接或认证 LM Studio（v1 与 v0 models 接口均不可用）"}
+        if version != "v1":
             return {"ok": False, "error": "当前 LM Studio 为 v0（只读），不支持热加载/卸载；请升级到 v1 或手动在 LM Studio 中加载。"}
         res = self._request("POST", "/api/v1/models/load", json={"model": model})
         if not res.get("ok"):
@@ -110,20 +142,35 @@ class LMStudioBackend(RuntimeBackend):
     def unload(self, model: str) -> Dict[str, Any]:
         if not model:
             return {"ok": False, "error": "model 不能为空"}
-        if self._detect_version() != "v1":
+        version = self._detect_version()
+        if version == "unavailable":
+            return {"ok": False, "model": model,
+                    "error": "无法连接或认证 LM Studio（v1 与 v0 models 接口均不可用）"}
+        if version != "v1":
             return {"ok": False, "error": "当前 LM Studio 为 v0（只读），不支持热加载/卸载；请升级到 v1 或手动在 LM Studio 中卸载。"}
-        instance_id = self._instance_ids.get(model) or self._loaded_instance_id_for(model)
-        if not instance_id:
+        instance_ids = self._loaded_instance_ids_for(model)
+        cached = self._instance_ids.get(model)
+        if cached and cached not in instance_ids:
+            instance_ids.insert(0, cached)
+        if not instance_ids:
             return {"ok": False, "model": model,
                     "error": f"未找到模型 {model} 的已加载实例（instance_id）；请先 load 或检查模型名"}
-        res = self._request("POST", "/api/v1/models/unload",
-                            json={"instance_id": instance_id})
-        if not res.get("ok"):
-            self._instance_ids.pop(model, None)
-            return self._check_missing(res, model)
+        unloaded: List[str] = []
+        errors: List[str] = []
+        for instance_id in instance_ids:
+            res = self._request("POST", "/api/v1/models/unload",
+                                json={"instance_id": instance_id})
+            if res.get("ok"):
+                unloaded.append(instance_id)
+            else:
+                errors.append(self._check_missing(res, model).get("error", "卸载失败"))
         self._instance_ids.pop(model, None)
-        return {"ok": True, "model": model, "instance_id": instance_id,
-                "detail": "已卸载"}
+        if errors:
+            return {"ok": False, "model": model, "instance_ids": unloaded,
+                    "error": "；".join(errors), "detail": f"已卸载 {len(unloaded)} 个实例"}
+        return {"ok": True, "model": model,
+                "instance_id": unloaded[0], "instance_ids": unloaded,
+                "detail": f"已卸载 {len(unloaded)} 个实例"}
 
     @staticmethod
     def _check_missing(res: Dict[str, Any], model: str) -> Dict[str, Any]:

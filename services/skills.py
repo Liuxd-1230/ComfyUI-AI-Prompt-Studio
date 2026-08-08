@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -21,8 +22,9 @@ SKILLS_DIR = Path(__file__).resolve().parent.parent / "skills"
 SKILL_FIELDS = ["id", "version", "target_family", "target_variant", "renderer",
                 "system_prompt", "validators", "description"]
 # 允许的 renderer / target_family（避免保存出 Composer 无法消费的技能）
-ALLOWED_RENDERERS = {"generic", "anima_plan", "anima_tags", "minimax_h3"}
-ALLOWED_FAMILIES = {"generic_image", "anima", "minimax_h3"}
+ALLOWED_RENDERERS = {"generic", "anima_plan", "anima_tags", "minimax_h3", "z_image", "qwen_image_edit"}
+ALLOWED_FAMILIES = {"generic_image", "anima", "minimax_h3", "z_image", "qwen_image_edit"}
+ALLOWED_VALIDATORS = {"anima", "special_image", "minimax_h3"}
 REQUIRED_FIELDS = ["system_prompt", "renderer"]
 
 
@@ -39,9 +41,19 @@ class Skill:
     description: str = ""
     enabled: bool = True
     hash: str = ""
+    path: str = ""
 
     def compute_hash(self) -> str:
-        payload = f"{self.id}:{self.version}:{self.system_prompt}"
+        payload = json.dumps({
+            "id": self.id, "version": self.version,
+            "target_family": self.target_family,
+            "target_variant": self.target_variant,
+            "renderer": self.renderer,
+            "system_prompt": self.system_prompt,
+            "validators": self.validators,
+            "description": self.description,
+            "enabled": self.enabled,
+        }, ensure_ascii=False, sort_keys=True)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
@@ -62,6 +74,10 @@ def _load_file(path: Path, source: str) -> Optional[Skill]:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         if not isinstance(data, dict):
             return None
+        data = {**data, "id": str(data.get("id", path.stem))}
+        problems = validate_skill_payload(data)
+        if problems:
+            raise ValueError("；".join(problems))
         skill = Skill(
             id=str(data.get("id", path.stem)),
             version=str(data.get("version", "1.0")),
@@ -70,9 +86,11 @@ def _load_file(path: Path, source: str) -> Optional[Skill]:
             renderer=str(data.get("renderer", "generic")),
             system_prompt=str(data.get("system_prompt", "")),
             validators=list(data.get("validators", []) or []),
-            source=str(data.get("source", source)),
+            # 来源由加载目录决定，不能信任 YAML 自报为 builtin 绕过写保护。
+            source=source,
             description=str(data.get("description", "")),
             enabled=bool(data.get("enabled", True)),
+            path=str(path.resolve()),
         )
         skill.hash = skill.compute_hash()
         return skill
@@ -89,13 +107,13 @@ def load_skills() -> Dict[str, Skill]:
         return _CACHE
     skills: Dict[str, Skill] = {}
     if SKILLS_DIR.is_dir():
-        for path in sorted(SKILLS_DIR.glob("*.yaml")):
+        for path in sorted(SKILLS_DIR.rglob("*.yaml")):
             skill = _load_file(path, "builtin")
             if skill is not None:
                 skills[skill.id] = skill
     cdir = custom_skills_dir()
     if cdir.is_dir():
-        for path in sorted(cdir.glob("*.yaml")):
+        for path in sorted(cdir.rglob("*.yaml")):
             skill = _load_file(path, "custom")
             if skill is not None:
                 skills[skill.id] = skill  # 自定义覆盖内置
@@ -110,7 +128,8 @@ def reset_cache() -> None:
 
 
 def get_skill(skill_id: str) -> Optional[Skill]:
-    return load_skills().get(skill_id)
+    skill = load_skills().get(skill_id)
+    return skill if skill is not None and skill.enabled else None
 
 
 def list_skill_ids() -> List[str]:
@@ -157,6 +176,13 @@ def validate_skill_payload(data: Dict, require_id: bool = True) -> List[str]:
     family = str(data.get("target_family", ""))
     if family and family not in ALLOWED_FAMILIES:
         problems.append(f"target_family {family!r} 不受支持（可选：{', '.join(sorted(ALLOWED_FAMILIES))}）")
+    validators = data.get("validators", []) or []
+    if not isinstance(validators, list):
+        problems.append("validators 必须是字符串数组")
+    else:
+        unknown_validators = {str(v) for v in validators} - ALLOWED_VALIDATORS
+        if unknown_validators:
+            problems.append(f"不受支持的 validators：{', '.join(sorted(unknown_validators))}")
     unknown = set(data) - set(SKILL_FIELDS) - {"enabled", "source"}
     if unknown:
         problems.append(f"未知字段被忽略：{', '.join(sorted(unknown))}")
@@ -202,7 +228,7 @@ def delete_custom_skill(skill_id: str) -> None:
         raise KeyError(f"技能不存在: {skill_id}")
     if s.source != "custom":
         raise ValueError(f"内置技能 {skill_id} 只读，不允许删除（可复制为自定义后修改）")
-    path = custom_skills_dir() / f"{skill_id}.yaml"
+    path = _custom_skill_path(s)
     if path.exists():
         path.unlink()
     reset_cache()
@@ -215,7 +241,7 @@ def set_skill_enabled(skill_id: str, enabled: bool) -> Dict:
         raise KeyError(f"技能不存在: {skill_id}")
     if s.source != "custom":
         raise ValueError(f"内置技能 {skill_id} 只读，停用请先复制为自定义")
-    path = custom_skills_dir() / f"{skill_id}.yaml"
+    path = _custom_skill_path(s)
     if not path.exists():
         raise KeyError(f"自定义技能文件不存在: {skill_id}")
     import yaml
@@ -243,6 +269,15 @@ def _write_custom(payload: Dict) -> Dict:
     _atomic_write(path, clean)
     reset_cache()
     return get_skill_record(sid) or {}
+
+
+def _custom_skill_path(skill: Skill) -> Path:
+    """返回实际加载路径；递归目录里的自定义 Skill 也能被管理。"""
+    base = custom_skills_dir().resolve()
+    path = Path(skill.path).resolve() if skill.path else (base / f"{skill.id}.yaml")
+    if path != base and base not in path.parents:
+        raise ValueError("自定义技能路径越出配置目录")
+    return path
 
 
 def _atomic_write(path: Path, data: dict) -> None:

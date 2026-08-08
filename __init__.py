@@ -1,6 +1,6 @@
 """ComfyUI AI Prompt Studio —— LLM 提示词工作流扩展。
 
-入口文件：注册 9 个节点、前端资源目录（WEB_DIRECTORY）与后端路由。
+入口文件：注册节点、前端资源目录（WEB_DIRECTORY）与后端路由。
 
 加载语义（两种，代码需同时兼容）：
 1. ComfyUI 加载器以 spec_from_file_location 按文件加载本文件，__package__ 为完整路径
@@ -46,33 +46,39 @@ else:
         APS_ModelProfile,
         APS_PromptComposer,
         APS_ReferenceAnalyzer,
+        APS_ReferencePrompt,
         APS_RuntimeControl,
         APS_StoryboardBuilder,
         APS_StoryboardSelect,
+        APS_UnloadModel,
     )
 
     NODE_CLASS_MAPPINGS = {
         "APS_ModelProfile": APS_ModelProfile,
         "APS_LLMGenerate": APS_LLMGenerate,
         "APS_ReferenceAnalyzer": APS_ReferenceAnalyzer,
+        "APS_ReferencePrompt": APS_ReferencePrompt,
         "APS_CharacterBible": APS_CharacterBible,
         "APS_StoryboardBuilder": APS_StoryboardBuilder,
         "APS_StoryboardSelect": APS_StoryboardSelect,
         "APS_PromptComposer": APS_PromptComposer,
         "APS_MiniMaxH3Director": APS_MiniMaxH3Director,
         "APS_RuntimeControl": APS_RuntimeControl,
+        "APS_UnloadModel": APS_UnloadModel,
     }
 
     NODE_DISPLAY_NAME_MAPPINGS = {
-        "APS_ModelProfile": "AI Model Profile",
-        "APS_LLMGenerate": "LLM Generate / Chat",
-        "APS_ReferenceAnalyzer": "Reference Analyzer",
-        "APS_CharacterBible": "Character Bible",
-        "APS_StoryboardBuilder": "Storyboard Builder",
-        "APS_StoryboardSelect": "Storyboard Select / Batch",
-        "APS_PromptComposer": "Model Prompt Composer",
-        "APS_MiniMaxH3Director": "MiniMax H3 Prompt Director",
-        "APS_RuntimeControl": "Local Runtime Control",
+        "APS_ModelProfile": "AI 模型档案",
+        "APS_LLMGenerate": "LLM 生成 / 对话",
+        "APS_ReferenceAnalyzer": "参考图分析",
+        "APS_ReferencePrompt": "图片引用提示词（输入 @）",
+        "APS_CharacterBible": "角色设定集",
+        "APS_StoryboardBuilder": "分镜构建器",
+        "APS_StoryboardSelect": "分镜选择 / 批处理",
+        "APS_PromptComposer": "模型提示词编排器",
+        "APS_MiniMaxH3Director": "MiniMax H3 提示词导演",
+        "APS_RuntimeControl": "本地模型运行控制",
+        "APS_UnloadModel": "LLM 后卸载 LM Studio（提示词透传）",
     }
 
     WEB_DIRECTORY = "./web"

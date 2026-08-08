@@ -1,7 +1,7 @@
 """视觉服务：图片编码为 base64 data URL，调用视觉端点做多模态分析。
 
 决策（docs/decisions.md D8）：视觉 = 档案配置的通用 OpenAI 兼容端点
-（vision_base_url + vision_model）；未配置时明确报错，不伪装。
+（vision_model + 可选 vision_base_url）；视觉地址留空时复用档案 base_url。
 本模块不依赖 torch（节点层负责把 ComfyUI 张量转 numpy）。
 """
 from __future__ import annotations
@@ -84,11 +84,11 @@ def build_vision_messages(prompt: str, data_urls: List[str]) -> List[Dict[str, A
 
 def require_vision(profile: AIProfile) -> str:
     """校验视觉配置，返回 base_url。未配置抛 VisionUnavailable。"""
-    base = (profile.vision_base_url or "").rstrip("/")
-    if not base or not profile.vision_model:
+    base = (profile.vision_base_url or profile.base_url or "").rstrip("/")
+    if not profile.vision_model:
         raise VisionUnavailable(
             "档案未配置视觉模型：请在 AI Prompt Studio 设置面板为该档案填写 "
-            "vision_base_url 与 vision_model（通用 OpenAI 兼容视觉端点）。"
+            "vision_model；vision_base_url 留空时复用主 API URL。"
         )
     return base
 

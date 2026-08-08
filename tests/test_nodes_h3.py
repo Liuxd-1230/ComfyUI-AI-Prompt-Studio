@@ -203,7 +203,7 @@ def test_convert_storyboard_uses_storyboard_structure(monkeypatch, store):
     node = h3_mod.APS_MiniMaxH3Director()
     prompt, plan_json, _, validation, _ = node.direct(
         **node_payload(AI_PROFILE=payload, text="分镜文本", mode="T2VA",
-                       operation="convert_storyboard", duration=5.0,
+                       operation="convert_storyboard", duration=10.0,
                        storyboard=sb.to_json()))
     plan = H3PromptPlan.from_json(plan_json)
     assert plan.storyboard_id == sb.story_id
@@ -232,6 +232,22 @@ def test_convert_storyboard_fallback_on_bad_llm(monkeypatch, store):
     plan = H3PromptPlan.from_json(plan_json)
     assert len(plan.shots) == 1
     assert "回退" in warnings
+
+
+def test_generate_plain_text_model_output_recovers_without_crashing(monkeypatch, store):
+    """第三方 Responses 端点可能接受 schema 却返回普通文本；节点必须降级。"""
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(
+        "A girl enters an old cafe on a rainy night and sits by the window."))
+    node = h3_mod.APS_MiniMaxH3Director()
+    prompt, plan_json, _, validation, warnings = node.direct(
+        **node_payload(AI_PROFILE=payload, text="女孩雨夜走进咖啡馆", mode="T2VA",
+                       operation="generate", duration=10.0, auto_repair=False))
+    plan = H3PromptPlan.from_json(plan_json)
+    assert plan.shots
+    assert "integrated_multimodal_description" in prompt
+    assert "JSON" in warnings and "回退" in warnings
+    assert "h3_empty" not in validation
 
 
 def test_no_profile():

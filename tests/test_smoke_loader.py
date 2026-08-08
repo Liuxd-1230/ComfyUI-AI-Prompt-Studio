@@ -18,7 +18,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_NODES = [
     "APS_ModelProfile", "APS_LLMGenerate", "APS_ReferenceAnalyzer",
     "APS_CharacterBible", "APS_StoryboardBuilder", "APS_StoryboardSelect",
-    "APS_PromptComposer", "APS_MiniMaxH3Director", "APS_RuntimeControl",
+    "APS_PromptComposer", "APS_ReferencePrompt", "APS_MiniMaxH3Director", "APS_RuntimeControl",
+    "APS_UnloadModel",
 ]
 
 
@@ -48,7 +49,7 @@ def test_loads_under_comfyui_loader(loaded):
     assert hasattr(module, "NODE_DISPLAY_NAME_MAPPINGS")
     assert hasattr(module, "WEB_DIRECTORY")
     # 关键：ComfyUI 加载器要求相对导入在根 __init__.py 内可用（spec 加载即验证此点）
-    assert len(module.NODE_CLASS_MAPPINGS) == 9
+    assert len(module.NODE_CLASS_MAPPINGS) == 11
     assert module.WEB_DIRECTORY == "./web"
 
 
@@ -71,7 +72,7 @@ def test_node_registration_path_replicated(loaded):
 
 
 def test_node_instances_instantiable(loaded):
-    """9 个节点类可实例化且 INPUT_TYPES()/RETURN_TYPES 完整（与真实 ComfyUI 校验一致）。"""
+    """节点类可实例化且 INPUT_TYPES()/RETURN_TYPES 完整（与真实 ComfyUI 校验一致）。"""
     module, _, _ = loaded
     for name in EXPECTED_NODES:
         cls = module.NODE_CLASS_MAPPINGS[name]
@@ -80,3 +81,17 @@ def test_node_instances_instantiable(loaded):
         it = cls.INPUT_TYPES()
         assert "required" in it
         assert cls.FUNCTION and hasattr(cls, cls.FUNCTION)
+
+
+def test_chinese_help_mentions_every_public_node_port(loaded):
+    """节点接口变化时，中文帮助必须同步每一个公开输入和输出。"""
+    module, _, _ = loaded
+    for node_name, node_class in module.NODE_CLASS_MAPPINGS.items():
+        help_path = PROJECT_ROOT / "web" / "docs" / node_name / "zh.md"
+        assert help_path.exists(), f"{node_name} 缺少中文帮助"
+        text = help_path.read_text(encoding="utf-8")
+        inputs = node_class.INPUT_TYPES()
+        port_names = set(inputs.get("required", {})) | set(inputs.get("optional", {}))
+        port_names.update(getattr(node_class, "RETURN_NAMES", ()))
+        missing = sorted(name for name in port_names if name not in text)
+        assert not missing, f"{node_name} 中文帮助未说明端口: {missing}"

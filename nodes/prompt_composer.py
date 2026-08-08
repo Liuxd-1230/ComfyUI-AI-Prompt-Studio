@@ -1,6 +1,6 @@
 """节点 7：Model Prompt Composer —— 把自由文本/分镜/人物档案/参考转为目标图像模型提示词。
 
-目标家族：anima（Base/Aesthetic/Turbo，官方档案渲染）+ generic_image/sdxl/flux + custom_skill。
+目标家族：ANIMA + Z-Image Turbo + Qwen-Image-Edit-2511；旧 generic/SDXL/FLUX 保持兼容。
 操作：generate/convert 确定性渲染；expand/rewrite/translate/repair 走 LLM Skill + 渲染后处理；
 audit 只跑校验器。ANIMA 输出附带 ValidationReport（validators/anima.py）。
 
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 
-from ..renderers import render_anima, render_generic
+from ..renderers import render_anima, render_generic, render_special_image
 from ..schemas import types
 from ..schemas.character import CharacterBible
 from ..schemas.profile import AIProfile
@@ -28,11 +28,12 @@ from ..schemas.storyboard import StoryItem
 from ..services.gateway import Gateway, GenerateRequest
 from ..services.skills import get_skill
 from ..validators.anima import validate_anima
-from ._helpers import require_api_key, resolve_profile, try_api_key
+from ._helpers import require_api_key, resolve_profile_input, try_api_key
 
 TARGET_OPTIONS = [
     "anima_base", "anima_aesthetic", "anima_turbo",
-    "generic_image", "sdxl", "flux_kontext", "custom_skill",
+    "z_image_turbo", "qwen_image_edit_2511",
+    "generic_image", "custom_skill",
 ]
 
 SAFETY_TAGS = ["none", "safe", "sensitive", "nsfw", "explicit"]
@@ -85,7 +86,7 @@ class APS_PromptComposer:
     RETURN_NAMES = ("positive", "negative", "PROMPT_PLAN", "GENERATION_PROFILE", "validation")
     FUNCTION = "compose"
     CATEGORY = "AI Prompt Studio"
-    DESCRIPTION = "把文本/分镜/人物档案/参考分析转换为目标图像模型提示词（ANIMA/Generic/SDXL/FLUX/自定义 Skill）。"
+    DESCRIPTION = "把文本/分镜/人物档案/图片引用转换为 ANIMA、Z-Image Turbo 或 Qwen-Image-Edit-2511 提示词。"
 
     def compose(self, AI_PROFILE, text, target, operation, prompt_mode, negative,
                 safety_tag="none", story_item=None, character_bible=None,
@@ -95,7 +96,7 @@ class APS_PromptComposer:
         profile = AIProfile.from_json(AI_PROFILE or {})
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
-        prof = resolve_profile(profile.profile_id)
+        prof = resolve_profile_input(AI_PROFILE)
         # 新工作流用 safety_tag；旧工作流传 content_tier 时迁移（兼容）。
         # 注意 safety_tag 默认 "none" 也是非空值，不能直接用 `or` 判断：
         # content_tier 非空 → 旧工作流 → 迁移优先；否则以 safety_tag 为准。
@@ -123,17 +124,43 @@ class APS_PromptComposer:
                 negative, safety_tag, bible, lora, book_context)
             validation = validate_anima(positive, neg, variant=variant,
                                         prompt_mode=prompt_mode)
+        elif family in {"z_image", "qwen_image_edit"}:
+            positive, neg, tags, warnings, gprofile = self._special(
+                prof, base_text, family, variant, operation, negative,
+                reference_manifest)
+            validation = _validate_special(positive, family, reference_manifest)
         elif family == "custom_skill":
+            selected_skill = get_skill(skill)
+            if selected_skill is None:
+                raise ValueError(f"Skill 不存在或已停用: {skill!r}")
+            if (selected_skill.renderer == "minimax_h3" or
+                    selected_skill.target_family == "minimax_h3"):
+                raise ValueError(
+                    f"Skill {skill!r} 仅供 APS MiniMax H3 Director 使用，"
+                    "不能由 Prompt Composer 渲染")
+            family = selected_skill.target_family
+            variant = selected_skill.target_variant
             positive, neg, tags, warnings, gprofile = self._skill_path(
                 prof, base_text, operation, prompt_mode, negative,
                 bible, skill, lora)
-            validation = validate_anima(positive, neg, variant="base",
-                                        prompt_mode=prompt_mode)
+            wants_anima = family == "anima" or "anima" in selected_skill.validators
+            wants_special = (family in {"z_image", "qwen_image_edit"} or
+                             "special_image" in selected_skill.validators)
+            validation = (_validate_special(positive, family, reference_manifest)
+                          if wants_special else
+                          validate_anima(positive, neg, variant=variant or "base",
+                                         prompt_mode=prompt_mode)
+                          if wants_anima else empty_report())
         else:
             positive, neg, tags, warnings, gprofile = self._generic(
                 prof, base_text, family, variant, operation,
                 prompt_mode, negative, bible, book, book_context)
             validation = empty_report()
+
+        # 渲染器/Skill 的可执行性警告也必须出现在可见 validation 输出中，
+        # 不能只藏在 PROMPT_PLAN JSON 里显示“通过且 0 warning”。
+        for index, warning in enumerate(warnings):
+            validation.add("warning", f"composer_warning_{index + 1}", warning)
 
         # 0.2.1b：character_bindings 记录全部人物（CharacterBook 场景不再只记 first_bible）
         if book is not None and book.characters:
@@ -198,15 +225,36 @@ class APS_PromptComposer:
                 out["profile"])
 
     # ------------------------------------------------------------ 通用家族
+    def _special(self, prof, text, family, variant, operation, negative,
+                 reference_manifest=None):
+        if operation in LLM_OPERATIONS or operation == "generate":
+            skill_id = ("z_image_turbo_expand" if family == "z_image"
+                        else "qwen_image_edit_2511")
+            reference_context = _reference_context(reference_manifest)
+            operation_context = {
+                "generate": "[操作] 从用户意图生成目标模型提示词。",
+                "expand": "[操作] 扩写可见细节，保持主体身份、数量与核心意图。",
+                "rewrite": "[操作] 消除歧义和属性串位，不新增剧情。",
+                "translate": "[操作] 仅翻译为清晰英文，禁止扩写或改变编辑动作。",
+                "repair": "[操作] 只修复空内容、引用歧义、主体/位置不清等问题。",
+            }[operation]
+            return self._llm_render(
+                prof, skill_id, text, "natural_language", negative,
+                None, [], family=family, variant=variant,
+                extra_context="\n".join(x for x in (operation_context, reference_context) if x))
+        out = render_special_image(text, family=family, variant=variant,
+                                   negative_override=negative)
+        return (out["positive"], out["negative"], out["tags"],
+                out["warnings"], out["profile"])
+
+    # ------------------------------------------------------------ 通用家族（旧工作流兼容）
     def _generic(self, prof, text, family, variant, operation,
                  prompt_mode, negative, bible, book, book_context=""):
         if operation in LLM_OPERATIONS:
-            skill_id = {"expand": "anima_expand", "rewrite": "anima_rewrite",
-                        "translate": "translate_en", "repair": "anima_repair"}[operation]
-            repair_issues = ""
-            if operation == "repair":
-                repair_issues = validate_anima(text, variant="base",
-                                               prompt_mode=prompt_mode).as_text()
+            skill_id = {"expand": "generic_expand", "rewrite": "generic_rewrite",
+                        "translate": "translate_en", "repair": "generic_repair"}[operation]
+            repair_issues = "检查并修复空提示词、歧义主体、相互矛盾或不可见的描述。" \
+                if operation == "repair" else ""
             out = self._llm_render(prof, skill_id, text, prompt_mode,
                                    negative, bible, [], family=family,
                                    variant=variant, repair_issues=repair_issues,
@@ -223,29 +271,54 @@ class APS_PromptComposer:
     # ------------------------------------------------------------ custom skill
     def _skill_path(self, prof, text, operation, prompt_mode,
                     negative, bible, skill, lora):
-        if get_skill(skill) is None:
-            raise ValueError(f"Skill 不存在: {skill!r}（内置：anima_expand/anima_rewrite/anima_repair/translate_en）")
+        selected = get_skill(skill)
+        if selected is None:
+            raise ValueError(f"Skill 不存在或已停用: {skill!r}")
+        family = selected.target_family
+        variant = selected.target_variant
+        if operation in {"audit", "convert"}:
+            if family == "anima":
+                out = _as_dict(render_anima(
+                    text, variant=variant or "base", prompt_mode=prompt_mode,
+                    bible=bible, negative_override=negative, lora_triggers=lora))
+            elif family in {"z_image", "qwen_image_edit"}:
+                out = render_special_image(text, family=family, variant=variant,
+                                           negative_override=negative)
+            else:
+                out = _as_dict(render_generic(
+                    text, family=family, variant=variant, prompt_mode=prompt_mode,
+                    bible=bible, negative_override=negative))
+            return (out["positive"], out["negative"], out.get("tags", []),
+                    out.get("warnings", []), out["profile"])
         out = self._llm_render(prof, skill, text, prompt_mode,
-                               negative, bible, lora, family="anima",
-                               variant="base")
+                               negative, bible, lora, family=family,
+                               variant=variant)
         return (out["positive"], out["negative"], out.get("tags", []),
                 out.get("warnings", []), out["profile"])
 
     # ------------------------------------------------------------ LLM + 渲染
     def _llm_render(self, prof, skill_id, text, prompt_mode, negative,
                     bible, lora, family, variant, safety_tag="none",
-                    repair_issues="", book_context="", book=None):
+                    repair_issues="", book_context="", book=None,
+                    extra_context=""):
         skill = get_skill(skill_id)
         api_key = require_api_key(prof)  # LLM 路径才要求 API Key（0.2.1）
         user = text.strip()
         if book_context and book_context.strip():
             user = f"[角色表]\n{book_context.strip()}\n[任务]\n{user}"
+        if extra_context and extra_context.strip():
+            user = f"{extra_context.strip()}\n[任务]\n{user}"
         if repair_issues and repair_issues.strip():
             user = f"[校验问题]\n{repair_issues.strip()}\n[待修复提示词]\n{user}"
+        special_schema = ({"type": "object", "properties": {
+            "positive": {"type": "string"}}, "required": ["positive"],
+            "additionalProperties": False}
+            if skill.renderer in {"z_image", "qwen_image_edit", "generic"} else None)
         req = GenerateRequest(system=skill.system_prompt,
                               messages=[_msg(user)],
                               web_search="off", reasoning="medium",
-                              max_tokens=4096, timeout=prof.timeout)
+                              max_tokens=4096, timeout=prof.timeout,
+                              json_mode=bool(special_schema), output_schema=special_schema)
         result = Gateway().generate(prof, api_key, req)
         if result.has_error():
             raise ValueError(result.error.as_text)
@@ -269,6 +342,35 @@ class APS_PromptComposer:
                                         prompt_mode=prompt_mode, bible=bible,
                                         negative_override=negative,
                                         lora_triggers=lora))
+        elif skill.renderer in {"z_image", "qwen_image_edit"}:
+            from ..services.reference import extract_json_object
+
+            special_payload = extract_json_object(llm_out) or {}
+            special_text = str(special_payload.get("positive", "")).strip()
+            if not special_text:
+                if not llm_out:
+                    raise ValueError(f"Skill {skill.id} 返回了空内容")
+                special_text = llm_out
+            out = render_special_image(special_text, family=family, variant=variant,
+                                       negative_override=negative)
+            if not special_payload.get("positive"):
+                out["warnings"].append(
+                    f"Skill {skill.id} 未返回 positive JSON；已保留模型普通文本作为提示词")
+        elif skill.renderer == "generic":
+            from ..services.reference import extract_json_object
+
+            payload = extract_json_object(llm_out) or {}
+            body = str(payload.get("positive", "")).strip()
+            if not body:
+                if not llm_out:
+                    raise ValueError(f"Skill {skill.id} 返回了空内容")
+                body = llm_out
+            out = _as_dict(render_generic(
+                body, family=family, variant=variant, prompt_mode=prompt_mode,
+                bible=bible, book=book, negative_override=negative))
+            if not payload.get("positive"):
+                out["warnings"].append(
+                    f"Skill {skill.id} 未返回 positive JSON；已保留模型普通文本作为提示词")
         else:
             out = _as_dict(render_generic(llm_out, family=family, variant=variant,
                                           prompt_mode=prompt_mode, bible=bible, book=book,
@@ -311,13 +413,59 @@ def empty_report():
     return empty_validation()
 
 
+def _validate_special(positive: str, family: str, reference_manifest=None):
+    """专用模型的最低可执行契约；不再用空报告伪装“已审计”。"""
+    report = empty_report()
+    report.checks.extend(["non_empty", "reference_labels"])
+    if not positive.strip():
+        report.add("error", "empty_prompt", "提示词不能为空")
+    if family == "qwen_image_edit":
+        import re
+
+        used = {int(n) for n in re.findall(r"\bFigure\s+(\d+)\b", positive)}
+        if used and not reference_manifest:
+            report.add("error", "missing_references", "使用了 Figure 引用但未连接参考清单")
+        elif used:
+            image_assets = [asset for asset in reference_manifest.assets
+                            if asset.asset_type == "image"]
+            available = set()
+            for index, asset in enumerate(image_assets, start=1):
+                labels = [asset.note, *getattr(asset, "h3_labels", [])]
+                numbers = {int(n) for label in labels if label
+                           for n in re.findall(r"\bFigure\s+(\d+)\b", label)}
+                available.update(numbers or {index})
+            for number in sorted(used - available):
+                report.add("error", "missing_figure",
+                           f"提示词引用 Figure {number}，但参考清单中没有这张图片")
+    return report
+
+
 def _split_target(target: str):
     if target.startswith("anima_"):
         return "anima", target[len("anima_"):]
     if target == "flux_kontext":
         return "flux", "kontext"
+    if target == "z_image_turbo":
+        return "z_image", "turbo"
+    if target == "qwen_image_edit_2511":
+        return "qwen_image_edit", "2511"
     if target == "generic_image":
         return "generic_image", ""
     if target == "sdxl":
         return "sdxl", ""
     return "custom_skill", ""
+
+
+def _reference_context(reference_manifest) -> str:
+    if not reference_manifest:
+        return ""
+    from ..schemas.references import ReferenceManifest
+
+    manifest = ReferenceManifest.from_json(reference_manifest)
+    if not manifest.assets:
+        return ""
+    lines = ["[已连接图片引用]"]
+    for asset in manifest.assets:
+        label = asset.note or asset.label_or_id()
+        lines.append(f"{label}: asset_id={asset.asset_id}")
+    return "\n".join(lines)

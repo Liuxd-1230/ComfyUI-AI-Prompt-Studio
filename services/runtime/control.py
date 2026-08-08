@@ -33,6 +33,11 @@ def run_runtime_action(backend: str, action: str, url: str = "",
             return base
 
         if action == "list_models":
+            st = runtime.status()
+            if not st.get("available"):
+                base.update(ok=False, models=[],
+                            error=st.get("error") or "运行时不可用")
+                return base
             base.update(ok=True, models=runtime.list_models())
             return base
 

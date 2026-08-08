@@ -2,6 +2,32 @@
 
 本项目按阶段（Phase 0-6）迭代，每阶段完成即提交并推送（master）。
 
+## [Unreleased] — Z-Image / Qwen Edit 与图片引用
+
+- 全仓整改：修复节点档案覆盖丢失、高级采样参数未发送、会话 replace 假替换、context 重复、失败路径不卸载、运行时断线假成功、同步 HTTP 阻塞 Comfy 事件循环及外部数据提示注入。
+- Reference Analyzer 不再把多主体图片重新绑定给主人物；图片引用按实际使用和连接顺序编号；Storyboard 增加真实 Comfy 列表输出并强制场景数/总时长契约；人物 ID 改为唯一句柄。
+- H3 对齐官方 Skill：4–15 秒、Ref2VA 图片/视频/音频入口和边界、镜头同步声、引用/说话人定义、闭唇/转场/截断/画面文字、严格 JSON Schema、350–500 词密度提示，以及节点内导演工作台。
+- Prompt Skill 支持递归加载、停用生效、来源/完整内容 hash、按自身 family/renderer 分派；设置页可查看、新建、编辑并显示加载错误。
+- LM Studio 支持 `LM_STUDIO_API_TOKEN`，同一模型多个 loaded instance 会全部卸载；卸载节点兼容独立输出节点和提示词透传两种用法。
+- Composer 新增 `z_image_turbo` 和 `qwen_image_edit_2511`：前者采用长自然语言、9 步、CFG 0、空负面；后者使用直接编辑指令和 `Figure N` 多图引用。SDXL/FLUX 仅保留旧工作流兼容。
+- 新增 `APS_ReferencePrompt`：给 `image_1`～`image_3` 接图后，在提示词输入框键入 `@` 选择带缩略图的引用；可输出 Qwen `Figure N`、H3 `<Picture N>` 与 `REFERENCE_MANIFEST`。
+- 新增两个内置 Prompt Skill、11 个节点的中文 Markdown 帮助，以及仅连接本扩展节点的 `examples/aps_usage_showcase.json`。
+- 测试新增专用渲染、图片引用、档案覆盖、跨主体绑定、H3 引用、运行时与示例接口契约；全量 507 项通过，并在 ComfyUI 0.31.1 隔离端口完成 11 节点注册及重复卸载调度验证。
+- H3 Director 遇到第三方端点忽略 JSON Schema、返回普通文本时，不再让工作流崩溃：保留模型原文并回退为可编辑的单镜头计划；第三方 DeepSeek 代理也不再继承官方端点的结构化输出能力。
+- Storyboard 与 H3 共用递归 strict JSON Schema 规范化，所有嵌套对象自动补齐完整 `required` 与 `additionalProperties: false`，修复严格端点的 HTTP 400。
+- Storyboard Builder 遇到兼容端点返回非 JSON 时，不再崩溃或重复调用 API；保留用户原始故事并回退为可编辑单镜头，在 continuity 中明确记录 warning。
+- 档案与能力检测整改：Profile/模型改为动态可选下拉；模型目录兼容 `data`/`models`/数组结构；档案或密钥变更及探测失败会清除旧能力；`/models` 不再被误当成协议/结构化输出证明；主模型视觉与独立视觉服务分开记录。Z-Image/Qwen/Generic 遇到第三方模型返回普通文本时保留原文，不再因缺少 `positive` JSON 崩溃。
+- 能力探测改为真实执行矩阵：以 Gateway 实际请求格式分别调用 Chat、Responses、JSON Schema/JSON Object、函数工具、视觉、文件与原生联网；HTTP 200 但内容不符合探针也判失败。设置页以勾选状态和逐项 HTTP 诊断展示结果，视觉/文件实测失败会同步关闭档案开关；附件与工具请求按已通过的协议自动选路。
+- 新增完整中文节点端口参考和模式提示词示例，并扩写 11 个节点内嵌帮助页；测试自动核对所有公开输入、输出端口都在对应帮助中出现。
+
+## [0.2.1d] - 2026-08-08 — 专用 LM Studio 卸载节点
+
+- **新增节点 `APS_UnloadModel`（Unload LM Studio Model）**：连接在 LLM 提示词与后续生成节点之间，卸载 LM Studio 后原样透传 prompt；填写 `model`（LM Studio v1 的 `key` 字段）+ 可选 `url`（默认 `http://127.0.0.1:1234`）。
+- **复用同一服务层**：与 Runtime Control 节点、Settings /runtime 路由共用 `services/runtime/control.run_runtime_action`（固定 `backend=lmstudio`）；`instance_id` 解析仍由 `LMStudioBackend.unload` 负责（缓存 + v1 `loaded_instances[].id` 反查），走官方 `POST /api/v1/models/unload`，请求体 `{"instance_id": ...}`。
+- **输出**：透传 `prompt` + `result`（JSON：ok / model / instance_id / error）+ `status`（可读中文文本）；副作用节点每次排队强制执行，不复用缓存。
+- 注册：`nodes/__init__.py`、根 `__init__.py` 各加一项（当时为 10 个节点）；新增 `tests/test_nodes_unload.py`（成功 / 空 model 不误发 / 后端错误 / 不可达）。
+- 文档：README 功能总览 + 节点说明表。
+
 ## [0.2.1c] - 2026-08-07 — 前端入口修复（原生 Settings）
 
 - **最终入口**：按产品决定不占用 Sidebar，也不注入 `.comfy-menu`；入口放入 ComfyUI 原生 Settings 的 `AI Prompt Studio > General > Settings Workbench`。

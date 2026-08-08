@@ -3,6 +3,7 @@ import pytest
 
 from aps.schemas.profile import AIProfile
 from aps.schemas.results import LLMResult, make_error
+from aps.schemas.attachments import Attachment
 from aps.services.adapters.base import ProtocolUnsupported
 from aps.services.gateway import Gateway, GenerateRequest
 
@@ -48,7 +49,7 @@ def test_protocol_local_uses_chat(store):
 
 
 def test_protocol_deepseek_per_model_when_caps_unknown(store):
-    """未探测时按具体模型兜底：v4-flash→responses；v4-pro 与未知模型→chat。"""
+    """未探测时按当前官方公开接口保守走 Chat；主动探测可再启用 Responses。"""
     gw = Gateway(store=store)
 
     def run(model, want_responses):
@@ -61,7 +62,7 @@ def test_protocol_deepseek_per_model_when_caps_unknown(store):
         assert bool(r.calls) is want_responses
         assert bool(c.calls) is (not want_responses)
 
-    run("deepseek-v4-flash", want_responses=True)
+    run("deepseek-v4-flash", want_responses=False)
     run("deepseek-v4-pro", want_responses=False)
     run("deepseek-unknown-model", want_responses=False)
 
@@ -76,6 +77,38 @@ def test_protocol_explicit_override(store):
     gw._chat = c
     gw.generate(store.get_profile("p1"), "k", GenerateRequest())
     assert c.calls and not r.calls
+
+
+def test_auto_protocol_uses_the_probed_multimodal_path(store):
+    store.create_profile({"profile_id": "p1", "provider": "openai_compatible"})
+    store.set_capabilities("p1", {
+        "responses": True, "chat_completions": True,
+        "vision": True, "vision_responses": False, "vision_chat": True,
+    })
+    image = Attachment.from_base64("AA==", name="pixel.png", mime_type="image/png")
+    gw = Gateway(store=store)
+    r = FakeAdapter("responses")
+    c = FakeAdapter("chat_completions")
+    gw._responses = r
+    gw._chat = c
+    gw.generate(store.get_profile("p1"), "k", GenerateRequest(attachments=[image]))
+    assert c.calls and not r.calls
+
+
+def test_model_override_does_not_reuse_profile_multimodal_switch(store):
+    store.create_profile({"profile_id": "p1", "provider": "openai_compatible",
+                          "model": "visual-a", "supports_vision": True})
+    store.set_capabilities("p1", {"responses": False, "chat_completions": True,
+                                  "vision": True, "vision_chat": True})
+    overridden = store.get_profile("p1")
+    overridden.model = "text-b"
+    image = Attachment.from_base64("AA==", name="pixel.png", mime_type="image/png")
+    gw = Gateway(store=store)
+    c = FakeAdapter("chat_completions")
+    gw._chat = c
+    result = gw.generate(overridden, "k", GenerateRequest(attachments=[image]))
+    assert result.has_error() and result.error.kind == "attachment_unsupported"
+    assert not c.calls
 
 
 def test_degrade_responses_to_chat_with_warning(store):
@@ -148,6 +181,7 @@ def test_both_protocols_unsupported(store):
 
 def test_web_search_off_passes_through(store):
     store.create_profile({"profile_id": "p1"})
+    store.set_capabilities("p1", {"responses": True})
     r = FakeAdapter("responses")
     gw = Gateway(store=store)
     gw._responses = r
@@ -158,7 +192,7 @@ def test_web_search_off_passes_through(store):
 
 def test_web_search_native_enabled(store):
     store.create_profile({"profile_id": "p1"})
-    store.set_capabilities("p1", {"native_web_search": True})
+    store.set_capabilities("p1", {"responses": True, "native_web_search": True})
     r = FakeAdapter("responses")
     gw = Gateway(store=store)
     gw._responses = r
@@ -170,7 +204,7 @@ def test_web_search_native_enabled(store):
 def test_web_search_offline_degraded_warns(store):
     """端点不支持原生搜索 → 仍请求但关闭联网工具并带警告。"""
     store.create_profile({"profile_id": "p1"})
-    store.set_capabilities("p1", {"native_web_search": False})
+    store.set_capabilities("p1", {"responses": True, "native_web_search": False})
     r = FakeAdapter("responses")
     gw = Gateway(store=store)
     gw._responses = r

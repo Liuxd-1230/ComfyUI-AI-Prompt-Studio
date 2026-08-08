@@ -12,7 +12,7 @@ from ..schemas import types
 from ..schemas.profile import AIProfile
 from ..schemas.results import ChatMessage, ChatSession
 from ..services.gateway import Gateway, GenerateRequest
-from ._helpers import require_api_key, resolve_profile
+from ._helpers import require_api_key, resolve_profile_input
 
 HISTORY_MODES = ["append", "replace", "off"]
 OUTPUT_MODES = ["text", "json", "json_schema"]
@@ -63,7 +63,7 @@ class APS_LLMGenerate:
         profile = AIProfile.from_json(AI_PROFILE or {})
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点并选择档案")
-        prof = resolve_profile(profile.profile_id)
+        prof = resolve_profile_input(AI_PROFILE)
         api_key = require_api_key(prof)
 
         user_text = (user_prompt or "").strip()
@@ -104,7 +104,12 @@ class APS_LLMGenerate:
         sess.profile_id = prof.profile_id
         sess.model = prof.model
 
-        user_msg = ChatMessage(role="user", content=user_text or ctx_text)
+        # context 已在受保护的数据块中发送；仅有 context 时不要再把原文作为
+        # 未标记的 user 指令重复发送。
+        user_msg = ChatMessage(
+            role="user",
+            content=user_text or "请根据上方附加上下文完成任务。",
+        )
         if history_mode == "append":
             messages = list(sess.messages)
             if messages and messages[-1].content == user_msg.content:
@@ -125,7 +130,8 @@ class APS_LLMGenerate:
                     raise ValueError("schema 必须是 JSON 对象")
             except ValueError:
                 schema_warnings.append(
-                    "json_schema 不是合法 JSON 对象，已作为提示词约束发送（可检查格式）")
+                    "json_schema 不是合法 JSON 对象；已降级为提示词约束，"
+                    "模型输出不保证严格符合该 Schema")
                 system = (f"{system}\n\n[输出约束]\n必须输出合法的 JSON 对象，"
                           f"严格符合以下 JSON Schema：\n{json_schema.strip()}")
                 output_schema = None
@@ -141,6 +147,9 @@ class APS_LLMGenerate:
             reasoning=prof.reasoning,
             max_tokens=int(prof.max_tokens) if prof.max_tokens else None,
             temperature=prof.temperature,
+            top_p=prof.top_p,
+            frequency_penalty=prof.frequency_penalty,
+            presence_penalty=prof.presence_penalty,
             json_mode=json_mode,
             output_schema=output_schema,
             attachments=att_list,
@@ -154,6 +163,8 @@ class APS_LLMGenerate:
 
         # 会话更新
         if history_mode != "off":
+            if history_mode == "replace":
+                sess.messages = []
             if not (sess.messages and sess.messages[-1].content == user_msg.content):
                 sess.append(user_msg)
             sess.append(ChatMessage(role="assistant", content=result.text,

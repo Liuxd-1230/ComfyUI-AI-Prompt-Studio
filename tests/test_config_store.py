@@ -28,6 +28,18 @@ def test_duplicate_profile_rejected(store):
         store.create_profile({"profile_id": "p1"})
 
 
+@pytest.mark.parametrize("payload", [
+    {"provider": "unknown"},
+    {"base_url": "not-a-url"},
+    {"timeout": 0},
+    {"top_p": 1.5},
+    {"frequency_penalty": 3},
+])
+def test_invalid_profile_is_rejected_on_save(store, payload):
+    with pytest.raises(ValueError):
+        store.create_profile({"profile_id": "bad", **payload})
+
+
 def test_default_profile(store):
     assert store.get_default_profile() is None
     store.create_profile({"profile_id": "a"})
@@ -41,6 +53,17 @@ def test_default_profile(store):
 
 def test_capability_cache(store):
     store.create_profile({"profile_id": "p1"})
+    assert store.get_capabilities("p1") == {}
+
+
+def test_profile_or_key_change_invalidates_capabilities(store):
+    store.create_profile({"profile_id": "p1", "model": "model-a"})
+    store.set_capabilities("p1", {"models": ["model-a"], "responses": True})
+    assert store.get_capabilities("p1")["responses"] is True
+    store.update_profile("p1", {"model": "model-b"})
+    assert store.get_capabilities("p1") == {}
+    store.set_capabilities("p1", {"models": ["model-b"]})
+    store.set_api_key("p1", "sk-new-123456789")
     assert store.get_capabilities("p1") == {}
     store.set_capabilities("p1", {"responses": True, "vision": False})
     assert store.get_capabilities("p1")["responses"] is True

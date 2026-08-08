@@ -50,8 +50,38 @@ def test_build_vision_messages():
 
 
 def test_require_vision_raises_without_config():
-    with pytest.raises(VisionUnavailable, match="vision_base_url"):
+    with pytest.raises(VisionUnavailable, match="vision_model"):
         vision.require_vision(AIProfile(profile_id="p1"))
+
+
+def test_require_vision_reuses_primary_base_url():
+    p = AIProfile(profile_id="p1", base_url="http://same/v1", vision_model="vision-m")
+    assert vision.require_vision(p) == "http://same/v1"
+
+
+def test_separate_vision_model_does_not_mark_primary_model_visual(monkeypatch):
+    from aps.services import capability_probe
+
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResp(200, {
+        "data": [{"id": "text-m"},
+                 {"id": "vision-m", "input_modalities": ["text", "image"]}]}))
+    def fake_post(url, headers=None, json=None, timeout=None, **kwargs):
+        if url.endswith("/responses"):
+            return FakeResp(404, {})
+        content = (json.get("messages") or [{}])[-1].get("content", "")
+        if json.get("model") == "vision-m":
+            return FakeResp(200, {"choices": [{"message": {"content": "MAGENTA"}}]})
+        if isinstance(content, list):
+            return FakeResp(400, {})
+        if json.get("response_format") or json.get("tools"):
+            return FakeResp(400, {})
+        return FakeResp(200, {"choices": [{"message": {"content": "APS_OK"}}]})
+    monkeypatch.setattr(requests, "post", fake_post)
+    p = AIProfile(profile_id="p1", provider="openai_compatible",
+                  base_url="http://same/v1", model="text-m", vision_model="vision-m")
+    caps = capability_probe.probe_profile(p, "key")
+    assert caps["vision"] is False
+    assert caps["vision_service"] is True
 
 
 def test_resolve_vision_profile_no_ref_returns_self():

@@ -35,7 +35,7 @@ def test_parse_candidate_json():
     assert cand.name == "少女"
     assert cand.traits[0].value == "long dark brown hair"
     assert cand.traits[0].category == "stable"
-    assert cand.traits[1].category == "stable"  # 非法类别回退
+    assert cand.traits[1].category == "uncertain"  # 非法类别不得升级为确定事实
     assert cand.traits[1].confidence == 1.0     # 置信度钳制到 [0,1]
     assert len(cand.traits) == 2                 # 空 value 丢弃
     assert "image:0" in cand.traits[0].sources
@@ -227,3 +227,15 @@ def test_build_manifest():
     assert len(m.subjects) == 1
     assert m.subjects[0].kind == "character"
     assert m.character_sources[m.subjects[0].subject_id] == ["img_0", "img_1"]
+
+
+def test_build_manifest_only_binds_candidate_source_images():
+    assets = [AssetRef(asset_id="img_0", asset_type="image", source="input:0"),
+              AssetRef(asset_id="img_1", asset_type="image", source="input:1")]
+    candidate = CharacterCandidate(name="A", sources=["image:1"])
+    manifest = reference.build_manifest(assets, [candidate])
+    subject = manifest.subjects[0]
+    assert subject.source_assets == ["img_1"]
+    assert manifest.character_sources[subject.subject_id] == ["img_1"]
+    assert assets[0].subject_ids == []
+    assert assets[1].subject_ids == [subject.subject_id]

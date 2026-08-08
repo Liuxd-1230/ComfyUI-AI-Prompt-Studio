@@ -5,10 +5,27 @@ import pytest
 
 from aps.schemas.storyboard import Storyboard
 from aps.services.storyboard import (
+    STORYBOARD_SCHEMA,
     build_continuity,
     build_storyboard_prompt,
     parse_storyboard_json,
 )
+
+
+def test_storyboard_schema_is_valid_for_strict_json_endpoints():
+    """OpenAI strict 要求每个 object 的 required 覆盖全部 properties。"""
+    def assert_strict(node, path="root"):
+        if node.get("type") == "object":
+            properties = node.get("properties", {})
+            assert node.get("additionalProperties") is False, path
+            assert set(node.get("required", [])) == set(properties), path
+            for name, child in properties.items():
+                if isinstance(child, dict):
+                    assert_strict(child, f"{path}.{name}")
+        elif node.get("type") == "array" and isinstance(node.get("items"), dict):
+            assert_strict(node["items"], f"{path}[]")
+
+    assert_strict(STORYBOARD_SCHEMA)
 
 VALID = {
     "title": "咖啡店",

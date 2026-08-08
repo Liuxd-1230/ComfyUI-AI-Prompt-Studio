@@ -1,17 +1,18 @@
-"""节点注册测试：9 个节点、分类、返回类型、输入结构。"""
+"""节点注册测试：分类、返回类型、输入结构。"""
 import pytest
 
 EXPECTED_NODES = [
     "APS_ModelProfile", "APS_LLMGenerate", "APS_ReferenceAnalyzer",
     "APS_CharacterBible", "APS_StoryboardBuilder", "APS_StoryboardSelect",
-    "APS_PromptComposer", "APS_MiniMaxH3Director", "APS_RuntimeControl",
+    "APS_PromptComposer", "APS_ReferencePrompt", "APS_MiniMaxH3Director", "APS_RuntimeControl",
+    "APS_UnloadModel",
 ]
 
 
-def test_nine_nodes_registered(ext):
+def test_all_nodes_registered(ext):
     mappings = ext.NODE_CLASS_MAPPINGS
     assert set(mappings.keys()) == set(EXPECTED_NODES)
-    assert len(mappings) == 9
+    assert len(mappings) == 11
 
 
 def test_display_names_present(ext):
@@ -69,9 +70,26 @@ def test_ai_profile_missing_profile_readable_error(ext, store):
                      reasoning="high", web_search="auto", unload_policy="never")
 
 
+def test_ai_profile_uses_profile_and_model_dropdowns(ext, store):
+    store.create_profile({"profile_id": "p1", "name": "Proxy", "model": "model-a"})
+    store.set_capabilities("p1", {"models": ["model-a", "model-b"]})
+    inputs = ext.NODE_CLASS_MAPPINGS["APS_ModelProfile"].INPUT_TYPES()
+    assert "Proxy [p1]" in inputs["required"]["profile"][0]
+    assert "model-b" in inputs["required"]["model_override"][0]
+    assert "custom_model_override" in inputs["optional"]
+
+
+def test_ai_profile_named_choice_resolves_stable_id(ext, store):
+    store.create_profile({"profile_id": "p_named", "name": "我的代理", "model": "model-a"})
+    node = ext.NODE_CLASS_MAPPINGS["APS_ModelProfile"]()
+    payload = node.resolve(profile="我的代理 [p_named]", model_override="", protocol="auto",
+                           reasoning="medium", web_search="off", unload_policy="never")[0]
+    assert payload["profile_id"] == "p_named"
+
+
 def test_storyboard_select_node(ext, storyboard):
     node = ext.NODE_CLASS_MAPPINGS["APS_StoryboardSelect"]()
-    item, item_list, scene_text, chars, batch = node.select(
+    item, item_list, scene_text, chars, batch, items = node.select(
         storyboard=storyboard.to_json(), select_mode="all",
         scene_id="", shot_id="", range="")
     assert batch == 3  # 三个镜头
@@ -79,17 +97,18 @@ def test_storyboard_select_node(ext, storyboard):
     assert item["kind"] == "shot"
     assert "c1" in json_loads(chars)
 
-    item, item_list, scene_text, chars, batch = node.select(
+    item, item_list, scene_text, chars, batch, items = node.select(
         storyboard=storyboard.to_json(), select_mode="scene",
         scene_id="s2", shot_id="", range="")
     assert batch == 1 and item_list["items"][0]["scene_id"] == "s2"
 
-    item, item_list, _, _, batch = node.select(
+    item, item_list, _, _, batch, items = node.select(
         storyboard=storyboard.to_json(), select_mode="range",
         scene_id="", shot_id="", range="1-2")
     assert batch == 2
+    assert len(items) == 2
 
-    item, item_list, _, _, batch = node.select(
+    item, item_list, _, _, batch, items = node.select(
         storyboard=storyboard.to_json(), select_mode="shot",
         scene_id="", shot_id="s2sh1", range="")
     assert batch == 1 and item_list["items"][0]["shot_id"] == "s2sh1"

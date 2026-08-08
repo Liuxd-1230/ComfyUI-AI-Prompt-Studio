@@ -128,6 +128,11 @@ async def _http_roundtrip(table, store):
             f"{base}/ai_prompt_studio/settings", json={"settings": {"lang": "zh"}}
         ) as resp:
             assert resp.status == 200
+        async with client.post(
+            f"{base}/ai_prompt_studio/settings",
+            data="{bad json", headers={"Content-Type": "application/json"},
+        ) as resp:
+            assert resp.status == 400
         async with client.get(f"{base}/ai_prompt_studio/settings") as resp:
             assert (await resp.json())["settings"]["lang"] == "zh"
 

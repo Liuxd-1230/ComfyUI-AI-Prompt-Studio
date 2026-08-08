@@ -65,8 +65,9 @@ def test_render_dialogue_singing():
 def test_render_dialogue_voiceover():
     d = H3Dialogue(language="English", text="Long ago...", speaker_ids=["S1", "S2"],
                    kind="voiceover")
-    assert render_dialogue(d) == \
-        "(S1,S2) says in an off-screen voiceover: <d>[English] Long ago...</d>"
+    out = render_dialogue(d)
+    assert out.startswith("(S1,S2) says in an off-screen voiceover: <d>[English] Long ago...</d>")
+    assert "lips remain completely closed" in out
 
 
 # ------------------------------------------------------------------ 镜头
@@ -136,14 +137,15 @@ def test_l2va_instruction():
     assert "<Picture 1> (from [Shot 2]) aligns with the 8.00-second mark" in first
 
 
-def test_soundscape_includes_shot_audio_notes():
+def test_shot_audio_notes_stay_in_shot_not_global_soundscape():
     plan = make_plan("T2VA")
     plan.shots[0].audio_notes = "Rain falls on the window"
     plan.soundscape = "The cafe hums softly."
     out = render_h3(plan)
     sound = [l for l in out.splitlines() if l.startswith("overall_soundscape: ")][0]
     assert "The cafe hums softly." in sound
-    assert "Rain falls on the window." in sound
+    assert "Rain falls on the window." not in sound
+    assert "[Shot 1]" in out and "Rain falls on the window." in out
 
 
 # ------------------------------------------------------------------ R2V

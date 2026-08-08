@@ -24,29 +24,52 @@ from ..schemas.h3 import (
 
 def format_timestamp(seconds: float) -> str:
     """秒 → MM:SS.mmm（两位分钟、三位毫秒）。"""
-    total = max(float(seconds), 0.0)
-    mm = int(total // 60)
-    ss = int(total % 60)
-    mmm = int(round((total - int(total)) * 1000))
-    if mmm >= 1000:
-        mmm = 999
+    total_ms = max(int(round(float(seconds) * 1000)), 0)
+    mm, remainder = divmod(total_ms, 60_000)
+    ss, mmm = divmod(remainder, 1000)
     return f"{mm:02d}:{ss:02d}.{mmm:03d}"
 
 
-def render_dialogue(d: H3Dialogue) -> str:
+def render_dialogue(d: H3Dialogue, speaker_descriptions: Optional[dict[str, str]] = None,
+                    introduced: Optional[set[str]] = None) -> str:
     ids = ",".join(d.speaker_ids)
     marker = f"({ids})" if ids else ""
     verb = {"singing": "sings", "voiceover": "says in an off-screen voiceover"}.get(
         d.kind, "says")
-    return f"{marker} {verb}: <d>[{d.language or 'English'}] {d.text}</d>"
+    prefix = ""
+    if speaker_descriptions is not None and introduced is not None:
+        new_descriptions = []
+        for speaker_id in d.speaker_ids:
+            if speaker_id not in introduced:
+                description = speaker_descriptions.get(speaker_id, "").strip()
+                if description:
+                    new_descriptions.append(description)
+                introduced.add(speaker_id)
+        prefix = " and ".join(new_descriptions)
+    spoken = f"{d.prefix_marker}{d.text}{d.suffix_marker}"
+    line = f"{' '.join(p for p in (prefix, marker, verb) if p)}: <d>[{d.language or 'English'}] {spoken}</d>"
+    if d.kind == "voiceover":
+        line += " while the corresponding on-screen speaker's lips remain completely closed."
+    return line
 
 
-def render_shot(shot: H3Shot) -> str:
+def render_shot(shot: H3Shot, speaker_descriptions: Optional[dict[str, str]] = None,
+                introduced: Optional[set[str]] = None) -> str:
     parts = [s for s in shot.description if s]
-    if shot.camera:
-        parts.append(shot.camera.rstrip(".") + ".")
+    camera = _camera_text(shot)
+    if camera:
+        parts.append(camera.rstrip(".") + ".")
+    if shot.references:
+        labels = ", ".join(_angle_label(label) for label in shot.references)
+        if not any(_angle_label(label) in " ".join(parts) for label in shot.references):
+            parts.append(f"The referenced content {labels} takes effect in this shot.")
+    if shot.audio_notes:
+        parts.append(shot.audio_notes.rstrip(".") + ".")
+    for visible_text in shot.on_screen_text:
+        escaped = visible_text.replace('"', '\\"')
+        parts.append(f'The visible on-screen text reads "{escaped}".')
     for d in shot.dialogues:
-        parts.append(render_dialogue(d))
+        parts.append(render_dialogue(d, speaker_descriptions, introduced))
     body = " ".join(parts)
     if shot.index <= 1 or shot.start_time is None:
         return f"[Shot {shot.index}] {body}".strip()
@@ -55,7 +78,7 @@ def render_shot(shot: H3Shot) -> str:
 
 def render_h3(plan: H3PromptPlan) -> str:
     """H3PromptPlan → 最终提示词（确定性，无 LLM）。"""
-    if plan.mode == "R2V":
+    if plan.mode in {"R2V", "Ref2VA"}:
         return _render_r2v(plan)
     return _render_four_mode(plan)
 
@@ -64,7 +87,7 @@ def render_h3(plan: H3PromptPlan) -> str:
 
 def _render_four_mode(plan: H3PromptPlan) -> str:
     instruction = _alignment_instruction(plan)
-    body = " ".join(render_shot(s) for s in plan.shots)
+    body = _shots_text(plan)
     sound = _soundscape_text(plan)
     music = plan.non_diegetic_music.strip() or "N/A"
     fields = [
@@ -131,11 +154,9 @@ def _label_num(label: str, default: int) -> int:
 
 
 def _soundscape_text(plan: H3PromptPlan) -> str:
-    parts = [plan.soundscape.strip()] if plan.soundscape.strip() else []
-    for s in plan.shots:
-        if s.audio_notes and s.audio_notes.strip():
-            parts.append(s.audio_notes.strip().rstrip(".") + ".")
-    return " ".join(parts) or "N/A"
+    if plan.explicit_silence:
+        return "N/A"
+    return plan.soundscape.strip()
 
 
 # ---------------------------------------------------------------- R2V
@@ -146,10 +167,13 @@ def _render_r2v(plan: H3PromptPlan) -> str:
     lines.append("subject_definitions:")
     for subj in plan.subjects:
         lines.append(_render_subject(subj))
+    subject_sources = {source.strip("<>") for subject in plan.subjects
+                       for source in subject.source_assets}
     for asset in plan.assets:
-        if asset.kind == "audio":
-            note = asset.note.strip() or asset.source or ""
-            lines.append(f"<{asset.label}> is {note}" if note else f"<{asset.label}> is an audio reference.")
+        if (asset.kind == "audio" or asset.label not in subject_sources or
+                asset.alignment_time is not None or asset.note.strip()):
+            note = asset.note.strip() or asset.source or f"a {asset.kind} reference"
+            lines.append(f"<{asset.label}> is {note}.")
 
     lines.append("summary:")
     lines.append(plan.summary.strip() if plan.summary.strip() else "[reference generation]")
@@ -161,11 +185,10 @@ def _render_r2v(plan: H3PromptPlan) -> str:
     lines.append("detailed_description:")
     if plan.style_opening and plan.style_opening.strip():
         lines.append(plan.style_opening.strip())
-    for s in plan.shots:
-        lines.append(render_shot(s))
+    lines.extend(_shots_text(plan, join=False))
 
     lines.append("overall_soundscape:")
-    lines.append(plan.soundscape.strip() or "N/A")
+    lines.append(_soundscape_text(plan))
 
     lines.append("non_diegetic_music:")
     lines.append(plan.non_diegetic_music.strip() or "N/A")
@@ -173,8 +196,12 @@ def _render_r2v(plan: H3PromptPlan) -> str:
 
 
 def _render_subject(subj: H3Subject) -> str:
-    return f"<{subj.label}> is {subj.definition.strip()}" if subj.definition.strip() \
-        else f"<{subj.label}> is a reusable content unit."
+    definition = subj.definition.strip() or "a reusable content unit"
+    sources = [_angle_label(source) for source in subj.source_assets]
+    missing = [source for source in sources if source not in definition]
+    if missing:
+        definition += f", derived from {', '.join(missing)}"
+    return f"<{subj.label}> is {definition}."
 
 
 def _render_retention(r: H3Retention) -> str:
@@ -185,3 +212,29 @@ def _render_retention(r: H3Retention) -> str:
     if refs:
         return f"<{label}> (appears in {refs}): {r.marker} - {r.notes}".rstrip(" -")
     return f"<{label}>: {r.marker} - {r.notes}".rstrip(" -")
+
+
+def _shots_text(plan: H3PromptPlan, *, join: bool = True):
+    descriptions = {speaker.speaker_id: speaker.description for speaker in plan.speakers}
+    introduced: set[str] = set()
+    lines = [render_shot(shot, descriptions, introduced) for shot in plan.shots]
+    return " ".join(lines) if join else lines
+
+
+def _angle_label(label: str) -> str:
+    clean = (label or "").strip().strip("<>")
+    return f"<{clean}>" if clean else ""
+
+
+def _camera_text(shot: H3Shot) -> str:
+    if shot.camera_motion:
+        motion = shot.camera_motion.replace("_", " ")
+        parts = [f"The camera {motion}"]
+        if shot.camera_amplitude and shot.camera_amplitude != "normal":
+            parts.append(f"with {shot.camera_amplitude} amplitude")
+        if shot.camera_speed and shot.camera_speed != "normal":
+            parts.append(f"at {shot.camera_speed} speed")
+        if shot.camera_target:
+            parts.append(f"toward {shot.camera_target}")
+        return " ".join(parts)
+    return shot.camera

@@ -81,7 +81,8 @@ def parse_candidate_json(raw: str, mode: str = "character_full",
             continue
         category = str(t.get("category", "stable"))
         if category not in _TRAIT_CATEGORIES:
-            category = "stable"
+            # 非法枚举不能升级成确定事实。
+            category = "uncertain"
         try:
             confidence = float(t.get("confidence", 0.5))
         except (TypeError, ValueError):
@@ -435,14 +436,25 @@ def build_manifest(asset_refs: List[AssetRef], candidates: List[CharacterCandida
     subject_index: Dict[str, SubjectRef] = {}
     for c in candidates:
         cid = f"subject_{len(subject_index) + 1}"
+        image_indexes = {
+            int(s.split(":", 1)[1]) for s in c.sources
+            if s.startswith("image:") and s.split(":", 1)[1].isdigit()
+        }
+        linked_assets = [a for a in asset_refs if any(
+            a.source == f"input:{i}" or a.asset_id == f"img_{i}"
+            for i in image_indexes)]
+        if not image_indexes:
+            linked_assets = list(asset_refs)
         subject = SubjectRef(subject_id=cid, kind="character",
                              definition=c.name or cid,
-                             source_assets=[a.asset_id for a in asset_refs],
+                             source_assets=[a.asset_id for a in linked_assets],
                              confidence=c.confidence)
         manifest.subjects.append(subject)
         subject_index.setdefault(c.name or cid, subject)
         # 每个来源资产归属该人物
-        for a in asset_refs:
+        for a in linked_assets:
+            if cid not in a.subject_ids:
+                a.subject_ids.append(cid)
             if a.asset_id not in manifest.character_sources.setdefault(cid, []):
                 manifest.character_sources[cid].append(a.asset_id)
     return manifest

@@ -11,6 +11,7 @@ from aps.services.h3_plan import (
     convert_storyboard,
     map_image_assets,
     parse_plan_json,
+    sync_manifest_assets,
 )
 
 # ---------------------------------------------------------------- 指令构造
@@ -21,6 +22,20 @@ def test_build_plan_prompt_contains_mode_duration_and_input():
     assert "8.00 秒" in p
     assert "non_diegetic_music" in p
     assert "少女走进咖啡店。" in p
+
+
+def test_sync_manifest_preserves_media_and_subject_sources():
+    manifest = ReferenceManifest(
+        assets=[AssetRef(asset_id="img_a", asset_type="image",
+                         h3_labels=["Picture 1"]),
+                AssetRef(asset_id="vid_a", asset_type="video",
+                         h3_labels=["Video 1"], note="motion reference")],
+        subjects=[SubjectRef(subject_id="s1", definition="the heroine",
+                             source_assets=["img_a", "vid_a"])])
+    plan = H3PromptPlan(mode="Ref2VA")
+    sync_manifest_assets(plan, manifest)
+    assert [a.label for a in plan.assets] == ["Picture 1", "Video 1"]
+    assert plan.subjects[0].source_assets == ["Picture 1", "Video 1"]
 
 
 def test_build_plan_prompt_reference_images_and_repair():
@@ -150,6 +165,10 @@ def make_manifest():
 def test_convert_storyboard_maps_structure():
     sb = make_storyboard()
     plan = convert_storyboard(sb, "T2VA", 10.0, manifest=make_manifest())
+    assert plan.soundscape
+    assert plan.non_diegetic_music == "N/A"
+    assert all(shot.references for shot in plan.shots)
+    assert {item.label for item in plan.retention} >= set(plan.all_reference_labels())
     assert plan.mode == "T2VA"
     assert plan.storyboard_id == sb.story_id
     assert len(plan.shots) == 2

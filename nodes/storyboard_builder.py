@@ -10,15 +10,16 @@ import json
 from ..schemas import types
 from ..schemas.character import CharacterBible
 from ..schemas.profile import AIProfile
-from ..schemas.storyboard import SPLIT_MODES, Storyboard
+from ..schemas.storyboard import ContinuityNote, SPLIT_MODES, Storyboard
 from ..services.gateway import Gateway, GenerateRequest
 from ..services.storyboard import (
     STORYBOARD_SCHEMA,
     build_continuity,
     build_storyboard_prompt,
+    fallback_storyboard,
     parse_storyboard_json,
 )
-from ._helpers import require_api_key, resolve_profile
+from ._helpers import require_api_key, resolve_profile_input
 
 
 class APS_StoryboardBuilder:
@@ -30,7 +31,7 @@ class APS_StoryboardBuilder:
                                       "tooltip": "故事/小说/对话/想法原文"}),
             "split_mode": (SPLIT_MODES, {"default": "auto",
                                          "tooltip": "scene=场景；shot=镜头；beat=节拍；auto=自动"}),
-            "target_duration": ("FLOAT", {"default": 10.0, "min": 0.0, "max": 600.0,
+            "target_duration": ("FLOAT", {"default": 10.0, "min": 1.0, "max": 600.0,
                                           "tooltip": "目标视频时长（秒），供分镜节奏参考"}),
             "max_scenes": ("INT", {"default": 12, "min": 1, "max": 100,
                                    "tooltip": "最多场景数"}),
@@ -55,7 +56,7 @@ class APS_StoryboardBuilder:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
         if not story_text or not story_text.strip():
             raise ValueError("story_text 为空，请输入要拆分的故事文本")
-        prof = resolve_profile(profile.profile_id)
+        prof = resolve_profile_input(AI_PROFILE)
         api_key = require_api_key(prof)
 
         from ..schemas.character import CharacterBook
@@ -81,12 +82,40 @@ class APS_StoryboardBuilder:
         if result.has_error():
             raise ValueError(result.error.as_text)
 
-        sb = parse_storyboard_json(result.text, split_mode, style or "",
-                                   float(target_duration or 0))
+        fallback_reason = ""
+        try:
+            sb = parse_storyboard_json(result.text, split_mode, style or "",
+                                       float(target_duration or 0))
+        except ValueError as exc:
+            fallback_reason = str(exc)
+            sb = fallback_storyboard(story_text, split_mode, style or "",
+                                     float(target_duration or 0))
         if not sb.scenes:
-            raise ValueError("模型没有返回任何场景，请调整 split_mode 或故事文本后重试")
+            fallback_reason = "模型返回的 JSON 没有任何场景"
+            sb = fallback_storyboard(story_text, split_mode, style or "",
+                                     float(target_duration or 0))
+        if len(sb.scenes) > int(max_scenes):
+            raise ValueError(
+                f"模型返回 {len(sb.scenes)} 个场景，超过 max_scenes={int(max_scenes)}；"
+                "请重试或提高上限")
+        shots = [shot for scene in sb.scenes for shot in scene.shots]
+        if shots and target_duration:
+            total = sum(max(0.0, shot.duration) for shot in shots)
+            if total <= 0:
+                each = float(target_duration) / len(shots)
+                for shot in shots:
+                    shot.duration = each
+            else:
+                scale = float(target_duration) / total
+                for shot in shots:
+                    shot.duration = round(max(0.01, shot.duration * scale), 3)
         sb.summary = story_text.strip()[:200]
         sb.continuity = build_continuity(sb)
+        if fallback_reason:
+            sb.continuity.append(ContinuityNote(
+                note=("模型未遵守 Storyboard JSON 格式，已保留原故事并回退为一个"
+                      f"可编辑镜头；未重复调用 API。原因：{fallback_reason}"),
+                severity="warning"))
 
         continuity_text = json.dumps(
             [c.to_json() for c in sb.continuity], ensure_ascii=False)

@@ -1,4 +1,6 @@
 """H3 校验器测试：每条官方规则的正反用例（格式由我按手册规则构造，非手册原文复制）。"""
+from aps.schemas.h3 import H3Asset, H3Dialogue, H3PromptPlan, H3Retention, H3Shot
+from aps.schemas.references import AssetRef, ReferenceManifest
 from aps.validators.minimax_h3 import validate_h3
 
 # ---------------------------------------------------------------- 合法样例
@@ -38,6 +40,61 @@ def test_four_mode_ok():
 
 def test_r2v_ok():
     assert validate_h3(R2V_OK, "R2V").valid is True
+
+
+def test_plan_rejects_undefined_reference_and_speaker():
+    plan = H3PromptPlan(mode="Ref2VA", shots=[H3Shot(
+        references=["Picture 99"], dialogues=[H3Dialogue(
+            text="hello", speaker_ids=["S9"])])])
+    report = validate_h3(R2V_OK, "Ref2VA", plan=plan)
+    codes = {issue.code for issue in report.issues}
+    assert "h3_reference_undefined" in codes
+    assert "h3_speaker_undefined" in codes
+
+
+def test_ref2va_duration_outside_official_range_fails():
+    report = validate_h3(R2V_OK, "Ref2VA", duration=16)
+    assert any(issue.code == "h3_duration" for issue in report.issues)
+
+
+def test_ref2va_rejects_defined_asset_not_used_in_shot_or_retention():
+    plan = H3PromptPlan(mode="Ref2VA", assets=[H3Asset(label="Picture 1")],
+                        shots=[H3Shot(index=1)])
+    report = validate_h3(R2V_OK, "Ref2VA", plan=plan)
+    codes = {issue.code for issue in report.issues}
+    assert "h3_reference_unused" in codes
+    assert "h3_reference_retention_missing" in codes
+
+
+def test_ref2va_accepts_asset_used_at_exact_shot_and_retained():
+    plan = H3PromptPlan(
+        mode="Ref2VA", assets=[H3Asset(label="Picture 1")],
+        retention=[H3Retention(label="Picture 1", marker="fully_preserved")],
+        shots=[H3Shot(index=1, references=["Picture 1"])])
+    report = validate_h3(R2V_OK, "Ref2VA", plan=plan)
+    codes = {issue.code for issue in report.issues}
+    assert "h3_reference_unused" not in codes
+    assert "h3_reference_retention_missing" not in codes
+
+
+def test_ref2va_rejects_unknown_and_excess_total_media_duration():
+    manifest = ReferenceManifest(assets=[
+        AssetRef(asset_id="v1", asset_type="video", time_start=0, time_end=10),
+        AssetRef(asset_id="v2", asset_type="video", time_start=0, time_end=10),
+        AssetRef(asset_id="a1", asset_type="audio"),
+        AssetRef(asset_id="p1", asset_type="image"),
+    ])
+    report = validate_h3(R2V_OK, "Ref2VA", manifest=manifest)
+    codes = {issue.code for issue in report.issues}
+    assert "h3_reference_video_total" in codes
+    assert "h3_reference_duration_unknown" in codes
+
+
+def test_ref2va_rejects_retention_marker_for_wrong_modality():
+    prompt = R2V_OK.replace("<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved",
+                            "<Subject 1>: fully_copy")
+    report = validate_h3(prompt, "Ref2VA")
+    assert any(issue.code == "h3_retention_modality" for issue in report.issues)
 
 
 # ---------------------------------------------------------------- 结构

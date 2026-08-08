@@ -106,8 +106,11 @@ class APS_StoryboardSelect:
             "range": ("STRING", {"default": "", "tooltip": "select_mode=range 时的扁平镜头序号区间，如 1-3 或 1,2,5"}),
         }}
 
-    RETURN_TYPES = (types.STORY_ITEM, types.STORY_ITEM_LIST, "STRING", "STRING", "INT")
-    RETURN_NAMES = ("STORY_ITEM", "STORY_ITEM_LIST", "scene_text", "character_ids", "batch_count")
+    RETURN_TYPES = (types.STORY_ITEM, types.STORY_ITEM_LIST, "STRING", "STRING", "INT",
+                    types.STORY_ITEM)
+    RETURN_NAMES = ("STORY_ITEM", "STORY_ITEM_LIST", "scene_text", "character_ids",
+                    "batch_count", "STORY_ITEMS")
+    OUTPUT_IS_LIST = (False, False, False, False, False, True)
     FUNCTION = "select"
     CATEGORY = "AI Prompt Studio"
     DESCRIPTION = "从分镜选择场景/镜头，输出单项或批处理列表（不调用模型）。"
@@ -127,4 +130,5 @@ class APS_StoryboardSelect:
                 item_list.to_json(),
                 scene_text,
                 json.dumps(chars, ensure_ascii=False),
-                item_list.batch_count)
+                item_list.batch_count,
+                [item.to_json() for item in items])

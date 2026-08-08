@@ -74,6 +74,17 @@ def test_profile_validate():
     assert len(bad.validate()) >= 5
 
 
+def test_profile_validate_urls_model_and_self_vision_reference():
+    bad = S.AIProfile(profile_id="p1", model="", vision_base_url="not-a-url",
+                      search_url="ftp://search", vision_profile_id="p1", max_retries=11)
+    problems = "；".join(bad.validate())
+    assert "model 不能为空" in problems
+    assert "vision_base_url" in problems
+    assert "search_url" in problems
+    assert "不能指向自身" in problems
+    assert "max_retries" in problems
+
+
 def test_type_registry():
     assert S.schema_class_for(S.H3_PROMPT_PLAN) is S.H3PromptPlan
     assert S.schema_class_for(S.AI_PROFILE) is S.AIProfile

@@ -9,10 +9,10 @@ import aps
 EXAMPLES = Path(__file__).resolve().parent.parent / "examples"
 
 # 核心节点类型（非本扩展），跳过注册检查
-CORE_TYPES = {"Note", "Reroute", "PrimitiveNode"}
+CORE_TYPES = {"Note", "Reroute", "PrimitiveNode", "EmptyImage", "LoadImage"}
 
 
-@pytest.mark.parametrize("name", ["h3_full_chain.json", "anima_full_chain.json"])
+@pytest.mark.parametrize("name", ["h3_full_chain.json", "anima_full_chain.json", "aps_usage_showcase.json"])
 def test_workflow_loadable_and_registered(name):
     path = EXAMPLES / name
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -25,7 +25,7 @@ def test_workflow_loadable_and_registered(name):
             f"{name}: 节点类型 {n['type']} 未注册"
 
 
-@pytest.mark.parametrize("name", ["h3_full_chain.json", "anima_full_chain.json"])
+@pytest.mark.parametrize("name", ["h3_full_chain.json", "anima_full_chain.json", "aps_usage_showcase.json"])
 def test_workflow_links_consistent(name):
     data = json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
     nodes = {n["id"]: n for n in data["nodes"]}
@@ -45,7 +45,7 @@ def test_workflow_links_consistent(name):
         assert link_id in (src["outputs"][src_slot]["links"] or [])
 
 
-@pytest.mark.parametrize("name", ["h3_full_chain.json", "anima_full_chain.json"])
+@pytest.mark.parametrize("name", ["h3_full_chain.json", "anima_full_chain.json", "aps_usage_showcase.json"])
 def test_workflow_contains_no_secrets(name):
     text = (EXAMPLES / name).read_text(encoding="utf-8").lower()
     for bad in ("api_key", "sk-", "apikey", "token:", "secret"):
@@ -58,4 +58,37 @@ def test_workflow_contains_no_secrets(name):
 
 def test_examples_directory_has_both_chains():
     files = {p.name for p in EXAMPLES.glob("*.json")}
-    assert {"h3_full_chain.json", "anima_full_chain.json"} <= files
+    assert {"h3_full_chain.json", "anima_full_chain.json", "aps_usage_showcase.json"} <= files
+
+
+@pytest.mark.parametrize("name", ["h3_full_chain.json", "anima_full_chain.json", "aps_usage_showcase.json"])
+def test_workflow_node_interfaces_match_current_contract(name):
+    data = json.loads((EXAMPLES / name).read_text(encoding="utf-8"))
+    for node in data["nodes"]:
+        if node["type"] in CORE_TYPES:
+            continue
+        cls = aps.NODE_CLASS_MAPPINGS[node["type"]]
+        declared = cls.INPUT_TYPES()
+        allowed = {key: value[0] for group in ("required", "optional")
+                   for key, value in declared.get(group, {}).items()}
+        present = {item["name"]: item["type"] for item in node.get("inputs", [])}
+        declared_order = [key for group in ("required", "optional")
+                          for key in declared.get(group, {})]
+        present_order = [item["name"] for item in node.get("inputs", [])]
+        assert present_order == [key for key in declared_order if key in present], \
+            f"{name}: {node['type']} 输入顺序与当前 INPUT_TYPES 不一致"
+        for required, spec in declared.get("required", {}).items():
+            input_type = spec[0]
+            options = spec[1] if len(spec) > 1 and isinstance(spec[1], dict) else {}
+            requires_socket = (options.get("forceInput") or
+                               (isinstance(input_type, str) and input_type not in
+                                {"STRING", "INT", "FLOAT", "BOOLEAN"}))
+            if requires_socket:
+                assert required in present, f"{name}: {node['type']} 缺必填接口 {required}"
+        for input_name, input_type in present.items():
+            assert input_name in allowed, f"{name}: {node['type']} 存在过期输入 {input_name}"
+            expected = allowed[input_name]
+            if isinstance(expected, str):
+                assert input_type == expected
+        assert [item["name"] for item in node.get("outputs", [])] == list(cls.RETURN_NAMES)
+        assert [item["type"] for item in node.get("outputs", [])] == list(cls.RETURN_TYPES)

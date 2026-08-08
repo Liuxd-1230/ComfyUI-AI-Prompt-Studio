@@ -11,6 +11,7 @@ manual_priority / text_priority / image_priority / consensus / fill_missing_only
 from __future__ import annotations
 
 import json
+import uuid
 
 from ..schemas import types
 from ..schemas.character import (
@@ -85,7 +86,7 @@ class APS_CharacterBible:
                 if t.name in bible.trait_map():
                     continue
                 bible.traits.append(t)
-                if t.name not in bible.sources:
+                if "text_anchor" not in bible.sources:
                     bible.sources.append("text_anchor")
 
         # 候选合并
@@ -97,7 +98,8 @@ class APS_CharacterBible:
         if not bible.name and candidate is not None and candidate.name:
             bible.name = candidate.name
         if not bible.character_id and bible.name:
-            bible.character_id = "char_" + bible.name.strip()
+            # 名称只用于展示；ID 使用不可碰撞、语言无关的稳定句柄。
+            bible.character_id = "char_" + uuid.uuid4().hex[:12]
 
         bible.touch()
 

@@ -1,6 +1,8 @@
 """节点公共辅助。"""
 from __future__ import annotations
 
+from typing import Any
+
 from ..schemas.profile import AIProfile
 from ..server.config_store import get_store
 
@@ -22,6 +24,20 @@ def resolve_profile(profile_id: str) -> AIProfile:
             "未配置任何档案。请先在 AI Prompt Studio 设置面板创建 profile 并填写 API Key。"
         )
     return profile
+
+
+def resolve_profile_input(payload: Any) -> AIProfile:
+    """解析节点传入档案，并保留 Model Profile 节点允许的运行时覆盖。"""
+    incoming = AIProfile.from_json(payload or {})
+    stored = resolve_profile(incoming.profile_id)
+    for field_name in ("model", "protocol", "reasoning", "web_search", "unload_policy"):
+        value = getattr(incoming, field_name)
+        if value not in (None, ""):
+            setattr(stored, field_name, value)
+    problems = stored.validate()
+    if problems:
+        raise ValueError("档案覆盖无效：" + "；".join(problems))
+    return stored
 
 
 def require_api_key(profile: AIProfile) -> str:

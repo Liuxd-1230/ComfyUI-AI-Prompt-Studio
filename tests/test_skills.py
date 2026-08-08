@@ -20,6 +20,7 @@ from aps.services.skills import (
 
 @pytest.fixture(autouse=True)
 def _reset():
+    reset_cache()
     yield
     reset_cache()
 
@@ -150,3 +151,25 @@ def test_list_records_include_source():
     assert by_id["anima_expand"]["source"] == "builtin"
     assert "hash" in by_id["anima_expand"]
 
+
+def test_invalid_yaml_payload_is_not_loaded(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills_svc, "default_config_dir", lambda: tmp_path)
+    directory = tmp_path / "skills"
+    directory.mkdir()
+    (directory / "bad.yaml").write_text(
+        "id: bad\nrenderer: executable\nsystem_prompt: x\n", encoding="utf-8")
+    assert "bad" not in load_skills()
+
+
+def test_nested_custom_skill_can_be_disabled_and_deleted(tmp_path, monkeypatch):
+    monkeypatch.setattr(skills_svc, "default_config_dir", lambda: tmp_path)
+    directory = tmp_path / "skills" / "nested"
+    directory.mkdir(parents=True)
+    (directory / "nested_skill.yaml").write_text(
+        "id: nested_skill\nrenderer: generic\ntarget_family: generic_image\n"
+        "system_prompt: safe\nenabled: true\n", encoding="utf-8")
+    assert get_skill("nested_skill") is not None
+    set_skill_enabled("nested_skill", False)
+    assert get_skill("nested_skill") is None
+    delete_custom_skill("nested_skill")
+    assert not (directory / "nested_skill.yaml").exists()

@@ -60,7 +60,8 @@
         { "name": "STORY_ITEM_LIST", "type": "STORY_ITEM_LIST", "links": null, "slot_index": 1 },
         { "name": "scene_text", "type": "STRING", "links": null, "slot_index": 2 },
         { "name": "character_ids", "type": "STRING", "links": null, "slot_index": 3 },
-        { "name": "batch_count", "type": "INT", "links": null, "slot_index": 4 }
+        { "name": "batch_count", "type": "INT", "links": null, "slot_index": 4 },
+        { "name": "STORY_ITEMS", "type": "STORY_ITEM", "links": null, "slot_index": 5 }
       ],
       "properties": { "Node name for S&R": "APS_StoryboardSelect" },
       "widgets_values": ["all", "", "", ""]
@@ -80,7 +81,7 @@
         { "name": "operation", "type": "STRING", "link": null },
         { "name": "prompt_mode", "type": "STRING", "link": null },
         { "name": "negative", "type": "STRING", "link": null },
-        { "name": "content_tier", "type": "STRING", "link": null },
+        { "name": "safety_tag", "type": "STRING", "link": null },
         { "name": "story_item", "type": "STORY_ITEM", "link": 3 },
         { "name": "character_bible", "type": "CHARACTER_BIBLE", "link": null },
         { "name": "reference_manifest", "type": "REFERENCE_MANIFEST", "link": null },
@@ -101,7 +102,7 @@
         "generate",
         "hybrid",
         "",
-        "safe",
+        "none",
         "anima_expand",
         ""
       ]

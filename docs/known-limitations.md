@@ -36,8 +36,8 @@
 ## 5. Prompt Skill
 
 - 内置技能（仓库 `skills/`）只读；要修改需「复制为自定义」后编辑。自定义技能存于用户配置目录 `skills/`。
-- 技能字段白名单校验（id/version/target_family/target_variant/renderer/system_prompt/validators/description）；renderer / target_family 限枚举；未知字段被忽略并告警。
-- `enabled=false` 的自定义技能仍可被 `get_skill` 读到（Composer 使用方自行判断是否尊重 enabled 标记）。
+- 技能字段白名单校验（id/version/target_family/target_variant/renderer/system_prompt/validators/description）；renderer / target_family 限枚举；未知字段会拒绝保存，手工损坏的 YAML 会跳过并记录日志。
+- `enabled=false` 的自定义技能不会被 `get_skill` 返回，因此所有消费节点都会尊重停用状态。
 
 ## 6. 结构化输出 / 解析
 

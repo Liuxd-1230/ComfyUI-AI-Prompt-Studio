@@ -46,7 +46,7 @@ def test_reference_mode_identity_uses_observable_features():
 
 def test_h3_system_prompt_protocol_layer():
     """H3-S-1：协议规则在 system 层；含官方规则与数据守则。"""
-    sys = h3_plan.H3_SYSTEM_PROMPT
+    sys = h3_plan.h3_system_prompt()
     for marker in ("integrated_multimodal_description", "strictly increasing",
                    "[Shot N] At MM:SS.mmm", "<d>[Language]", "English",
                    "fully_preserved", "task data", "subject_definitions"):

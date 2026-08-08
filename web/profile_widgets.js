@@ -123,7 +123,7 @@ export function el(tag, attrs = {}, children = []) {
   for (const [k, v] of Object.entries(attrs || {})) {
     if (k === "class") node.className = v;
     else if (k === "style" && typeof v === "object") Object.assign(node.style, v);
-    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2).toLowerCase(), v);
     else if (k === "text") node.textContent = v;
     else node.setAttribute(k, v);
   }

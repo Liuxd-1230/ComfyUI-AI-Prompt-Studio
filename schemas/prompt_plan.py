@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 from .base import Schema
 
-TARGET_FAMILIES = ["anima", "generic_image", "sdxl", "flux", "custom_skill"]
+TARGET_FAMILIES = ["anima", "z_image", "qwen_image_edit", "generic_image", "sdxl", "flux", "custom_skill"]
 ANIMA_VARIANTS = ["base", "aesthetic", "turbo"]
 PROMPT_MODES = ["tags", "natural_language", "hybrid"]
 COMPOSER_OPERATIONS = ["generate", "expand", "rewrite", "translate", "audit", "repair", "convert"]

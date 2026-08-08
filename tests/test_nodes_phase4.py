@@ -68,10 +68,15 @@ def test_storyboard_builder_invalid_model_output(monkeypatch, store):
     payload = setup_profile(store)
     monkeypatch.setattr(sb_mod, "Gateway", lambda: FakeGateway("不是 JSON"))
     node = sb_mod.APS_StoryboardBuilder()
-    with pytest.raises(ValueError, match="JSON"):
-        node.build(AI_PROFILE=payload, story_text="故事",
-                   split_mode="scene", target_duration=10.0, max_scenes=6,
-                   style="", character_bible=None, reference_manifest=None)
+    sb_json, summary, continuity = node.build(
+        AI_PROFILE=payload, story_text="少女走进咖啡馆。",
+        split_mode="scene", target_duration=10.0, max_scenes=6,
+        style="", character_bible=None, reference_manifest=None)
+    sb = Storyboard.from_json(sb_json)
+    assert len(sb.scenes) == 1 and len(sb.scenes[0].shots) == 1
+    assert sb.scenes[0].shots[0].summary == "少女走进咖啡馆。"
+    assert any(item["severity"] == "warning" and "JSON" in item["note"]
+               for item in json.loads(continuity))
 
 
 # ------------------------------------------------------------------ Prompt Composer
@@ -156,6 +161,17 @@ def test_composer_custom_skill_missing(store):
                      operation="generate", prompt_mode="tags", negative="",
                      content_tier="safe", story_item=None, character_bible=None,
                      reference_manifest=None, skill="nope", lora_triggers="")
+
+
+def test_composer_rejects_h3_skill_wrong_consumer(store):
+    payload = setup_profile(store)
+    node = pc_mod.APS_PromptComposer()
+    with pytest.raises(ValueError, match="H3 Director"):
+        node.compose(AI_PROFILE=payload, text="x", target="custom_skill",
+                     operation="generate", prompt_mode="natural_language", negative="",
+                     safety_tag="none", story_item=None, character_bible=None,
+                     reference_manifest=None, skill="minimax_h3_director",
+                     lora_triggers="")
 
 
 def test_composer_empty_input(store):

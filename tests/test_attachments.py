@@ -264,8 +264,9 @@ def test_gateway_pdf_degrades_to_text_with_warning(monkeypatch, store):
                          GenerateRequest(messages=[], attachments=[att]))
     assert not result.has_error()
     assert any("本地提取文本发送" in w for w in result.warnings)
-    assert captured["attachments"] and captured["attachments"][0].kind == "text"
-    assert "Hello from pdf file" in captured["attachments"][0].content
+    assert captured["attachments"] == []
+    assert "[不可信附件数据开始]" in captured["system"]
+    assert "Hello from pdf file" in captured["system"]
 
 
 def test_gateway_binary_file_without_files_errors(store):
@@ -381,6 +382,21 @@ def test_gateway_attachment_unsupported_returns_error(store):
         messages=[], attachments=[img]))
     assert result.has_error()
     assert result.error.kind == "attachment_unsupported"
+
+
+def test_attachment_early_error_still_applies_after_request_unload(store, monkeypatch):
+    store.create_profile({"profile_id": "p1", "provider": "local",
+                          "unload_policy": "after_request", "model": "m",
+                          "runtime": {"backend": "ollama", "model": "m"}})
+    calls = []
+    monkeypatch.setattr("aps.services.gateway.run_runtime_action",
+                        lambda *args: calls.append(args) or {"ok": True})
+    attachment = Attachment.from_base64("eA==", name="x.bin",
+                                        mime_type="application/octet-stream")
+    result = Gateway(store=store).generate(
+        store.get_profile("p1"), "k", GenerateRequest(attachments=[attachment]))
+    assert result.error.kind == "attachment_unsupported"
+    assert calls and calls[0][1] == "unload"
 
 
 def test_gateway_attachment_supported_reaches_adapter(monkeypatch, store):

@@ -2,21 +2,23 @@
 
 面向 ComfyUI 的 LLM 提示词工作流扩展（AI 提示词工作室）。把「剧情构思 → 人物档案 → 分镜 → 目标模型提示词」整条链路搬进 ComfyUI 节点图，覆盖 **ANIMA** 与 **MiniMax H3** 两类生成式视频模型的官方提示词规范。
 
-9 个节点，统一分类 **`AI Prompt Studio`**，类名统一 **`APS_`** 前缀。
+11 个节点，统一分类 **`AI Prompt Studio`**，类名统一 **`APS_`** 前缀。
 
 ---
 
 ## 功能总览
 
-- **统一 LLM 网关**：DeepSeek Responses API / Chat Completions（含原生联网搜索、推理、流式）；任意 OpenAI 兼容端点；本地运行时（Ollama / llama.cpp / LM Studio）。
-- **AI Model Profile**：命名服务档案 + 能力探测 + 密钥安全存放（密钥永远不进工作流 JSON）。
+- **统一 LLM 网关**：主动实测后选择 Responses / Chat Completions；支持任意 OpenAI 兼容端点及本地运行时（Ollama / llama.cpp / LM Studio）。
+- **AI Model Profile**：命名服务档案 + 主动能力探测 + 密钥安全存放（密钥永远不进工作流 JSON）。探测会用运行时相同请求格式验证文本、JSON、工具、联网、图片和文件，不再从 `/models` 猜能力。
 - **Reference Analyzer**：文本锚点 / 图片特征反推，多图共识与冲突，人物来源证据，输出参考资产清单。
 - **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID。
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
-- **Model Prompt Composer**：7 种操作 × 7 类目标（ANIMA Base/Aesthetic/Turbo 等），正负提示词拆分，官方档案，Skill 系统（YAML）。
-- **MiniMax H3 Prompt Director**：T2VA / I2VA / FL2VA / L2VA / R2V 五模式官方格式，LLM 产出结构化计划 + Python 确定性渲染 + 规则校验 + 修复循环，输出 STRING 直连核心 H3 节点。
+- **Model Prompt Composer**：ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 专用提示词；旧 Generic/SDXL/FLUX 仅保留工作流兼容。
+- **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
+- **MiniMax H3 Prompt Director**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（另保留旧 R2V 别名），支持图片、视频和音频参考；LLM 产出结构化计划 + Python 确定性渲染 + 规则校验 + 修复循环。
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
-- **设置工作台**：ComfyUI 内嵌面板（设置按钮打开），档案管理、密钥（脱敏）、API 测试、能力状态、运行时状态、提示词预览、验证报告。
+- **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
+- **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、运行时和 Prompt Skill 查看/新建/编辑；H3 节点另有镜头草稿导演工作台。
 - **前端入口（0.2.1c）**：不占用 ComfyUI Sidebar；入口放在 ComfyUI 原生 **Settings** 页面中的 `AI Prompt Studio > General > Settings Workbench`。选择「Open Settings Workbench」打开大型设置工作台；语言也在同一组设置中切换。API Key 不进原生 Settings，仍由工作台填写并只存服务端。
 
 ## 安装
@@ -36,18 +38,22 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 ## 快速开始
 
 1. 启动 ComfyUI，打开 **Settings（Ctrl+,）** → **AI Prompt Studio** → **General**，选择 **Open Settings Workbench**。
-2. 新建档案（如 `deepseek`），选择 provider，填写 API Key（只保存在你本机 `user/<pkg>/config.json`，界面只回显脱敏值），点「测试连接」。
-3. 在节点图中放置 **AI Model Profile** → 档案 ID 留空（用默认档案）或填档案名。
-4. 放置 **MiniMax H3 Prompt Director**（或 **Model Prompt Composer**），把 `AI_PROFILE` 连上，填剧情文本，运行。
-5. H3：把 `prompt`（STRING）接到 ComfyUI 核心 H3 节点的 prompt 输入；ANIMA：把 `positive` / `negative` 接到采样链路。
+2. 新建档案，选择 provider、API 根地址和模型，保存后填写 API Key（只保存在本机 `user/ai_prompt_studio/secrets.json`）。先点“测试连接”，再点“重新探测”。
+3. “重新探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。
+4. 在节点图中放置 **AI Model Profile**，直接从“档案名称 [ID]”和该档案的模型目录下拉选择。
+5. 放置 **MiniMax H3 Prompt Director**（或 **Model Prompt Composer**），把 `AI_PROFILE` 连上，填剧情文本，运行。
+6. H3：把 `prompt`（STRING）接到 H3 生成节点；图像模型：把 `positive` / `negative` 接到采样链路。
 
 示例工作流见 [`examples/`](examples/)：
 - `h3_full_chain.json` — H3 全链路（Profile → H3 Director → STRING）
 - `anima_full_chain.json` — ANIMA 全链路（Profile → Storyboard → Select → Composer）
+- `aps_usage_showcase.json` — Z-Image、Qwen 图片引用和 LLM 生成后卸载
 
-两个示例均不含密钥，可在设置工作台配好档案后直接加载使用。
+示例均不含密钥。
 
 ## 节点说明
+
+完整的每个输入/输出端口、连接方向和类型说明见 [节点端口参考](docs/node-reference-zh.md)；所有枚举模式、期待输入与成品示例见 [模式与提示词示例](docs/prompt-mode-examples-zh.md)。这些内容也同步到 ComfyUI 节点内的中文帮助页。
 
 | 节点 | 功能 | 关键输入 | 关键输出 |
 |---|---|---|---|
@@ -56,12 +62,29 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 | **Reference Analyzer** | 文本/图片参考分析（11 种模式） | `AI_PROFILE`、text、images | `REFERENCE_ANALYSIS`、`CHARACTER_CANDIDATE`、`REFERENCE_MANIFEST`、IMAGE 透传 |
 | **Character Bible** | 合并人物特征、锁定、冲突报告 | `CHARACTER_CANDIDATE`、`existing_bible` | `CHARACTER_BIBLE`、人物提示片段 |
 | **Storyboard Builder** | 剧情 → 结构化分镜（LLM） | `AI_PROFILE`、story_text | `STORYBOARD` |
-| **Storyboard Select / Batch** | 场景/镜头/区间/全部选择（不调模型） | `STORYBOARD` | `STORY_ITEM`、`STORY_ITEM_LIST`、batch |
+| **Storyboard Select / Batch** | 场景/镜头/区间/全部选择（不调模型） | `STORYBOARD` | 单项、容器及真实 ComfyUI `STORY_ITEMS` 列表输出 |
 | **Model Prompt Composer** | 文本/分镜/人物 → 目标模型提示词 | `AI_PROFILE`、text、target、operation | positive、negative、`PROMPT_PLAN`、`GENERATION_PROFILE` |
-| **MiniMax H3 Prompt Director** | H3 五模式提示词生成/改写/转换/审计/修复 | `AI_PROFILE`、text、mode、operation | prompt(STRING)、`H3_PROMPT_PLAN`、validation |
+| **图片引用提示词（输入 @）** | 图片连接 → 模型引用语法与资产清单 | prompt、target、image_1～3 | prompt、`REFERENCE_MANIFEST`、references、count |
+| **MiniMax H3 Prompt Director** | H3 多模式提示词生成/改写/转换/审计/修复 | `AI_PROFILE`、text、mode、图片/视频/音频 | prompt(STRING)、`H3_PROMPT_PLAN`、validation |
 | **Local Runtime Control** | 本地模型加载/卸载/状态 | `AI_PROFILE`、action、backend | profile、status、loaded、op |
+| **Unload LM Studio Model** | LLM 后卸载 LM Studio，并把提示词透传给后续生成 | prompt、model、url | prompt、result(JSON)、status(文本) |
 
 节点之间用自定义数据类型（`AI_PROFILE` / `STORYBOARD` / `H3_PROMPT_PLAN` 等）传递结构化对象，工作流可读可保存。
+
+## 能力探测如何判定
+
+“测试连接”只执行模型目录和最小文本连接测试；“重新探测”执行完整矩阵。只有收到 HTTP 200 **且响应内容符合预期**才勾选：
+
+- Chat/Responses：实际生成一条极短文本；
+- JSON Schema/JSON Object：要求固定 JSON，并再次解析和比对，HTTP 200 但返回普通文本仍判失败；
+- 函数工具：强制调用无参数测试函数，并检查真实 tool call；
+- 图片：发送 8×8 洋红 PNG，模型必须识别颜色；
+- 文件：发送带随机标记的极小文本文件，模型必须读回标记；
+- 原生联网：使用运行时相同的 Responses `web_search` 工具并检查工具调用记录。
+
+探测结果全部为明确 true/false，并记录端点、HTTP 状态和原因。重新探测失败会覆盖旧缓存；档案/模型/API Key 变化也会让旧结果失效。图片或文件实测失败时，设置页对应手动开关会取消，防止 Gateway 继续发送必失败的附件。主模型图片输入与 Reference Analyzer 的独立视觉模型分开显示。
+
+请求结构分别遵循 [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) 与 [DeepSeek Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion)；结构化输出探针另按 [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 校验返回内容。完整探测会产生少量模型调用与 token 消耗，因此只在用户点击“重新探测”时运行。
 
 ## ANIMA 提示词（官方档案）
 
@@ -75,14 +98,14 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 ## MiniMax H3（官方手册规则）
 
 - **四模式（T2VA/I2VA/FL2VA/L2VA）**：首行对齐指令（I2VA 首帧锚定 / FL2VA 首尾帧路径、默认单镜头 / L2VA 尾帧收敛）+ 空行 + 三字段 `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`。
-- **R2V**：六段 `subject_definitions` / `summary`（`[任务类型]` 前缀）/ `retention_analysis`（保留标记）/ `detailed_description`（风格开场在 `[Shot 1]` 前）/ `overall_soundscape` / `non_diegetic_music`。
+- **Ref2VA**（旧工作流 `R2V` 自动迁移）：六段 `subject_definitions` / `summary`（`[任务类型]` 前缀）/ `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`；图片≤9、视频≤3、音频≤3、混合≤12，视频总时长≤15 秒、音频总时长≤15 秒。
 - 镜头 `[Shot 1]` 无时间戳，后续 `[Shot N] At MM:SS.mmm, ...` 严格递增；对白 `<d>[Language] ...</d>` 逐字保留原语言；说话人稳定 `(S1)` `(S2)`。
-- 首行指令、时间戳、标签编号由 **Python 确定性渲染**，格式不可能跑偏；`validation` 输出结构错误 + 内容警告，`repair` 一次回灌修复。
-- 格式依据：官方手册（`docs/sources/`），详见 `docs/research.md` §5。
+- 首行指令、时间戳和标签编号由 **Python 确定性渲染**；`validation` 仍会检查模型产生的语义、引用、媒体边界与声音字段，失败不会伪装成通过。
+- 格式依据：[MiniMax-H3 官方 Skill](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing)；实现差异与固定提交见 `docs/research/`。
 
 ## 安全模型
 
-- **密钥不进工作流 JSON / 节点图 / git / 日志**：`AI_PROFILE` 节点载荷只含档案元数据（`node_payload()` 剔除 `api_key_ref`）；密钥只在设置工作台填写，存于 ComfyUI 用户目录 `config.json`（`folder_paths.user_directory`），接口一律脱敏返回。
+- **密钥不进工作流 JSON / 节点图 / git / 日志**：`AI_PROFILE` 节点载荷只含档案元数据（`node_payload()` 剔除 `api_key_ref`）；密钥只在设置工作台填写，存于 ComfyUI 用户目录的独立 `secrets.json`，接口一律脱敏返回。
 - 日志对密钥脱敏（masked logs）。
 - 不改 ComfyUI 核心：只注册节点、`WEB_DIRECTORY` 前端资源与 `/api/ai_prompt_studio/*` 路由（自动带 `/api` 前缀副本）。
 - 不安装 CUDA/Torch 等大依赖；不把 Transformers 模型加载进 ComfyUI 进程。
@@ -107,8 +130,8 @@ node --check web/*.js            # 前端语法检查
 python -m compileall nodes services renderers validators schemas server tests
 ```
 
-- 测试 430+：加载器语义复现（`spec_from_file_location`）、真实 aiohttp `RouteTableDef` 路由回环、三后端 mock、H3/ANIMA 全部官方格式规则正反用例、示例工作流可加载校验、8 条主链路回归（`tests/test_main_flows.py`）。
-- 架构与决策：`docs/decisions.md`（D1–D24）、`docs/research.md`（含来源与日期）、`docs/adr/`、`docs/compatibility.md`。
+- 测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约和主链路回归；数量以本地 `pytest` 结果为准。
+- 架构与决策：`docs/decisions.md`、`docs/research/`（含来源与日期）、`docs/adr/`、`docs/compatibility.md`。
 
 ## 许可与来源
 

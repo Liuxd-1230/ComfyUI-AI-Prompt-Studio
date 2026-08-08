@@ -173,6 +173,9 @@ class ResponsesAdapter:
         reasoning: str,
         max_tokens: Optional[int],
         temperature: Optional[float],
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
         attachments: Optional[List] = None,
         output_schema: Optional[Dict[str, Any]] = None,
         tool_defs: Optional[List[Dict[str, Any]]] = None,
@@ -204,6 +207,12 @@ class ResponsesAdapter:
             body["max_output_tokens"] = max_tokens
         if temperature is not None:
             body["temperature"] = temperature
+        if top_p is not None:
+            body["top_p"] = top_p
+        if frequency_penalty is not None:
+            body["frequency_penalty"] = frequency_penalty
+        if presence_penalty is not None:
+            body["presence_penalty"] = presence_penalty
         if reasoning != "off":
             body["reasoning"] = {"effort": REASONING_EFFORT.get(reasoning, "high")}
 

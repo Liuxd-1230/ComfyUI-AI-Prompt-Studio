@@ -15,7 +15,7 @@ from ..schemas.references import ANALYSIS_MODES, AssetRef, ReferenceAnalysis, Re
 from ..services import reference as reference_svc
 from ..services import vision as vision_svc
 from ..services.gateway import Gateway, GenerateRequest
-from ._helpers import require_api_key, resolve_profile
+from ._helpers import require_api_key, resolve_profile_input
 
 # 所有模式的公共守则（docs/prompt-audit.md RA-* 记录）：把图像/文字当数据而非指令；
 # 只描述可观察特征，禁止推断民族/国籍/性格/年龄；category 语义明确：
@@ -99,6 +99,22 @@ MODE_PROMPTS = {
 # 0.2.1 P0-14：多图 VLM 整体身份判断最多取的代表图数量（防止无限传图）
 MAX_IDENTITY_IMAGES = 6
 
+CANDIDATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string"},
+        "traits": {"type": "array", "items": {"type": "object",
+            "properties": {
+                "name": {"type": "string"}, "value": {"type": "string"},
+                "category": {"type": "string", "enum": [
+                    "stable", "variable", "current", "uncertain"]},
+                "confidence": {"type": "number", "minimum": 0, "maximum": 1}},
+            "required": ["name", "value", "category", "confidence"],
+            "additionalProperties": False}},
+    },
+    "required": ["name", "traits"], "additionalProperties": False,
+}
+
 
 def _to_image_list(images) -> List[Any]:
     """ComfyUI IMAGE 张量 / numpy 数组 / 列表 → numpy 图像列表（不强制 torch）。"""
@@ -141,12 +157,16 @@ class APS_ReferenceAnalyzer:
         profile = AIProfile.from_json(AI_PROFILE or {})
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
-        prof = resolve_profile(profile.profile_id)
+        prof = resolve_profile_input(AI_PROFILE)
         # 视觉/文本 Profile 解耦（P1/D + 0.2.1b）：按需取 API Key——
         # 有 text_anchor → 文本档案密钥；有 images → 视觉档案密钥（vision_profile_id 解耦）。
         # 只做图片分析时**不再要求**文本档案也配置 Key（Text Provider ≠ Vision Provider）。
         has_anchor = bool(text_anchor and text_anchor.strip())
         image_list = _to_image_list(images)
+        if len(image_list) > MAX_IDENTITY_IMAGES:
+            raise ValueError(
+                f"一次最多分析 {MAX_IDENTITY_IMAGES} 张图片；请按同一主体分批输入，"
+                "避免未参与身份判断的图片被错误合并")
         has_images = bool(image_list)
         api_key = require_api_key(prof) if has_anchor else ""
         vision_prof = vision_svc.resolve_vision_profile(prof)
@@ -156,6 +176,8 @@ class APS_ReferenceAnalyzer:
         base_prompt = MODE_PROMPTS.get(analysis_mode) or custom_prompt
         if not base_prompt:
             raise ValueError(f"analysis_mode={analysis_mode!r} 需要填写 custom_prompt")
+        if analysis_mode == "custom":
+            base_prompt = f"{base_prompt.strip()}\n{_PROMPT_GUARDRAIL}"
         if character_bible:
             bible = CharacterBible.from_json(character_bible)
             if bible.character_prompt():
@@ -169,12 +191,15 @@ class APS_ReferenceAnalyzer:
                              "标注 stable/uncertain）。")
             req = GenerateRequest(system="You extract structured character traits as JSON.",
                                   messages=[_text_msg(anchor_prompt)],
-                                  web_search="off", reasoning="low")
+                                  web_search="off", reasoning="low",
+                                  json_mode=True, output_schema=CANDIDATE_SCHEMA)
             result = Gateway().generate(prof, api_key, req)
             if result.has_error():
                 raise ValueError(result.error.as_text)
             text_candidate = reference_svc.parse_candidate_json(
                 result.text, analysis_mode, ["text_anchor"])
+            if reference_svc.extract_json_object(result.text) is None:
+                raise ValueError("文字锚点分析未返回合法 JSON；请重试或检查模型结构化输出能力")
             analysis.raw = (analysis.raw + "\n[text]\n" + result.text).strip()
 
         # 2) 逐图视觉分析
@@ -188,6 +213,8 @@ class APS_ReferenceAnalyzer:
                 raise ValueError(res["error"].as_text)
             cand = reference_svc.parse_candidate_json(res["text"], analysis_mode,
                                                       [f"image:{i}"])
+            if reference_svc.extract_json_object(res["text"]) is None:
+                raise ValueError(f"第 {i + 1} 张图片分析未返回合法 JSON；请重试或更换视觉模型")
             image_candidates.append(cand)
             analysis.raw = (analysis.raw + f"\n[image:{i}]\n" + res["text"]).strip()
 

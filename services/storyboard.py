@@ -8,6 +8,7 @@ from typing import List, Optional
 from ..schemas.character import CharacterBible
 from ..schemas.storyboard import Beat, ContinuityNote, Scene, Shot, Storyboard
 from .reference import extract_json_object
+from .json_schema import make_strict_schema
 
 # 0.2.1 P1-17：分镜输出的原生 Structured Output JSON Schema。
 # Provider 支持 → output_schema 走协议层；不支持 → 提示词模板兜底。
@@ -45,6 +46,7 @@ STORYBOARD_SCHEMA = {
     },
     "required": ["title", "characters", "scenes"],
 }
+STORYBOARD_SCHEMA = make_strict_schema(STORYBOARD_SCHEMA)
 
 
 def build_storyboard_prompt(
@@ -181,6 +183,27 @@ def parse_storyboard_json(raw: str, split_mode: str, style: str = "",
             scene.shots.append(shot)
         sb.scenes.append(scene)
     return sb
+
+
+def fallback_storyboard(story_text: str, split_mode: str, style: str = "",
+                        target_duration: float = 0.0) -> Storyboard:
+    """Build a lossless, editable one-shot storyboard without another API call.
+
+    This is used only when a compatibility endpoint ignores the JSON contract.
+    The user's original story remains the source of truth; model prose is not
+    guessed back into structured fields.
+    """
+    text = (story_text or "").strip()
+    duration = max(float(target_duration or 0.0), 0.01)
+    shot = Shot(shot_id="fallback_scene_1_shot_1", index=1,
+                summary=text, duration=duration)
+    if split_mode == "beat":
+        shot.beats.append(Beat(beat_id="fallback_scene_1_shot_1_beat_1",
+                               index=1, text=text, kind="action"))
+    scene = Scene(scene_id="fallback_scene_1", index=1,
+                  title="待编辑分镜", synopsis=text, shots=[shot])
+    return Storyboard(title=(text[:40] or "待编辑分镜"), summary=text,
+                      split_mode=split_mode, style=style, scenes=[scene])
 
 
 def build_continuity(sb: Storyboard) -> List[ContinuityNote]:

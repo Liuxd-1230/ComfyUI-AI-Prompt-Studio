@@ -6,6 +6,7 @@ register_routes() 在 ComfyUI 内把处理器挂到 PromptServer.instance.routes
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from functools import partial
@@ -78,7 +79,10 @@ def detect_anima_booster() -> Optional[bool]:
 
 
 def handle_list_profiles(store: ConfigStore) -> Dict[str, Any]:
-    return {"profiles": store.list_profiles(), "default_profile_id": store._config.get("default_profile_id", "")}
+    profiles = store.list_profiles()
+    for profile in profiles:
+        profile["capabilities"] = store.get_capabilities(profile["profile_id"])
+    return {"profiles": profiles, "default_profile_id": store._config.get("default_profile_id", "")}
 
 
 def handle_get_profile(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
@@ -122,19 +126,48 @@ def handle_probe(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
     if profile is None:
         raise KeyError(f"profile 不存在: {profile_id}")
     api_key = store.get_api_key(profile_id) or ""
-    caps = capability_probe.probe_profile(profile, api_key)
+    vision_profile = None
+    vision_api_key = ""
+    if profile.vision_profile_id:
+        vision_profile = store.get_profile(profile.vision_profile_id)
+        if vision_profile is not None:
+            vision_api_key = store.get_api_key(vision_profile.profile_id) or ""
+    caps = capability_probe.probe_profile(
+        profile, api_key, vision_profile=vision_profile,
+        vision_api_key=vision_api_key)
+    if profile.vision_profile_id and vision_profile is None:
+        caps["vision_service"] = False
+        caps["vision_model_available"] = False
+        caps.setdefault("checks", {})["vision_service"] = {
+            "ok": False, "endpoint": "", "http_status": 0,
+            "detail": f"视觉档案 {profile.vision_profile_id!r} 不存在",
+        }
+    # 手动开关只是在尚未探测时的声明。真实多模态探针跑过后，以实测结果
+    # 回写勾选状态，避免 UI 显示支持而 Gateway 继续发送必失败的附件。
+    if "chat_completions" in caps.get("checks", {}):
+        store.update_profile(profile_id, {
+            "supports_vision": bool(caps.get("vision")),
+            "supports_files": bool(caps.get("files")),
+        })
     if caps.get("error"):
+        # 失败结果也覆盖旧缓存，避免设置页/网关继续使用上一次的成功能力。
+        store.set_capabilities(profile_id, caps)
+        store.append_request_log({
+            "profile_id": profile_id, "kind": "probe", "ok": False,
+            "detail": caps.get("error", "capability probe failed"),
+        })
         return {"ok": False, "profile_id": profile_id, **caps}
-    merged = capability_probe.merge_capabilities(store.get_capabilities(profile_id), caps)
-    store.set_capabilities(profile_id, merged)
+    # 手动“重新探测”必须替换旧结果；保留旧 True 会让 unknown 永久伪装成支持。
+    store.set_capabilities(profile_id, caps)
     store.append_request_log({"profile_id": profile_id, "kind": "probe", "ok": True, "detail": "capability probe ok"})
-    return {"ok": True, "profile_id": profile_id, **merged}
+    return {"ok": True, "profile_id": profile_id, **caps}
 
 
 def handle_capabilities(profile_id: Optional[str], store: ConfigStore) -> Dict[str, Any]:
     if profile_id:
         return {"profile_id": profile_id, "capabilities": store.get_capabilities(profile_id)}
-    return {"capabilities": store._config.get("capability_cache", {})}
+    return {"capabilities": {p["profile_id"]: store.get_capabilities(p["profile_id"])
+                              for p in store.list_profiles()}}
 
 
 def handle_test(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
@@ -143,7 +176,7 @@ def handle_test(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
     if profile is None:
         raise KeyError(f"profile 不存在: {profile_id}")
     api_key = store.get_api_key(profile_id) or ""
-    caps = capability_probe.probe_profile(profile, api_key)
+    caps = capability_probe.probe_profile(profile, api_key, exhaustive=False)
     store.append_request_log({
         "profile_id": profile_id, "kind": "test", "ok": caps.get("auth_ok", False),
         "detail": caps.get("error") or f"auth ok, models={len(caps.get('models', []))}",
@@ -247,10 +280,14 @@ def register_routes() -> None:
             if request.body_exists:
                 try:
                     payload = await request.json()
-                except Exception:  # noqa: BLE001
-                    payload = {}
+                except Exception as exc:  # noqa: BLE001
+                    return _error(f"请求 JSON 无法解析：{exc.__class__.__name__}", 400)
+                if not isinstance(payload, dict):
+                    return _error("请求 JSON 必须是对象", 400)
         try:
-            result = func(request, payload, store)
+            # 探测、运行时控制和档案持久化均可能执行同步 I/O；统一移出
+            # aiohttp/ComfyUI 事件循环，避免设置页冻结数秒。
+            result = await asyncio.to_thread(func, request, payload, store)
             return _ok(result)
         except KeyError as exc:
             return _error(str(exc), 404)

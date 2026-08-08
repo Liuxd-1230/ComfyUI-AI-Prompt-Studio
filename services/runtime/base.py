@@ -73,7 +73,11 @@ class RuntimeBackend:
         errors = []
         unloaded = []
         # 卸载当前已加载（status 的 models），而不是全部可拉取模型
-        for m in self.status().get("models", []):
+        status = self.status()
+        if not status.get("available"):
+            return {"ok": False, "unloaded": [],
+                    "error": status.get("error") or "运行时不可用"}
+        for m in status.get("models", []):
             res = self.unload(m)
             if res.get("ok"):
                 unloaded.append(m)
