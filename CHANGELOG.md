@@ -7,6 +7,7 @@
 - 修复设置工作台把 `disabled: false`/`checked: false` 错写成仍然生效的 HTML 布尔属性：已有档案现在可以真正点击“保存密钥”，未勾选能力也不会被误显示为勾选；密钥区新增明确的已保存/未保存状态与脱敏值。
 - 本地 OpenAI 兼容地址若在根路径返回 HTTP 200 错误 JSON，探测器会显示真实错误，并实测 `/v1`；仅当 `/v1` 真正生成文本时才自动保存正确根地址。Reference Analyzer 的关联视觉档案统一使用目标档案主 endpoint/model/key，洋红测试图的目的和结果会明确显示。
 - Storyboard Select 的场景/镜头选择不再要求猜测 LLM 生成的内部 ID：支持 `1`、`scene_01`/`shot_01`、中文标签和真实 ID，失败时列出全部可选值。SSE 解析器兼容 LM Studio 中文 JSON 流中的未转义换行续行，并强制按 UTF-8 解码，避免静默丢事件或中文乱码。
+- ANIMA 的 expand/rewrite/repair 内置 Skill 明确要求所有视觉描述字段输出英文；中文输入须保真翻译，只有角色名、专有名词和画面内文字允许保留原语言。
 - 全仓整改：修复节点档案覆盖丢失、高级采样参数未发送、会话 replace 假替换、context 重复、失败路径不卸载、运行时断线假成功、同步 HTTP 阻塞 Comfy 事件循环及外部数据提示注入。
 - Reference Analyzer 不再把多主体图片重新绑定给主人物；图片引用按实际使用和连接顺序编号；Storyboard 增加真实 Comfy 列表输出并强制场景数/总时长契约；人物 ID 改为唯一句柄。
 - H3 对齐官方 Skill：4–15 秒、Ref2VA 图片/视频/音频入口和边界、镜头同步声、引用/说话人定义、闭唇/转场/截断/画面文字、严格 JSON Schema、350–500 词密度提示，以及节点内导演工作台。
@@ -15,7 +16,7 @@
 - Composer 新增 `z_image_turbo` 和 `qwen_image_edit_2511`：前者采用长自然语言、9 步、CFG 0、空负面；后者使用直接编辑指令和 `Figure N` 多图引用。SDXL/FLUX 仅保留旧工作流兼容。
 - 新增 `APS_ReferencePrompt`：给 `image_1`～`image_3` 接图后，在提示词输入框键入 `@` 选择带缩略图的引用；可输出 Qwen `Figure N`、H3 `<Picture N>` 与 `REFERENCE_MANIFEST`。
 - 新增两个内置 Prompt Skill、11 个节点的中文 Markdown 帮助，以及仅连接本扩展节点的 `examples/aps_usage_showcase.json`。
-- 测试新增专用渲染、图片引用、档案覆盖、跨主体绑定、H3 引用、运行时与示例接口契约；全量 511 项通过，并在 ComfyUI 0.31.1 隔离端口完成 11 节点注册及重复卸载调度验证。
+- 测试新增专用渲染、图片引用、档案覆盖、跨主体绑定、H3 引用、运行时与示例接口契约；全量 514 项通过，并在 ComfyUI 0.31.1 隔离端口完成 11 节点注册及重复卸载调度验证。
 - H3 Director 遇到第三方端点忽略 JSON Schema、返回普通文本时，不再让工作流崩溃：保留模型原文并回退为可编辑的单镜头计划；第三方 DeepSeek 代理也不再继承官方端点的结构化输出能力。
 - Storyboard 与 H3 共用递归 strict JSON Schema 规范化，所有嵌套对象自动补齐完整 `required` 与 `additionalProperties: false`，修复严格端点的 HTTP 400。
 - Storyboard Builder 遇到兼容端点返回非 JSON 时，不再崩溃或重复调用 API；保留用户原始故事并回退为可编辑单镜头，在 continuity 中明确记录 warning。

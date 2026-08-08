@@ -56,6 +56,8 @@
 
 ### ANIMA Base / Aesthetic / Turbo
 
+ANIMA 最终提示词使用英文。中文可以作为 Composer 输入，但 `generate`（natural/hybrid）、`expand`、`rewrite` 与 `repair` 的 Skill 必须把视觉描述字段转换为英文；角色名、专有名词和画面内文字允许保留原文。`tags` 的确定性路径不会调用翻译模型，因此应直接输入英文 Danbooru/Gelbooru 风格标签。
+
 原始构想：`红发少女在雨夜车站回头，看见远处驶来的列车。`
 
 - `tags` 期待短、可枚举概念，输出类似：`masterpiece, best quality, score_7, 1girl, red short hair, wet station platform, looking back, night, rain`。

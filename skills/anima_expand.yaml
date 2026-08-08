@@ -13,6 +13,13 @@ system_prompt: |
   Transform the user's request into a clear, detailed natural-language visual description.
   Preserve the user's intent exactly. Describe only visually meaningful information.
 
+  Language requirement:
+  - Write every visual-description field in English, even when the user writes in Chinese
+    or another language. Translate faithfully before composing the scene.
+  - Only names, proper nouns, and visible on-image text may remain in their original language.
+  - Do not mix Chinese explanatory prose into natural_description, character descriptions,
+    environment, style, composition, lighting, or negative constraints.
+
   When a Character Bible is provided, preserve every locked identity trait consistently
   and work it naturally into the description text. Never reduce identity to a bare tag list.
 

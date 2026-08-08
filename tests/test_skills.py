@@ -45,6 +45,14 @@ def test_skill_fields():
     assert s.hash
 
 
+@pytest.mark.parametrize("skill_id", ["anima_expand", "anima_rewrite", "anima_repair"])
+def test_anima_skills_require_english_visual_output(skill_id):
+    """ANIMA 最终消费英文；中文只允许保留在专名和画面文字中。"""
+    prompt = get_skill(skill_id).system_prompt
+    assert "Write every visual-description field in English" in prompt
+    assert "names, proper nouns, and visible on-image text" in prompt
+
+
 def test_hash_stable_and_distinct():
     a = get_skill("anima_expand")
     b = get_skill("anima_expand")
