@@ -208,8 +208,28 @@ def test_lmstudio_v1_model_key_not_found(monkeypatch):
     backend = create_backend("lmstudio")
     res = backend.unload("missing-model")
     assert res["ok"] is False
-    assert "instance_id" in res["error"]
+    assert "模型目录中不存在" in res["error"]
+    assert "模型 key" in res["error"]
     assert not any(c["u"].endswith("/unload") for c in calls)  # 未误发卸载请求
+
+
+def test_lmstudio_v1_known_model_already_unloaded_is_idempotent(monkeypatch):
+    """显存交接目标已经达成时应成功放行，不能把重复卸载当故障。"""
+    calls = []
+
+    def responder(method, url, **kwargs):
+        calls.append({"method": method, "url": url})
+        if url.endswith("/api/v1/models"):
+            return FakeResp(200, {"models": [{
+                "key": "m1", "loaded_instances": []}]})
+        return FakeResp(200, {})
+
+    make_request_fake(monkeypatch, responder=responder)
+    result = create_backend("lmstudio").unload("m1")
+    assert result["ok"] is True
+    assert result["already_unloaded"] is True
+    assert result["instance_ids"] == []
+    assert not any(c["url"].endswith("/unload") for c in calls)
 
 
 def test_lmstudio_v0_readonly(monkeypatch):

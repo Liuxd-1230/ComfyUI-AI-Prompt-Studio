@@ -73,6 +73,19 @@ def test_unload_backend_error(monkeypatch):
         node.unload(prompt="p", model="m1", url="http://127.0.0.1:1234")
 
 
+def test_unload_already_unloaded_passes_prompt(monkeypatch):
+    patch_backend(monkeypatch, {
+        "ok": True, "model": "m1", "already_unloaded": True,
+        "instance_ids": [], "detail": "模型已处于卸载状态"})
+    node = unload_mod.APS_UnloadModel()
+    prompt, result_json, status = node.unload(prompt="p", model="m1", url="")
+    result = json.loads(result_json)
+    assert prompt == "p"
+    assert result["ok"] is True
+    assert result["already_unloaded"] is True
+    assert status == "m1 已处于卸载状态"
+
+
 def test_unload_unreachable(monkeypatch):
     # 真实路径：LMStudioBackend._request 把连接失败转成 {ok: False, error: 无法连接...}
     patch_backend(monkeypatch, {"ok": False, "model": "m1",

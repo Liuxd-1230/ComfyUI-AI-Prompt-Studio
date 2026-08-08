@@ -60,6 +60,8 @@
 
 ## APS_UnloadModel · LLM 后卸载 LM Studio
 
+卸载具有幂等语义：模型仍在 LM Studio 目录中但已没有加载实例时，节点会显示“已处于卸载状态”并继续传递 prompt；模型 key 不存在、服务不可达或真实卸载请求失败时仍会阻断下游，避免显存未释放便继续加载生成模型。
+
 输入：`model` 填 LM Studio 模型 key，留空表示卸载全部已加载实例；`prompt` 接 LLM/Composer 文本；`url` 留空使用 `http://127.0.0.1:1234`。输出 `prompt` 仅在卸载成功后透传；`result` 是 JSON；`status` 是中文结果。推荐串法：`LLM text → prompt → 本节点 prompt → 图像/视频 prompt`。
 
 ## 最小连接示例

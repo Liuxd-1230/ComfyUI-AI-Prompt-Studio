@@ -1,5 +1,7 @@
 # Changelog
 
+- 修复 `APS_UnloadModel` 重复卸载已释放模型时报错：已卸载现在作为成功的幂等结果放行；错误模型 key 与服务故障仍会明确阻断。
+
 本项目按阶段（Phase 0-6）迭代，每阶段完成即提交并推送（master）。
 
 ## [Unreleased] — Z-Image / Qwen Edit 与图片引用

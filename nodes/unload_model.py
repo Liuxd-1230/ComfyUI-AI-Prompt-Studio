@@ -50,6 +50,7 @@ class APS_UnloadModel:
             "model": res.get("model", ""),
             "instance_id": result.get("instance_id", ""),
             "instance_ids": result.get("instance_ids", []),
+            "already_unloaded": bool(result.get("already_unloaded", False)),
             "unloaded": res.get("unloaded", result.get("unloaded", [])),
             "error": res.get("error", ""),
         }
@@ -58,7 +59,9 @@ class APS_UnloadModel:
             # 这是显存交接屏障，不是状态展示节点。卸载失败时若仍把 prompt
             # 传给下游，图像/视频模型会在显存未释放时继续加载。
             raise RuntimeError(f"LM Studio 卸载失败：{payload['error'] or result_json}")
-        if payload["model"]:
+        if payload["already_unloaded"]:
+            status = f"{payload['model']} 已处于卸载状态"
+        elif payload["model"]:
             status = f"已卸载 {payload['model']}"
         else:
             status = f"已卸载 {len(payload['unloaded'])} 个已加载模型"

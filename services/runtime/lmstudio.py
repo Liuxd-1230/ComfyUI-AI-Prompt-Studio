@@ -81,25 +81,26 @@ class LMStudioBackend(RuntimeBackend):
                 loaded.append(str(key))
         return loaded
 
-    def _loaded_instance_ids_for(self, model: str) -> List[str]:
-        """在 v1 已加载实例里找 model 对应的 instance_id（官方：loaded_instances[].id）。
-
-        model 参数按 v1 的 key 字段匹配（兼容 v0 的 id 字段）。
-        """
+    def _v1_model_snapshot(self, model: str) -> Dict[str, Any]:
+        """读取指定模型的权威目录状态，区分不存在与已经卸载。"""
         res = self._request("GET", "/api/v1/models")
         if not res.get("ok"):
-            return []
-        ids: List[str] = []
-        for m in res.get("json", {}).get("models", []) or []:
-            if not isinstance(m, dict):
+            return {"ok": False, "found": False, "instance_ids": [],
+                    "error": res.get("error", "无法读取 LM Studio 模型目录")}
+        for entry in res.get("json", {}).get("models", []) or []:
+            if not isinstance(entry, dict):
                 continue
-            model_key = m.get("key") or m.get("id")
+            model_key = entry.get("key") or entry.get("id")
             if model_key != model:
                 continue
-            for inst in m.get("loaded_instances") or []:
-                if isinstance(inst, dict) and inst.get("id"):
-                    ids.append(str(inst["id"]))
-        return ids
+            instance_ids = [
+                str(instance["id"])
+                for instance in entry.get("loaded_instances") or []
+                if isinstance(instance, dict) and instance.get("id")
+            ]
+            return {"ok": True, "found": True, "instance_ids": instance_ids,
+                    "error": ""}
+        return {"ok": True, "found": False, "instance_ids": [], "error": ""}
 
     def status(self) -> Dict[str, Any]:
         version = self._detect_version()
@@ -148,13 +149,24 @@ class LMStudioBackend(RuntimeBackend):
                     "error": "无法连接或认证 LM Studio（v1 与 v0 models 接口均不可用）"}
         if version != "v1":
             return {"ok": False, "error": "当前 LM Studio 为 v0（只读），不支持热加载/卸载；请升级到 v1 或手动在 LM Studio 中卸载。"}
-        instance_ids = self._loaded_instance_ids_for(model)
+        snapshot = self._v1_model_snapshot(model)
+        if not snapshot.get("ok"):
+            return {"ok": False, "model": model,
+                    "error": snapshot.get("error", "无法读取 LM Studio 模型目录")}
+        instance_ids = list(snapshot.get("instance_ids", []))
         cached = self._instance_ids.get(model)
-        if cached and cached not in instance_ids:
+        # 目录中已找到模型时，以 loaded_instances 为权威，避免拿过期缓存
+        # 重复 POST；仅在目录尚未同步到刚 load 的模型时使用本进程缓存。
+        if not snapshot.get("found") and cached and cached not in instance_ids:
             instance_ids.insert(0, cached)
         if not instance_ids:
+            self._instance_ids.pop(model, None)
+            if snapshot.get("found"):
+                return {"ok": True, "model": model, "already_unloaded": True,
+                        "instance_id": "", "instance_ids": [],
+                        "detail": "模型已处于卸载状态"}
             return {"ok": False, "model": model,
-                    "error": f"未找到模型 {model} 的已加载实例（instance_id）；请先 load 或检查模型名"}
+                    "error": f"LM Studio 模型目录中不存在 {model}；请检查模型 key"}
         unloaded: List[str] = []
         errors: List[str] = []
         for instance_id in instance_ids:
