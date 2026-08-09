@@ -31,6 +31,7 @@ from ..schemas.prompt_plan import (
     ValidationReport,
 )
 from ..schemas.prompt_session import PromptSession
+from ..schemas.semantic import SemanticIssue
 from ..schemas.storyboard import StoryItem
 from ..services.gateway import Gateway, GenerateRequest
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
@@ -149,6 +150,8 @@ class APS_PromptComposer:
         bible = CharacterBible.from_json(character_bible) if character_bible else None
         if bible is None and book is not None:
             bible = book.first_bible()  # 兼容：单人物工作流取容器内档案
+        source_bibles = (list(book.characters) if book is not None
+                         else [bible] if bible is not None else [])
         book_context = book.context_text() if book is not None else ""
         base_text = _base_text(story_item, text)
         if not base_text.strip() and operation not in ("audit",):
@@ -220,8 +223,17 @@ class APS_PromptComposer:
                 rendered_values, base_text, family, prompt_mode, bible)
             validation = empty_report()
 
+        create_semantic_issues: list[SemanticIssue] = []
         if family == "anima":
             _append_anima_plan_ownership_issues(validation, model_content)
+            from ..domain.semantic_consistency import validate_anima_semantics
+            from ..schemas.anima import AnimaPromptPlan
+
+            create_semantic_issues.extend(
+                validate_anima_semantics(AnimaPromptPlan.from_json(model_content)))
+            create_semantic_issues.extend(
+                _character_bible_semantic_issues(model_content, source_bibles))
+            _append_semantic_issues(validation, create_semantic_issues)
 
         # 渲染器/Skill 的可执行性警告也必须出现在可见 validation 输出中，
         # 不能只藏在 PROMPT_PLAN JSON 里显示“通过且 0 warning”。
@@ -251,24 +263,56 @@ class APS_PromptComposer:
                       model_content, neg, prompt_mode, safety_tag, lora, family),
                   "generation_profile": gprofile.to_json()}
         bundle["model_plan"]["skill_id"] = requested_skill_id
+        session_locks = (_character_bible_locks(model_content, source_bibles)
+                         if family == "anima" else [])
         if any("未返回 positive JSON" in warning for warning in warnings):
             raise ValueError("CREATE 模型没有返回要求的结构化 Plan；会话与 revision 未改变")
+        nonrepairable = [issue for issue in create_semantic_issues
+                         if issue.severity == "error" and not issue.repairable]
+        if nonrepairable:
+            raise ValueError(
+                "本轮 CREATE 存在不可自动修复的语义错误；未写入会话：\n" +
+                _semantic_error_text(nonrepairable))
         if not validation.valid:
             repair_error = ""
             try:
+                repair_paths = _composer_create_repair_paths(validation)
                 repair_session = PromptSession(
                     target_family=session.target_family,
                     target_variant=session.target_variant,
-                    current_plan=bundle, current_prompt=positive, revision=0)
+                    current_plan=bundle, current_prompt=positive, revision=0,
+                    locked_constraints=session_locks)
                 repair_changeset = self._request_session_changeset(
                     prof, repair_session,
                     "Fix only these validation issues. Preserve all unrelated content.\n" +
                     validation.as_text())
+                from ..domain.semantic_consistency import assert_repair_scope
+
+                assert_repair_scope(repair_changeset, repair_paths)
                 candidate = _apply_semantic_changeset(repair_session, repair_changeset)
                 plan, gprofile = self._render_session_candidate(candidate)
                 validation = self._validate_plan(
                     plan, reference_manifest,
                     candidate.get("model_plan", {}).get("content"))
+                if family == "anima":
+                    from ..domain.semantic_consistency import validate_anima_semantics
+                    from ..schemas.anima import AnimaPromptPlan
+
+                    repaired_content = candidate.get("model_plan", {}).get("content", {})
+                    _append_semantic_issues(
+                        validation,
+                        validate_anima_semantics(
+                            AnimaPromptPlan.from_json(repaired_content)))
+                    _append_semantic_issues(
+                        validation,
+                        _character_bible_semantic_issues(
+                            repaired_content, source_bibles))
+                _append_semantic_issues(
+                    validation,
+                    _evaluate_image_semantics(
+                        prof, candidate, repair_changeset, family,
+                        _session_locked_image_paths(repair_session), bundle,
+                        reference_manifest))
                 if validation.valid:
                     plan.validation = validation
                     bundle = candidate
@@ -284,6 +328,10 @@ class APS_PromptComposer:
                 raise ValueError("本轮 CREATE 与一次自动修复均未通过；未写入会话" +
                                  detail + "\n" + validation.as_text())
         summary = "已建立第一版方案。你可以先生成图片，再直接描述需要调整的部分。"
+        if family == "anima":
+            session_locks = _character_bible_locks(
+                bundle.get("model_plan", {}).get("content", {}), source_bibles)
+        session.locked_constraints = session_locks
         session.commit(bundle, positive, validation, base_text, summary,
                        expected_revision=0)
         return node_execution_result(result_tuple, session.to_json_string(),
@@ -302,18 +350,51 @@ class APS_PromptComposer:
         report = self._validate_plan(
             plan, reference_manifest,
             candidate.get("model_plan", {}).get("content"))
+        semantic_issues = _evaluate_image_semantics(
+            prof, candidate, changeset, session.target_family,
+            _session_locked_image_paths(session), working_session.current_plan,
+            reference_manifest)
+        from ..domain.semantic_consistency import assess_risk
+
+        original_critic_required = assess_risk(changeset).critic_required
+        _append_semantic_issues(report, semantic_issues)
+        semantic_errors = [issue for issue in semantic_issues
+                           if issue.severity == "error"]
+        if semantic_errors and any(not issue.repairable for issue in semantic_errors):
+            raise ValueError(
+                "本轮 REFINE 语义一致性检查未通过；上一版保持不变：\n" +
+                _semantic_error_text(semantic_errors))
         if not report.valid:
+            original_changeset = changeset
+            repair_paths = _composer_repair_paths(
+                original_changeset, semantic_issues, report)
             repair_feedback = ("Fix only the following validation issues; preserve the requested "
-                               "change and every unrelated field.\n" + report.as_text())
+                               "change already present in the candidate and every unrelated field.\n" +
+                               report.as_text())
+            repair_session = PromptSession.from_json(working_session.to_json())
+            repair_session.current_plan = copy.deepcopy(candidate)
+            repair_session.current_prompt = plan.positive
+            repair_session.validation = copy.deepcopy(report)
             repair_changeset = self._request_session_changeset(
-                prof, working_session, feedback + "\n\n" + repair_feedback)
+                prof, repair_session, repair_feedback)
+            from ..domain.semantic_consistency import (
+                assert_repair_scope, revalidation_changeset)
+
+            assert_repair_scope(repair_changeset, repair_paths)
             candidate = _apply_semantic_changeset(
-                working_session, repair_changeset, allow_broad=allow_broad)
-            changeset = repair_changeset
+                repair_session, repair_changeset, allow_broad=allow_broad)
             plan, gprofile = self._render_session_candidate(candidate)
             report = self._validate_plan(
                 plan, reference_manifest,
                 candidate.get("model_plan", {}).get("content"))
+            semantic_issues = _evaluate_image_semantics(
+                prof, candidate,
+                revalidation_changeset(original_changeset, repair_changeset),
+                session.target_family,
+                _session_locked_image_paths(session), working_session.current_plan,
+                reference_manifest, force_critic=original_critic_required)
+            _append_semantic_issues(report, semantic_issues)
+            changeset = repair_changeset
         if not report.valid:
             raise ValueError("本轮 REFINE 与一次自动修复均未通过；上一版保持不变：\n" + report.as_text())
         plan.validation = report
@@ -656,6 +737,60 @@ def _binding(bible: CharacterBible) -> dict:
             "attributes": bible.character_prompt()}
 
 
+def _character_bible_locks(content: dict[str, Any],
+                           bibles: list[CharacterBible]) -> list[str]:
+    """Persist value-addressed facts; concrete list indexes are resolved per queue."""
+    characters = content.get("characters", []) if isinstance(content, dict) else []
+    locks: list[str] = []
+    by_id = {bible.character_id: bible for bible in bibles if bible is not None}
+    for character in characters:
+        if not isinstance(character, dict):
+            continue
+        bible = by_id.get(str(character.get("character_id", "")))
+        if bible is None:
+            continue
+        locks.append("fact:" + json.dumps({
+            "kind": "character_identity", "character_id": bible.character_id,
+        }, ensure_ascii=False, sort_keys=True))
+        locked_values = {trait.value.strip() for trait in bible.locked_traits()
+                         if trait.value.strip()}
+        locks.extend("fact:" + json.dumps({
+            "kind": "character_trait", "character_id": bible.character_id,
+            "value": value,
+        }, ensure_ascii=False, sort_keys=True) for value in sorted(locked_values))
+    return list(dict.fromkeys(locks))
+
+
+def _character_bible_semantic_issues(
+        content: dict[str, Any], bibles: list[CharacterBible]) -> list[SemanticIssue]:
+    """Prove that CREATE preserved Bible identities and explicit locked traits."""
+    characters = content.get("characters", []) if isinstance(content, dict) else []
+    by_id = {str(item.get("character_id", "")): (index, item)
+             for index, item in enumerate(characters) if isinstance(item, dict)}
+    issues: list[SemanticIssue] = []
+    for bible in bibles:
+        match = by_id.get(bible.character_id)
+        if match is None:
+            issues.append(SemanticIssue(
+                severity="error", code="anima_bible_identity_missing",
+                path="content/characters", message=(
+                    f"Character Bible 人物 {bible.name or bible.character_id} 未进入正式 Plan"),
+                reason="人物身份绑定是当前生成的硬约束", repairable=True))
+            continue
+        char_index, character = match
+        traits = {str(value).strip() for field in ("required_traits", "variable_traits")
+                  for value in character.get(field, []) if str(value).strip()}
+        for trait in bible.locked_traits():
+            if trait.value.strip() and trait.value.strip() not in traits:
+                issues.append(SemanticIssue(
+                    severity="error", code="anima_bible_locked_trait_missing",
+                    path=f"content/characters/{char_index}",
+                    message=f"锁定特征未保留: {trait.value.strip()}",
+                    reason=f"Character Bible 字段 {trait.name} 已锁定",
+                    evidence=[trait.value.strip()], repairable=True))
+    return issues
+
+
 def _base_text(story_item, text) -> str:
     parts = []
     if story_item:
@@ -715,7 +850,8 @@ def _append_anima_plan_ownership_issues(report: ValidationReport,
 
     semantic = AnimaPromptPlan.from_json(model_content)
     for index, issue in enumerate(semantic.validate(), start=1):
-        report.add("error", f"anima_plan_ownership_{index}", issue)
+        location = issue.split(":", 1)[0].strip()
+        report.add("error", f"anima_plan_ownership_{index}", issue, location)
 
 
 def _split_target(target: str):
@@ -773,24 +909,182 @@ def _apply_semantic_changeset(session: PromptSession,
                              "negative": model_plan.get("negative", "")})
     payload = adapter.dump(semantic)
     allowed = ["content", "negative"]
-    locked = []
-    for raw in session.locked_constraints:
-        value = str(raw).strip().strip("/")
-        if value.startswith("model_plan/content/"):
-            value = "content/" + value[len("model_plan/content/"):]
-        elif value == "model_plan/negative":
-            value = "negative"
-        locked.append(value)
+    locked = _session_locked_image_paths(session)
     result = SemanticTransaction(adapter).execute(
         semantic, changeset, current_revision=session.revision,
         impact_analyzer=analyze_image_impacts, allowed_roots=allowed,
         locked_paths=locked, broad_only_roots=["content"],
         allow_broad=allow_broad,
-        semantic_check=lambda plan: _image_semantic_issues(plan, family))
+        semantic_check=lambda plan: [
+            *_image_semantic_issues(plan, family),
+            *_stable_fact_lock_issues(plan, session.locked_constraints),
+        ])
     rendered_state = adapter.dump(result.plan)
     model_plan["content"] = rendered_state["content"]
     model_plan["negative"] = rendered_state["negative"]
     return bundle
+
+
+def _session_locked_image_paths(session: PromptSession) -> list[str]:
+    locked: list[str] = []
+    for raw in session.locked_constraints:
+        value = str(raw).strip().strip("/")
+        if value.startswith("fact:"):
+            locked.extend(_resolve_fact_lock(value, session.current_plan))
+            continue
+        if value.startswith("model_plan/content/"):
+            value = "content/" + value[len("model_plan/content/"):]
+        elif value == "model_plan/negative":
+            value = "negative"
+        locked.append(value)
+    return locked
+
+
+def _resolve_fact_lock(raw: str, bundle: dict[str, Any]) -> list[str]:
+    try:
+        fact = json.loads(raw[len("fact:"):])
+    except (TypeError, ValueError):
+        return []
+    content = bundle.get("model_plan", {}).get("content", {})
+    characters = content.get("characters", []) if isinstance(content, dict) else []
+    for char_index, character in enumerate(characters):
+        if (not isinstance(character, dict)
+                or str(character.get("character_id", "")) != fact.get("character_id")):
+            continue
+        base = f"content/characters/{char_index}"
+        if fact.get("kind") == "character_identity":
+            return [base + "/character_id"]
+        if fact.get("kind") == "character_trait":
+            for field in ("required_traits", "variable_traits"):
+                values = character.get(field, [])
+                if isinstance(values, list):
+                    for index, value in enumerate(values):
+                        if str(value).strip() == str(fact.get("value", "")).strip():
+                            return [f"{base}/{field}/{index}"]
+    return []
+
+
+def _stable_fact_lock_issues(plan: ImageSemanticPlan,
+                             constraints: list[str]) -> list[str]:
+    characters = plan.content.get("characters", [])
+    by_id = {str(character.get("character_id", "")): character
+             for character in characters if isinstance(character, dict)}
+    issues: list[str] = []
+    for raw in constraints:
+        if not str(raw).startswith("fact:"):
+            continue
+        try:
+            fact = json.loads(str(raw)[len("fact:"):])
+        except (TypeError, ValueError):
+            issues.append("损坏的稳定事实锁")
+            continue
+        character = by_id.get(str(fact.get("character_id", "")))
+        if character is None:
+            issues.append(f"锁定人物身份已丢失: {fact.get('character_id', '')}")
+            continue
+        if fact.get("kind") == "character_trait":
+            values = {str(value).strip()
+                      for field in ("required_traits", "variable_traits")
+                      for value in character.get(field, [])}
+            if str(fact.get("value", "")).strip() not in values:
+                issues.append(f"锁定人物特征已丢失: {fact.get('value', '')}")
+    return issues
+
+
+def _evaluate_image_semantics(prof: AIProfile, candidate: dict[str, Any],
+                              changeset: ChangeSet, family: str,
+                              hard_constraints: list[str],
+                              previous_bundle: dict[str, Any],
+                              reference_manifest: Any = None, *,
+                              force_critic: bool = False) -> list[SemanticIssue]:
+    from ..domain.gateway_critic import GatewaySemanticCritic, constraint_snapshot
+    from ..domain.plan_adapters import get_session_plan_adapter
+    from ..domain.semantic_consistency import (
+        SemanticConsistencyPipeline, assess_risk, validate_anima_semantics)
+
+    model_plan = candidate.get("model_plan", {})
+    semantic = get_session_plan_adapter(family).load({
+        "content": model_plan.get("content", {}),
+        "negative": model_plan.get("negative", ""),
+    })
+    def validator(candidate_plan: ImageSemanticPlan) -> list[SemanticIssue]:
+        if family != "anima":
+            return []
+        from ..schemas.anima import AnimaPromptPlan
+
+        return validate_anima_semantics(
+            AnimaPromptPlan.from_json(candidate_plan.content))
+
+    critic = None
+    if assess_risk(changeset).critic_required or force_critic:
+        previous_model = previous_bundle.get("model_plan", {})
+        previous_semantic = get_session_plan_adapter(family).load({
+            "content": previous_model.get("content", {}),
+            "negative": previous_model.get("negative", ""),
+        })
+        gateway_critic = GatewaySemanticCritic(
+            prof, require_api_key(prof), gateway=Gateway())
+        constraint_data: dict[str, Any] = {
+            "locked_values": constraint_snapshot(previous_semantic, hard_constraints),
+            "character_bindings": candidate.get("prompt_plan", {}).get(
+                "character_bindings", []),
+        }
+        if reference_manifest:
+            from ..schemas.references import ReferenceManifest
+
+            manifest = ReferenceManifest.from_json(reference_manifest)
+            constraint_data["reference_manifest"] = {
+                "assets": [{"asset_id": asset.asset_id,
+                            "asset_type": asset.asset_type,
+                            "note": asset.note,
+                            "labels": list(asset.h3_labels)}
+                           for asset in manifest.assets],
+                "subjects": [{"subject_id": subject.subject_id,
+                              "kind": subject.kind,
+                              "definition": subject.definition,
+                              "source_assets": list(subject.source_assets)}
+                             for subject in manifest.subjects],
+            }
+        critic = lambda candidate_plan, proposal: gateway_critic(
+            candidate_plan, proposal, hard_constraints=constraint_data,
+            previous_plan=previous_semantic)
+    result = SemanticConsistencyPipeline(
+        get_session_plan_adapter(family), validator).run(
+            semantic, changeset, critic=critic, force_critic=force_critic)
+    return result.issues
+
+
+def _append_semantic_issues(report: ValidationReport,
+                            issues: list[SemanticIssue]) -> None:
+    for issue in issues:
+        report.add(issue.severity, issue.code,
+                   f"{issue.message}（路径: {issue.path}；原因: {issue.reason}）",
+                   issue.path)
+
+
+def _semantic_error_text(issues: list[SemanticIssue]) -> str:
+    return "\n".join(
+        f"[{issue.code}] {issue.path}: {issue.message}；{issue.reason}"
+        for issue in issues if issue.severity == "error")
+
+
+def _composer_repair_paths(changeset: ChangeSet,
+                           semantic_issues: list[SemanticIssue],
+                           report: ValidationReport) -> list[str]:
+    paths = [change.path for change in changeset.all_changes()]
+    paths.extend(issue.path for issue in semantic_issues if issue.path)
+    for issue in report.issues:
+        if issue.location:
+            paths.append(issue.location)
+        if "negative" in issue.code:
+            paths.append("negative")
+    return list(dict.fromkeys(paths))
+
+
+def _composer_create_repair_paths(report: ValidationReport) -> list[str]:
+    """CREATE has no requested delta, so only exact validator locations are repairable."""
+    return list(dict.fromkeys(
+        issue.location for issue in report.issues if issue.location.strip()))
 
 
 def _image_semantic_issues(plan: ImageSemanticPlan, family: str) -> list[str]:

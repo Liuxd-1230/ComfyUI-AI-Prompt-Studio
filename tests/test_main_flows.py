@@ -42,6 +42,8 @@ class FakeGateway:
 
     def generate(self, profile, api_key, req):
         self.last_req = req
+        if "issues" in (req.output_schema or {}).get("properties", {}):
+            return LLMResult(text=json.dumps({"issues": []}))
         return LLMResult(text=self.text)
 
 
@@ -294,8 +296,10 @@ def test_flow7_book_storyboard_manifest_h3(monkeypatch, store):
 
     h3_plan = {
         "style_opening": "", "summary": "",
-        "speakers": [{"speaker_id": "S1", "name": "A", "description": "black short hair"},
-                     {"speaker_id": "S2", "name": "B", "description": "long blonde hair"}],
+        "speakers": [{"speaker_id": "S1", "character_id": "char_01",
+                      "name": "A", "description": "black short hair"},
+                     {"speaker_id": "S2", "character_id": "char_02",
+                      "name": "B", "description": "long blonde hair"}],
         "subjects": [{"label": "Subject 1", "kind": "character",
                       "definition": "B from <Picture 1>"}],
         "assets": [{"label": "Picture 1", "kind": "picture", "source": "1",

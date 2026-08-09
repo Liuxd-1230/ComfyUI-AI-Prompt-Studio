@@ -30,3 +30,9 @@ Python consumers and are not allowed in node execution paths.
 ## Mutation Authority
 
 Only a validated transaction may commit a semantic plan. A requested change authorizes its dependency closure, not arbitrary regeneration. Each requested, dependent, invalidated, or conflicting fact carries a reason. Diff Guard, semantic validation, protocol validation, and bounded repair are independent stages.
+
+The semantic Critic owns no facts and has no mutation authority. For high-risk
+transactions it receives an affected before/after slice plus relevant locked
+values and returns `SemanticIssue` records. A repair proposal is a separate
+ChangeSet and must pass the same authorization, Diff Guard, semantic, and protocol
+boundaries before the Session can commit.

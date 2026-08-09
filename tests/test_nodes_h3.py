@@ -19,13 +19,17 @@ class FakeGateway:
     """记录请求并返回预设文本。"""
 
     last_req = None
+    requests = []
 
     def __init__(self, text):
         self.text = text
 
     def generate(self, profile, api_key, req):
         FakeGateway.last_req = req
+        FakeGateway.requests.append(req)
         properties = (req.output_schema or {}).get("properties", {})
+        if "issues" in properties:
+            return LLMResult(text='{"issues":[]}')
         if "approved_requested_paths" in properties:
             proposal = json.loads(self.text)
             return LLMResult(text=json.dumps({
@@ -35,6 +39,12 @@ class FakeGateway:
                     for item in proposal.get("dependent_changes", [])],
                 "rejected_reasons": [], "summary": "approved"}))
         return LLMResult(text=self.text)
+
+
+def last_h3_plan_request():
+    return next(req for req in reversed(FakeGateway.requests)
+                if "shots" in (req.output_schema or {}).get("properties", {})
+                and "issues" not in (req.output_schema or {}).get("properties", {}))
 
 
 PLAN_JSON = {
@@ -118,6 +128,75 @@ def test_generate_t2va_full_chain(monkeypatch, store):
     assert manifest_json["assets"] == [] and manifest_json["subjects"] == []
 
 
+def test_h3_create_persists_identity_and_reference_binding_locks(monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
+    created = h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA", duration=10.0))
+    session = json.loads(created["ui"]["prompt_session"][0])
+    assert any('"kind": "h3_speaker"' in value and '"speaker_id": "S1"' in value
+               for value in session["locked_constraints"])
+
+
+def test_h3_create_rejects_invisible_speech_speaker_without_commit(monkeypatch, store):
+    payload = setup_profile(store)
+    invalid = json.loads(json.dumps(PLAN_JSON))
+    invalid["shots"][0]["characters"] = []
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(invalid)))
+    commit_calls = []
+    original_commit = h3_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(h3_mod.PromptSession, "commit", commit_spy)
+    with pytest.raises(ValueError, match="未列入本镜头 characters"):
+        h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+            AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA",
+            duration=10.0, auto_repair=False))
+    assert commit_calls == []
+
+
+def test_h3_complex_create_uses_critic_and_blocks_location_gap(monkeypatch, store):
+    payload = setup_profile(store)
+
+    class CreateCriticGateway:
+        critic_calls = 0
+        repair_calls = 0
+
+        def generate(self, profile, api_key, req):
+            properties = (req.output_schema or {}).get("properties", {})
+            if "issues" in properties:
+                type(self).critic_calls += 1
+                return LLMResult(text=json.dumps({"issues": [{
+                    "severity": "error", "code": "h3_location_continuity",
+                    "path": "shots/1/description",
+                    "message": "location changes without a declared transition",
+                    "reason": "Shot 1 ends in the cafe and Shot 2 starts on the moon",
+                    "evidence": ["Shot 1", "Shot 2"], "repairable": False}]}))
+            if "requested_changes" in properties:
+                type(self).repair_calls += 1
+            return LLMResult(text=json.dumps(PLAN_JSON))
+
+    commit_calls = []
+    original_commit = h3_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(h3_mod.PromptSession, "commit", commit_spy)
+    monkeypatch.setattr(h3_mod, "Gateway", CreateCriticGateway)
+    with pytest.raises(ValueError, match="location changes"):
+        h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+            AI_PROFILE=payload, text="两镜头场景", mode="T2VA",
+            duration=10.0))
+    assert CreateCriticGateway.critic_calls == 1
+    assert CreateCriticGateway.repair_calls == 0
+    assert commit_calls == []
+
+
 def test_h3_persistent_refine_changes_shot2_without_touching_shot1(monkeypatch, store):
     payload = setup_profile(store)
     monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
@@ -172,6 +251,168 @@ def test_h3_refine_enforces_session_lock_and_preserves_input_session(monkeypatch
             AI_PROFILE=payload, text="change camera", mode="T2VA", duration=10.0,
             prompt_session=stable_json))
     assert json.loads(stable_json)["revision"] == 1
+    assert commit_calls == []
+
+
+def test_h3_high_risk_critic_error_prevents_commit(monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
+    node = h3_mod.APS_MiniMaxH3Director()
+    created = node.direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA", duration=10.0))
+    stable_json = created["ui"]["prompt_session"][0]
+    proposal = {"base_revision": 1, "plan_type": "minimax_h3",
+        "change_category": "minimal_refine", "intent_scope": ["shots/1/description"],
+        "requested_changes": [{"path": "shots/1/description", "operation": "set",
+            "value_json": "[\"She suddenly holds the umbrella again.\"]",
+            "reason": "user request"}],
+        "dependent_changes": [], "invalidated_facts": [], "constraint_conflicts": [],
+        "summary": "change action state"}
+
+    class CriticGateway(FakeGateway):
+        def generate(self, profile, api_key, req):
+            properties = (req.output_schema or {}).get("properties", {})
+            if "issues" in properties:
+                return LLMResult(text=json.dumps({"issues": [{
+                    "severity": "error", "code": "h3_object_state_gap",
+                    "path": "shots/1/description", "message": "umbrella state has no transition",
+                    "reason": "Shot 1 dropped it", "evidence": ["Shot 1", "Shot 2"],
+                    "repairable": False}]}))
+            return super().generate(profile, api_key, req)
+
+    commit_calls = []
+    original_commit = h3_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(h3_mod.PromptSession, "commit", commit_spy)
+    monkeypatch.setattr(h3_mod, "Gateway",
+                        lambda: CriticGateway(json.dumps(proposal)))
+    with pytest.raises(ValueError, match="umbrella state"):
+        node.direct(**node_payload(
+            AI_PROFILE=payload, text="第二镜头让她重新拿着伞",
+            mode="T2VA", duration=10.0, prompt_session=stable_json))
+    assert commit_calls == []
+
+
+def test_h3_repairable_critic_issue_gets_one_guarded_repair(monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
+    node = h3_mod.APS_MiniMaxH3Director()
+    created = node.direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA", duration=10.0))
+    stable_json = created["ui"]["prompt_session"][0]
+    proposals = [
+        {"base_revision": 1, "plan_type": "minimax_h3",
+         "change_category": "minimal_refine", "intent_scope": ["shots/1/description"],
+         "requested_changes": [{"path": "shots/1/description", "operation": "set",
+             "value_json": "[\"She holds the umbrella again.\"]", "reason": "request"}],
+         "dependent_changes": [], "invalidated_facts": [], "constraint_conflicts": [],
+         "summary": "restore umbrella"},
+        {"base_revision": 1, "plan_type": "minimax_h3",
+         "change_category": "repair", "intent_scope": ["shots/1/camera_amplitude"],
+         "requested_changes": [{"path": "shots/1/camera_amplitude", "operation": "set",
+             "value_json": "\"small\"", "reason": "repair camera feasibility"}],
+         "dependent_changes": [], "invalidated_facts": [], "constraint_conflicts": [],
+         "summary": "repair camera feasibility"},
+    ]
+
+    class RepairGateway:
+        proposal_index = 0
+        critic_calls = 0
+
+        def generate(self, profile, api_key, req):
+            properties = (req.output_schema or {}).get("properties", {})
+            if "approved_requested_paths" in properties:
+                path = ("shots/1/description" if type(self).proposal_index == 1
+                        else "shots/1/camera_amplitude")
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": [path],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
+            if "issues" in properties:
+                type(self).critic_calls += 1
+                issues = [] if self.critic_calls == 2 else [{
+                    "severity": "error", "code": "h3_camera_feasibility",
+                    "path": "shots/1/camera_amplitude", "message": "camera move is too large",
+                    "reason": "action framing would be lost", "evidence": ["Shot 2"],
+                    "repairable": True}]
+                return LLMResult(text=json.dumps({"issues": issues}))
+            value = proposals[type(self).proposal_index]
+            type(self).proposal_index += 1
+            return LLMResult(text=json.dumps(value))
+
+    monkeypatch.setattr(h3_mod, "Gateway", RepairGateway)
+    refined = node.direct(**node_payload(
+        AI_PROFILE=payload, text="第二镜头重新拿着伞", mode="T2VA",
+        duration=10.0, prompt_session=stable_json))
+    session = json.loads(refined["ui"]["prompt_session"][0])
+    assert session["revision"] == 2
+    assert RepairGateway.proposal_index == 2
+    assert RepairGateway.critic_calls == 2
+    assert "holds the umbrella again" in session["current_prompt"]
+
+
+def test_h3_repair_changeset_rejects_unrelated_path(monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
+    node = h3_mod.APS_MiniMaxH3Director()
+    created = node.direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA", duration=10.0))
+    stable_json = created["ui"]["prompt_session"][0]
+    proposals = [
+        {"base_revision": 1, "plan_type": "minimax_h3",
+         "change_category": "minimal_refine", "intent_scope": ["shots/1/description"],
+         "requested_changes": [{"path": "shots/1/description", "operation": "set",
+             "value_json": "[\"She runs.\"]", "reason": "request"}],
+         "dependent_changes": [], "invalidated_facts": [], "constraint_conflicts": [],
+         "summary": "change action"},
+        {"base_revision": 1, "plan_type": "minimax_h3",
+         "change_category": "repair", "intent_scope": ["soundscape"],
+         "requested_changes": [{"path": "soundscape", "operation": "set",
+             "value_json": "\"unrelated new ambience\"", "reason": "unrelated rewrite"}],
+         "dependent_changes": [], "invalidated_facts": [], "constraint_conflicts": [],
+         "summary": "rewrite unrelated sound"},
+    ]
+
+    class UnrelatedRepairGateway:
+        proposal_index = 0
+        critic_calls = 0
+
+        def generate(self, profile, api_key, req):
+            properties = (req.output_schema or {}).get("properties", {})
+            if "approved_requested_paths" in properties:
+                proposal = proposals[type(self).proposal_index - 1]
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": [
+                        proposal["requested_changes"][0]["path"]],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
+            if "issues" in properties:
+                type(self).critic_calls += 1
+                return LLMResult(text=json.dumps({"issues": [{
+                    "severity": "error", "code": "h3_camera_feasibility",
+                    "path": "shots/1/camera_amplitude", "message": "camera conflict",
+                    "reason": "action framing", "evidence": [], "repairable": True}]}))
+            proposal = proposals[type(self).proposal_index]
+            type(self).proposal_index += 1
+            return LLMResult(text=json.dumps(proposal))
+
+    commit_calls = []
+    original_commit = h3_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(h3_mod.PromptSession, "commit", commit_spy)
+    monkeypatch.setattr(h3_mod, "Gateway", UnrelatedRepairGateway)
+    with pytest.raises(ValueError, match="无关的路径"):
+        node.direct(**node_payload(
+            AI_PROFILE=payload, text="第二镜头改成奔跑", mode="T2VA",
+            duration=10.0, prompt_session=stable_json))
     assert commit_calls == []
 
 
@@ -264,8 +505,7 @@ def test_repair_includes_issues_in_llm_prompt(monkeypatch, store):
               "non_diegetic_music: N/A")
     node.direct(**node_payload(AI_PROFILE=payload, text=broken, mode="T2VA",
                                operation="repair"))
-    assert FakeGateway.last_req is not None
-    sent = FakeGateway.last_req.messages[0].content
+    sent = last_h3_plan_request().messages[0].content
     assert '"validation_issues":' in sent
 
 
@@ -359,9 +599,42 @@ class ScriptedGateway:
         self.calls = 0
 
     def generate(self, profile, api_key, req):
+        if "issues" in (req.output_schema or {}).get("properties", {}):
+            return LLMResult(text='{"issues":[]}')
         text = self.texts[min(self.calls, len(self.texts) - 1)]
         self.calls += 1
         return LLMResult(text=text)
+
+
+class R2VCreateRepairGateway:
+    def __init__(self, repair_to_english: bool):
+        self.repair_to_english = repair_to_english
+
+    def generate(self, profile, api_key, req):
+        properties = (req.output_schema or {}).get("properties", {})
+        if "issues" in properties:
+            return LLMResult(text='{"issues":[]}')
+        if "approved_requested_paths" in properties:
+            return LLMResult(text=json.dumps({
+                "approved_requested_paths": ["summary", "soundscape"],
+                "approved_dependent_paths": [], "rejected_reasons": [],
+                "summary": "approved"}))
+        if "requested_changes" in properties:
+            summary = ("[reference generation] A girl enters a cafe."
+                       if self.repair_to_english else CHINESE_R2V_PLAN["summary"])
+            soundscape = ("The cafe hums softly."
+                          if self.repair_to_english else CHINESE_R2V_PLAN["soundscape"])
+            return LLMResult(text=json.dumps({
+                "base_revision": 0, "plan_type": "minimax_h3",
+                "change_category": "repair", "intent_scope": ["summary", "soundscape"],
+                "requested_changes": [
+                    {"path": "summary", "operation": "set",
+                     "value_json": json.dumps(summary), "reason": "translate summary"},
+                    {"path": "soundscape", "operation": "set",
+                     "value_json": json.dumps(soundscape), "reason": "translate soundscape"},
+                ], "dependent_changes": [], "invalidated_facts": [],
+                "constraint_conflicts": [], "summary": "translate Ref2VA prose"}))
+        return LLMResult(text=json.dumps(CHINESE_R2V_PLAN))
 
 
 CHINESE_R2V_PLAN = dict(R2V_PLAN_JSON)
@@ -375,8 +648,7 @@ ENGLISH_R2V_PLAN["soundscape"] = "The cafe hums softly."
 def test_auto_repair_fixes_r2v_english(monkeypatch, store):
     payload = setup_profile(store)
     # 同一个 gateway 实例跨调用共享 calls 计数：第 1 次中文 → 触发修复 → 第 2 次英文
-    gw = ScriptedGateway([json.dumps(CHINESE_R2V_PLAN),
-                          json.dumps(ENGLISH_R2V_PLAN)])
+    gw = R2VCreateRepairGateway(True)
     monkeypatch.setattr(h3_mod, "Gateway", lambda: gw)
     node = h3_mod.APS_MiniMaxH3Director()
     prompt, _, _, validation, warnings = node.direct(
@@ -391,7 +663,7 @@ def test_r2v_english_marks_error_when_repair_fails(monkeypatch, store):
     payload = setup_profile(store)
     # 修复一次后仍是中文 → 校验错误，不伪造翻译
     monkeypatch.setattr(h3_mod, "Gateway",
-                        lambda: ScriptedGateway([json.dumps(CHINESE_R2V_PLAN)]))
+                        lambda: R2VCreateRepairGateway(False))
     node = h3_mod.APS_MiniMaxH3Director()
     with pytest.raises(ValueError, match="h3_r2v_english"):
         node.direct(**node_payload(
@@ -401,7 +673,7 @@ def test_r2v_english_marks_error_when_repair_fails(monkeypatch, store):
 
 def test_auto_repair_off_keeps_error(monkeypatch, store):
     payload = setup_profile(store)
-    monkeypatch.setattr(h3_mod, "Gateway", lambda: ScriptedGateway([json.dumps(CHINESE_R2V_PLAN)]))
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: R2VCreateRepairGateway(False))
     node = h3_mod.APS_MiniMaxH3Director()
     with pytest.raises(ValueError, match="h3_r2v_english"):
         node.direct(**node_payload(
@@ -461,15 +733,21 @@ def test_plan_prompt_includes_book_role_table(monkeypatch, store):
     sb = Storyboard(title="t", characters=["c1"],
                     scenes=[Scene(title="s1", characters=["c1"],
                                   shots=[Shot(summary="walk in")])])
+    bound_plan = json.loads(json.dumps(PLAN_JSON))
+    bound_plan["speakers"][0]["speaker_id"] = "S5"
+    bound_plan["speakers"][0]["character_id"] = "c1"
+    bound_plan["shots"][0]["characters"] = ["S5"]
+    bound_plan["shots"][0]["dialogues"][0]["speaker_ids"] = ["S5"]
     monkeypatch.setattr(h3_mod, "Gateway",
-                        lambda: FakeGateway(json.dumps(PLAN_JSON)))
+                        lambda: FakeGateway(json.dumps(bound_plan)))
     node = h3_mod.APS_MiniMaxH3Director()
     node.direct(**node_payload(AI_PROFILE=payload, text="分镜文本", mode="T2VA",
                                operation="convert_storyboard", duration=10.0,
                                storyboard=sb.to_json(),
                                character_book=book.to_json()))
-    sent = FakeGateway.last_req.messages[0].content
+    h3_request = last_h3_plan_request()
+    sent = h3_request.messages[0].content
     assert '"characters":{' in sent
     assert '"character_id":"c1"' in sent
     assert '"speaker_id":"S5"' in sent          # 稳定 Speaker ID 作为结构化数据传给 LLM
-    assert "never invent new IDs" in FakeGateway.last_req.system
+    assert "never invent new IDs" in h3_request.system

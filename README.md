@@ -135,7 +135,7 @@ python -m compileall nodes services renderers validators schemas server tests
 
 - 测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约和主链路回归；数量以本地 `pytest` 结果为准。
 - 架构与决策：`docs/decisions.md`、`docs/adr/`、`docs/compatibility.md`。
-- P0-P3 架构基线、Prompt 来源/所有权/Assembly、事务与语义一致性说明见 `docs/prompt-architecture/`；四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
+- P0-P3 架构基线、Prompt 来源/所有权/Assembly、事务与语义一致性说明见 `docs/prompt-architecture/`。持久 REFINE 的低风险局部外观修改只跑确定性检查；动作、时间线、身份、参考和重大构图修改会用受影响 before/after 切片调用 Semantic Critic，错误或单次定向修复失败都不会覆盖上一 revision。四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
 
 ## 许可与来源
 

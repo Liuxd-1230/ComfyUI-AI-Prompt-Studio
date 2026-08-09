@@ -22,9 +22,20 @@ def test_every_creative_gateway_call_has_an_inventory_owner() -> None:
         "nodes/storyboard_builder.py": ("storyboard.create", 1),
         "nodes/prompt_composer.py": ("composer.render", 1),
         "services/prompt_session.py": ("session.changeset", 3),
+        "domain/gateway_critic.py": ("semantic.critic", 1),
         "nodes/minimax_h3_director.py": ("h3.create", 2),
     }
     inventory = INVENTORY.read_text(encoding="utf-8")
+    discovered = {
+        path.relative_to(ROOT).as_posix()
+        for path in ROOT.rglob("*.py")
+        if "tests" not in path.parts
+        if re.search(r"(?:Gateway\(\)|gateway|self\.gateway)\.generate\(",
+                     path.read_text(encoding="utf-8"))
+    }
+    assert discovered == set(expected), (
+        "Every production Gateway caller must be explicitly inventoried: "
+        f"{sorted(discovered ^ set(expected))}")
     for relative, (owner, count) in expected.items():
         lines = _call_lines(relative, r"(?:Gateway\(\)|gateway)\.generate\(")
         assert len(lines) == count, f"Update inventory for {relative}: {lines}"

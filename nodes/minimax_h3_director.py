@@ -18,6 +18,7 @@ from ..schemas.h3 import H3_MODES, H3_OPERATIONS, H3PromptPlan
 from ..schemas.profile import AIProfile
 from ..schemas.prompt_session import PromptSession
 from ..schemas.references import AssetRef, ReferenceManifest
+from ..schemas.semantic import SemanticIssue
 from ..schemas.storyboard import Scene, Shot, Storyboard
 from ..renderers.minimax_h3 import render_h3
 from ..services.gateway import Gateway, GenerateRequest
@@ -48,6 +49,41 @@ from ._helpers import require_api_key, resolve_profile_input, try_api_key
 
 # 模式资产约束：T2VA=0；I2VA=1（首帧）；FL2VA=2（首尾）；L2VA=1（尾帧）；R2V 不限
 MODE_IMAGE_REQUIREMENTS = {"T2VA": 0, "I2VA": 1, "FL2VA": 2, "L2VA": 1}
+
+
+def _evaluate_h3_semantics(prof: AIProfile, api_key: str, plan: H3PromptPlan,
+                           changeset: ChangeSet,
+                           hard_constraints: list[str],
+                           previous_plan: H3PromptPlan, *,
+                           force_critic: bool = False) -> list[SemanticIssue]:
+    """Evaluate the actual transaction candidate; high-risk edits use a real critic."""
+    from ..domain.gateway_critic import GatewaySemanticCritic
+    from ..domain.plan_adapters import get_plan_adapter
+    from ..domain.semantic_consistency import (
+        SemanticConsistencyPipeline, assess_risk, validate_h3_semantics)
+
+    critic = None
+    if assess_risk(changeset).critic_required or force_critic:
+        gateway_critic = GatewaySemanticCritic(prof, api_key, gateway=Gateway())
+        critic = lambda candidate, proposal: gateway_critic(
+            candidate, proposal, hard_constraints=hard_constraints,
+            previous_plan=previous_plan)
+    result = SemanticConsistencyPipeline(
+        get_plan_adapter("minimax_h3"), validate_h3_semantics).run(
+            plan, changeset, critic=critic, force_critic=force_critic)
+    return result.issues
+
+
+def _append_semantic_issues(report: Any, issues: list[SemanticIssue]) -> None:
+    for issue in issues:
+        detail = f"{issue.message}（路径: {issue.path}；原因: {issue.reason}）"
+        report.add(issue.severity, issue.code, detail, issue.path)
+
+
+def _semantic_error_text(issues: list[SemanticIssue]) -> str:
+    return "\n".join(
+        f"[{issue.code}] {issue.path}: {issue.message}；{issue.reason}"
+        for issue in issues if issue.severity == "error")
 
 
 def _apply_h3_changeset(session: PromptSession, changeset: ChangeSet,
@@ -97,7 +133,9 @@ def _apply_h3_changeset(session: PromptSession, changeset: ChangeSet,
         broad_only_roots=["shots", "speakers", "subjects", "assets", "retention"],
         normalization_paths=["duration_seconds", "shots", "speakers", "assets",
                              "subjects", "retention", "warnings"],
-        normalizer=normalize_runtime, allow_broad=allow_broad)
+        normalizer=normalize_runtime, allow_broad=allow_broad,
+        semantic_check=lambda plan: _h3_stable_lock_issues(
+            plan, session.locked_constraints))
     bundle["h3_plan"] = adapter.dump(result.plan)
     return bundle
 
@@ -200,6 +238,16 @@ class APS_MiniMaxH3Director:
         if bible is None and book is not None:
             bible = book.first_bible()
         sb = Storyboard.from_json(storyboard) if storyboard else None
+        if character_bible and bible is not None:
+            source_bibles = [bible]
+        elif book is not None and sb is not None:
+            used_ids = _storyboard_character_ids(sb)
+            source_bibles = [item for item in book.characters
+                              if item.character_id in used_ids]
+        elif book is not None:
+            source_bibles = list(book.characters)
+        else:
+            source_bibles = []
         img_count = _count_images(images)
         _register_image_inputs(manifest, img_count)
 
@@ -304,11 +352,37 @@ class APS_MiniMaxH3Director:
 
         # 确定性修正：媒体独立编号（不费 API）
         normalize_media_labels(plan)
+        from ..domain.plan_adapters import get_plan_adapter
+
+        plan = get_plan_adapter("minimax_h3").normalize(plan)
 
         rendered = render_h3(plan)
         report = validate_h3(rendered, mode, duration=duration, manifest=manifest,
                              plan=plan)
         self._apply_mode_asset_errors(report, mode, img_count)
+        from ..domain.semantic_consistency import validate_h3_semantics
+
+        create_semantic_issues = validate_h3_semantics(plan)
+        create_semantic_issues.extend(
+            _h3_source_identity_issues(plan, source_bibles))
+        if mode in {"R2V", "Ref2VA"}:
+            create_semantic_issues.extend(
+                _h3_r2v_language_issues(plan, rendered))
+        create_critic_required = needs_llm and _h3_create_needs_critic(plan)
+        if create_critic_required:
+            create_changeset = _h3_create_changeset(plan)
+            create_semantic_issues.extend(_evaluate_h3_semantics(
+                prof, api_key, plan, create_changeset,
+                ["mode", "duration_seconds"], H3PromptPlan(
+                    mode=mode, duration_seconds=duration),
+                force_critic=True))
+        _append_semantic_issues(report, create_semantic_issues)
+        nonrepairable = [issue for issue in create_semantic_issues
+                         if issue.severity == "error" and not issue.repairable]
+        if nonrepairable:
+            raise ValueError(
+                "本轮 H3 CREATE 存在不可自动修复的语义错误；未写入会话：\n" +
+                _semantic_error_text(nonrepairable))
 
         # ------------------------------------------------------------ 一次自动修复
         # 无 API（确定性转换路径）不尝试 LLM 修复：确定性格式修正已由
@@ -316,11 +390,23 @@ class APS_MiniMaxH3Director:
         if (needs_llm and auto_repair and not report.valid) or (
                 needs_llm and auto_repair and mode in {"R2V", "Ref2VA"}
                 and r2v_english_issue(rendered)):
-            fixed, repair_error = self._repair_once(
-                prof, api_key, text, mode, duration, report,
-                sb, bible, book, manifest, img_count)
+            if persistent_lifecycle:
+                fixed, repair_error = self._repair_create_session_once(
+                    prof, api_key, plan, rendered, report, mode, duration,
+                    manifest, img_count, source_bibles,
+                    force_critic=create_critic_required)
+            else:
+                fixed, repair_error = self._repair_once(
+                    prof, api_key, text, mode, duration, report,
+                    sb, bible, book, manifest, img_count)
             if fixed is not None:
                 plan, rendered, report = fixed
+                _append_semantic_issues(report, validate_h3_semantics(plan))
+                _append_semantic_issues(
+                    report, _h3_source_identity_issues(plan, source_bibles))
+                if mode in {"R2V", "Ref2VA"}:
+                    _append_semantic_issues(
+                        report, _h3_r2v_language_issues(plan, rendered))
                 plan.warnings.append("已执行一次自动修复（auto_repair）")
             else:
                 plan.warnings.append(f"自动修复未完成：{repair_error}")
@@ -339,6 +425,7 @@ class APS_MiniMaxH3Director:
                              report.as_text())
         bundle = {"h3_plan": plan.to_json(), "reference_manifest": manifest.to_json()}
         summary = "已建立第一版 H3 方案。请先生成视频，再直接描述需要调整的镜头。"
+        session.locked_constraints = _h3_binding_locks(plan)
         session.commit(bundle, rendered, report, text or "", summary,
                        expected_revision=0)
         return node_execution_result(result_tuple, session.to_json_string(),
@@ -404,11 +491,60 @@ class APS_MiniMaxH3Director:
         sync_manifest_assets(plan, manifest)
         plan.warnings.extend(map_image_assets(plan, img_count, mode))
         normalize_media_labels(plan)
+        from ..domain.plan_adapters import get_plan_adapter
+
+        plan = get_plan_adapter("minimax_h3").normalize(plan)
         rendered = render_h3(plan)
         report = validate_h3(rendered, mode, duration=duration, manifest=manifest,
                              plan=plan)
         self._apply_mode_asset_errors(report, mode, img_count)
         return (plan, rendered, report), ""
+
+    def _repair_create_session_once(
+            self, prof: AIProfile, api_key: str, plan: H3PromptPlan,
+            rendered: str, report: Any, mode: str, duration: float,
+            manifest: ReferenceManifest, img_count: int,
+            source_bibles: list[CharacterBible], *,
+            force_critic: bool = False) -> tuple[Any, str]:
+        """Repair an invalid CREATE candidate through the same guarded ChangeSet seam."""
+        bundle = {"h3_plan": plan.to_json(),
+                  "reference_manifest": manifest.to_json()}
+        repair_session = PromptSession(
+            target_family="minimax_h3", target_variant=mode,
+            current_plan=bundle, current_prompt=rendered,
+            revision=0, validation=copy.deepcopy(report))
+        try:
+            changeset = request_changeset(
+                Gateway(), prof, api_key, repair_session,
+                "Fix only these concrete CREATE validation issues; preserve every "
+                "unrelated fact:\n" + report.as_text(),
+                {"mode": mode, "duration_seconds": float(duration),
+                 "image_count": img_count})
+            from ..domain.semantic_consistency import assert_repair_scope
+
+            assert_repair_scope(changeset, _h3_create_repair_paths(report))
+            locked = ["mode", "operation", "storyboard_id", "plan_id", "created_at",
+                      "validation", "raw", "duration_seconds"]
+            candidate = _apply_h3_changeset(
+                repair_session, changeset, locked, mode=mode, duration=duration,
+                manifest=manifest, img_count=img_count)
+            fixed_plan, fixed_rendered, fixed_report = self._render_session_candidate(
+                candidate, mode, duration, manifest, img_count)
+            _append_semantic_issues(
+                fixed_report,
+                _evaluate_h3_semantics(
+                    prof, api_key, fixed_plan, changeset, locked, plan,
+                    force_critic=force_critic))
+            _append_semantic_issues(
+                fixed_report, _h3_source_identity_issues(
+                    fixed_plan, source_bibles))
+            if mode in {"R2V", "Ref2VA"}:
+                _append_semantic_issues(
+                    fixed_report,
+                    _h3_r2v_language_issues(fixed_plan, fixed_rendered))
+            return (fixed_plan, fixed_rendered, fixed_report), ""
+        except ValueError as exc:
+            return None, str(exc)
 
     def _apply_mode_asset_errors(self, report: Any, mode: str,
                                  img_count: int) -> None:
@@ -435,27 +571,57 @@ class APS_MiniMaxH3Director:
         # manifest bindings and the explicit duration widget remain authoritative.
         locked = ["mode", "operation", "storyboard_id", "plan_id", "created_at",
                   "validation", "raw", "duration_seconds"]
-        for raw in session.locked_constraints:
-            value = str(raw).strip().strip("/")
-            locked.append(value[len("h3_plan/"):] if value.startswith("h3_plan/") else value)
+        locked.extend(_resolve_h3_locked_paths(session))
         allow_broad = broad_rewrite_requested(feedback)
+        previous_semantic = H3PromptPlan.from_json(
+            session.current_plan.get("h3_plan", {}))
         candidate = _apply_h3_changeset(
             session, changeset, locked, mode=mode, duration=duration,
             manifest=manifest, img_count=img_count, allow_broad=allow_broad)
         plan, rendered, report = self._render_session_candidate(
             candidate, mode, duration, manifest, img_count)
+        semantic_issues = _evaluate_h3_semantics(
+            prof, api_key, plan, changeset, locked, previous_semantic)
+        from ..domain.semantic_consistency import assess_risk
+
+        original_critic_required = assess_risk(changeset).critic_required
+        _append_semantic_issues(report, semantic_issues)
+        semantic_errors = [issue for issue in semantic_issues
+                           if issue.severity == "error"]
+        if semantic_errors and any(not issue.repairable for issue in semantic_errors):
+            raise ValueError(
+                "本轮 H3 REFINE 语义一致性检查未通过；上一版保持不变：\n" +
+                _semantic_error_text(semantic_errors))
         if not report.valid:
-            repair_feedback = (feedback + "\n\nFix only these validation issues; preserve every "
-                               "unrelated shot and decision:\n" + report.as_text())
+            original_changeset = changeset
+            repair_paths = _h3_repair_paths(
+                original_changeset, semantic_issues, report)
+            repair_feedback = ("Fix only these concrete validation issues in the "
+                               "candidate Plan; preserve every unrelated shot and decision:\n" +
+                               report.as_text())
+            repair_session = PromptSession.from_json(session.to_json())
+            repair_session.current_plan = copy.deepcopy(candidate)
+            repair_session.current_prompt = rendered
+            repair_session.validation = copy.deepcopy(report)
             repair_changeset = request_changeset(
-                Gateway(), prof, api_key, session, repair_feedback,
+                Gateway(), prof, api_key, repair_session, repair_feedback,
                 runtime_constraints)
+            from ..domain.semantic_consistency import (
+                assert_repair_scope, revalidation_changeset)
+
+            assert_repair_scope(repair_changeset, repair_paths)
             candidate = _apply_h3_changeset(
-                session, repair_changeset, locked, mode=mode, duration=duration,
+                repair_session, repair_changeset, locked, mode=mode, duration=duration,
                 manifest=manifest, img_count=img_count, allow_broad=allow_broad)
-            changeset = repair_changeset
             plan, rendered, report = self._render_session_candidate(
                 candidate, mode, duration, manifest, img_count)
+            review_changeset = revalidation_changeset(
+                original_changeset, repair_changeset)
+            semantic_issues = _evaluate_h3_semantics(
+                prof, api_key, plan, review_changeset, locked, previous_semantic,
+                force_critic=original_critic_required)
+            _append_semantic_issues(report, semantic_issues)
+            changeset = repair_changeset
         if not report.valid:
             raise ValueError("本轮 H3 REFINE 与一次自动修复均未通过；上一版保持不变：\n" + report.as_text())
         plan.validation = report
@@ -502,6 +668,193 @@ def _count_images(images: Any) -> int:
     if isinstance(images, (list, tuple)):
         return len(images)
     return 1
+
+
+def _h3_binding_locks(plan: H3PromptPlan) -> list[str]:
+    """Persist stable identity/reference labels while leaving descriptions editable."""
+    import json
+
+    locks: list[str] = []
+    for speaker in plan.speakers:
+        locks.append("fact:" + json.dumps({
+            "kind": "h3_speaker", "speaker_id": speaker.speaker_id,
+            "character_id": speaker.character_id,
+        }, ensure_ascii=False, sort_keys=True))
+    for subject in plan.subjects:
+        locks.append("fact:" + json.dumps({
+            "kind": "h3_subject", "label": subject.label,
+            "source_assets": list(subject.source_assets),
+        }, ensure_ascii=False, sort_keys=True))
+    for asset in plan.assets:
+        locks.append("fact:" + json.dumps({
+            "kind": "h3_asset", "label": asset.label, "source": asset.source,
+        }, ensure_ascii=False, sort_keys=True))
+    return locks
+
+
+def _resolve_h3_locked_paths(session: PromptSession) -> list[str]:
+    import json
+
+    plan = H3PromptPlan.from_json(session.current_plan.get("h3_plan", {}))
+    paths: list[str] = []
+    for raw in session.locked_constraints:
+        value = str(raw).strip().strip("/")
+        if not value.startswith("fact:"):
+            paths.append(value[len("h3_plan/"):] if value.startswith("h3_plan/") else value)
+            continue
+        try:
+            fact = json.loads(value[len("fact:"):])
+        except ValueError:
+            continue
+        if fact.get("kind") == "h3_speaker":
+            for index, speaker in enumerate(plan.speakers):
+                if speaker.speaker_id == fact.get("speaker_id"):
+                    paths.append(f"speakers/{index}/speaker_id")
+                    if fact.get("character_id"):
+                        paths.append(f"speakers/{index}/character_id")
+        elif fact.get("kind") == "h3_subject":
+            for index, subject in enumerate(plan.subjects):
+                if subject.label == fact.get("label"):
+                    paths.extend([f"subjects/{index}/label",
+                                  f"subjects/{index}/source_assets"])
+        elif fact.get("kind") == "h3_asset":
+            for index, asset in enumerate(plan.assets):
+                if asset.label == fact.get("label"):
+                    paths.extend([f"assets/{index}/label", f"assets/{index}/source"])
+    return list(dict.fromkeys(paths))
+
+
+def _h3_stable_lock_issues(plan: H3PromptPlan,
+                           constraints: list[str]) -> list[str]:
+    import json
+
+    speakers = {speaker.speaker_id: speaker for speaker in plan.speakers}
+    subjects = {subject.label: subject for subject in plan.subjects}
+    assets = {asset.label: asset for asset in plan.assets}
+    issues: list[str] = []
+    for raw in constraints:
+        if not str(raw).startswith("fact:"):
+            continue
+        try:
+            fact = json.loads(str(raw)[len("fact:"):])
+        except ValueError:
+            issues.append("损坏的 H3 稳定事实锁")
+            continue
+        kind = fact.get("kind")
+        if kind == "h3_speaker":
+            speaker = speakers.get(str(fact.get("speaker_id", "")))
+            if speaker is None or speaker.character_id != fact.get("character_id", ""):
+                issues.append(f"锁定 speaker 身份已改变: {fact.get('speaker_id', '')}")
+        elif kind == "h3_subject":
+            subject = subjects.get(str(fact.get("label", "")))
+            if subject is None or subject.source_assets != fact.get("source_assets", []):
+                issues.append(f"锁定 subject 绑定已改变: {fact.get('label', '')}")
+        elif kind == "h3_asset":
+            asset = assets.get(str(fact.get("label", "")))
+            if asset is None or asset.source != fact.get("source", ""):
+                issues.append(f"锁定 asset 绑定已改变: {fact.get('label', '')}")
+    return issues
+
+
+def _h3_source_identity_issues(
+        plan: H3PromptPlan,
+        bibles: list[CharacterBible]) -> list[SemanticIssue]:
+    bound_ids = {speaker.character_id for speaker in plan.speakers
+                 if speaker.character_id.strip()}
+    return [SemanticIssue(
+        severity="error", code="h3_bible_identity_missing", path="speakers",
+        message=(f"Character Bible 人物 {bible.name or bible.character_id} "
+                 "未绑定到任何 H3 speaker.character_id"),
+        reason="跨镜头人物身份必须使用 Character Bible 的稳定 ID",
+        evidence=[bible.character_id], repairable=True)
+        for bible in bibles if bible.character_id not in bound_ids]
+
+
+def _storyboard_character_ids(storyboard: Storyboard) -> set[str]:
+    ids = set(storyboard.characters)
+    for scene in storyboard.scenes:
+        ids.update(scene.characters)
+        for shot in scene.shots:
+            ids.update(shot.characters)
+    return {value for value in ids if value}
+
+
+def _h3_repair_paths(changeset: ChangeSet, semantic_issues: list[SemanticIssue],
+                     report: Any) -> list[str]:
+    paths = [change.path for change in changeset.all_changes()]
+    paths.extend(issue.path for issue in semantic_issues if issue.path)
+    code_roots = {
+        "soundscape": ["soundscape", "explicit_silence"],
+        "music": ["non_diegetic_music"],
+        "duration": ["duration_seconds"],
+        "summary": ["summary"],
+    }
+    for issue in report.issues:
+        if issue.location:
+            paths.append(issue.location)
+        for token, roots in code_roots.items():
+            if token in issue.code:
+                paths.extend(roots)
+    return list(dict.fromkeys(paths))
+
+
+def _h3_create_repair_paths(report: Any) -> list[str]:
+    paths = [issue.location for issue in report.issues if issue.location]
+    narrow_codes = {
+        "h3_soundscape_empty": ["soundscape", "explicit_silence"],
+        "h3_music": ["non_diegetic_music"],
+        "h3_summary_prefix": ["summary"],
+        "h3_summary_task_type": ["summary"],
+    }
+    for issue in report.issues:
+        paths.extend(narrow_codes.get(issue.code, []))
+    return list(dict.fromkeys(paths))
+
+
+def _h3_create_needs_critic(plan: H3PromptPlan) -> bool:
+    return (len(plan.shots) > 1 or len(plan.speakers) > 1
+            or bool(plan.subjects or plan.assets or plan.retention)
+            or any(shot.camera or shot.dialogues or shot.references
+                   for shot in plan.shots))
+
+
+def _h3_create_changeset(plan: H3PromptPlan) -> ChangeSet:
+    return ChangeSet(
+        base_revision=0, plan_type="minimax_h3",
+        change_category="broad_rewrite", intent_scope=["shots"],
+        requested_changes=[SemanticChange(
+            path="shots", operation="set",
+            value=[shot.to_json() for shot in plan.shots],
+            reason="初次创建的完整多镜头/多主体计划需要高风险语义审查")],
+        approved_requested_paths=["shots"], summary="审查初次 H3 计划")
+
+
+def _h3_r2v_language_issues(plan: H3PromptPlan,
+                            rendered: str) -> list[SemanticIssue]:
+    if not r2v_english_issue(rendered):
+        return []
+    import re
+
+    cjk = re.compile(r"[\u3400-\u9fff]")
+    values: list[tuple[str, str]] = [
+        ("style_opening", plan.style_opening), ("summary", plan.summary),
+        ("soundscape", plan.soundscape),
+        ("non_diegetic_music", plan.non_diegetic_music),
+    ]
+    for index, shot in enumerate(plan.shots):
+        values.extend([
+            (f"shots/{index}/description", " ".join(shot.description)),
+            (f"shots/{index}/camera", shot.camera),
+            (f"shots/{index}/audio_notes", shot.audio_notes),
+        ])
+    paths = [path for path, value in values if cjk.search(value or "")]
+    if not paths:
+        paths = ["summary"]
+    return [SemanticIssue(
+        severity="error", code="h3_r2v_english", path=path,
+        message="Ref2VA 语义描述必须使用英文（对白/歌词/画面文字除外）",
+        reason="MiniMax H3 Ref2VA 官方提示词语言契约", repairable=True)
+        for path in paths]
 
 
 def _msg(content: str) -> Any:

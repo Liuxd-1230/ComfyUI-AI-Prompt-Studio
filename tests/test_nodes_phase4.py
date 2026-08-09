@@ -5,7 +5,7 @@ import pytest
 
 import aps.nodes.prompt_composer as pc_mod
 import aps.nodes.storyboard_builder as sb_mod
-from aps.schemas.character import CharacterBible
+from aps.schemas.character import CharacterBible, CharacterTrait
 from aps.schemas.prompt_plan import PromptPlan
 from aps.schemas.results import LLMResult
 from aps.schemas.storyboard import Storyboard
@@ -98,6 +98,43 @@ def test_composer_anima_generate_deterministic(store):
 
     prof = PP.GenerationProfile.from_json(profile_json)
     assert prof.steps == 40 and prof.cfg == 5.0
+
+
+def test_composer_create_nonrepairable_semantic_error_skips_repair_and_commit(
+        monkeypatch, store):
+    payload = setup_profile(store)
+    issue = pc_mod.SemanticIssue(
+        severity="error", code="anima_identity_unprovable",
+        path="content/characters/0/character_id",
+        message="identity cannot be inferred", reason="missing stable source identity",
+        repairable=False)
+    monkeypatch.setattr(
+        pc_mod, "_character_bible_semantic_issues",
+        lambda content, bibles: [issue])
+    repair_calls: list[int] = []
+    commit_calls: list[int] = []
+
+    def request_spy(*args, **kwargs):
+        repair_calls.append(1)
+        raise AssertionError("non-repairable CREATE must not request a repair")
+
+    original_commit = pc_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(pc_mod.APS_PromptComposer,
+                        "_request_session_changeset", request_spy)
+    monkeypatch.setattr(pc_mod.PromptSession, "commit", commit_spy)
+    with pytest.raises(ValueError, match="不可自动修复") as exc_info:
+        pc_mod.APS_PromptComposer().compose(
+            AI_PROFILE=payload, text="1girl, red dress", target="anima_base",
+            operation="generate", prompt_mode="tags", negative="",
+            safety_tag="none")
+    assert "identity cannot be inferred" in str(exc_info.value)
+    assert repair_calls == []
+    assert commit_calls == []
 
 
 def test_composer_persistent_create_then_minimal_refine(monkeypatch, store):
@@ -272,6 +309,150 @@ def test_composer_unresolved_positive_negative_impact_never_commits(monkeypatch,
             target="anima_base", operation="generate", prompt_mode="tags",
             negative="hat", safety_tag="none", prompt_session=stable_json)
     assert commit_calls == []
+
+
+def test_composer_high_risk_critic_error_prevents_commit(monkeypatch, store):
+    payload = setup_profile(store)
+    node = pc_mod.APS_PromptComposer()
+    created = node.compose(
+        AI_PROFILE=payload, text="Alice in a red coat waits at a station",
+        target="anima_base", operation="generate", prompt_mode="tags",
+        negative="", safety_tag="none")
+    stable_json = created["ui"]["prompt_session"][0]
+    proposal = {
+        "base_revision": 1, "plan_type": "anima",
+        "change_category": "minimal_refine",
+        "intent_scope": ["content/scene_description"],
+        "requested_changes": [{"path": "content/scene_description",
+            "operation": "set", "value_json": "\"Bob leaves the station\"",
+            "reason": "user request"}],
+        "dependent_changes": [], "invalidated_facts": [],
+        "constraint_conflicts": [], "summary": "change scene action"}
+
+    class CriticGateway:
+        def generate(self, profile, api_key, req):
+            properties = (req.output_schema or {}).get("properties", {})
+            if "approved_requested_paths" in properties:
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": ["content/scene_description"],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
+            if "issues" in properties:
+                return LLMResult(text=json.dumps({"issues": [{
+                    "severity": "error", "code": "image_identity_drift",
+                    "path": "content/scene_description",
+                    "message": "Alice was replaced by Bob",
+                    "reason": "the user requested only an action change",
+                    "evidence": ["Alice", "Bob"], "repairable": False}]}))
+            return LLMResult(text=json.dumps(proposal))
+
+    commit_calls = []
+    original_commit = pc_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(pc_mod.PromptSession, "commit", commit_spy)
+    monkeypatch.setattr(pc_mod, "Gateway", CriticGateway)
+    with pytest.raises(ValueError, match="Alice was replaced by Bob"):
+        node.compose(
+            AI_PROFILE=payload, text="只改动作，不要换人", target="anima_base",
+            operation="generate", prompt_mode="tags", negative="",
+            safety_tag="none", prompt_session=stable_json)
+    assert commit_calls == []
+
+
+def test_composer_persists_character_bible_identity_and_locked_trait_paths(store):
+    payload = setup_profile(store)
+    bible = CharacterBible(
+        character_id="alice", name="Alice",
+        traits=[CharacterTrait(name="eye_color", value="blue eyes",
+                               category="stable", locked=True)])
+    created = pc_mod.APS_PromptComposer().compose(
+        AI_PROFILE=payload, text="Alice at a cafe", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="",
+        safety_tag="none", character_bible=bible.to_json())
+    session = json.loads(created["ui"]["prompt_session"][0])
+    locks = session["locked_constraints"]
+    assert any('"kind": "character_identity"' in value for value in locks)
+    assert any('"kind": "character_trait"' in value and "blue eyes" in value
+               for value in locks)
+
+
+def test_composer_create_rejects_llm_that_drops_character_bible(monkeypatch, store):
+    payload = setup_profile(store)
+    bible = CharacterBible(
+        character_id="alice", name="Alice",
+        traits=[CharacterTrait(name="eye_color", value="blue eyes",
+                               category="stable", locked=True)])
+    wrong_plan = {
+        "normal_form_version": "2.0", "scene_description": "A station platform",
+        "characters": [{"character_id": "bob", "name": "Bob",
+                        "required_traits": ["brown eyes"], "variable_traits": [],
+                        "action": "waiting", "position": "", "creative_notes": []}],
+    }
+    monkeypatch.setattr(pc_mod, "Gateway",
+                        lambda: FakeGateway(json.dumps(wrong_plan)))
+    commit_calls = []
+    original_commit = pc_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(pc_mod.PromptSession, "commit", commit_spy)
+    with pytest.raises(ValueError, match="Character Bible 人物 Alice 未进入正式 Plan"):
+        pc_mod.APS_PromptComposer().compose(
+            AI_PROFILE=payload, text="Alice waits at a station", target="anima_base",
+            operation="generate", prompt_mode="natural_language", negative="",
+            safety_tag="none", character_bible=bible.to_json())
+    assert commit_calls == []
+
+
+def test_value_addressed_trait_lock_survives_earlier_list_delete(monkeypatch, store):
+    payload = setup_profile(store)
+    bible = CharacterBible(character_id="alice", name="Alice", traits=[
+        CharacterTrait(name="scarf", value="red scarf", category="stable"),
+        CharacterTrait(name="eyes", value="blue eyes", category="stable", locked=True),
+    ])
+    created = pc_mod.APS_PromptComposer().compose(
+        AI_PROFILE=payload, text="Alice at a cafe", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="", safety_tag="none",
+        character_bible=bible.to_json())
+
+    class DeleteUnlockedGateway:
+        def generate(self, profile, api_key, req):
+            properties = (req.output_schema or {}).get("properties", {})
+            if "approved_requested_paths" in properties:
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": [
+                        "content/characters/0/required_traits/0"],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
+            if "issues" in properties:
+                return LLMResult(text='{"issues":[]}')
+            return LLMResult(text=json.dumps({
+                "base_revision": 1, "plan_type": "anima",
+                "change_category": "minimal_refine",
+                "intent_scope": ["content/characters/0/required_traits/0"],
+                "requested_changes": [{
+                    "path": "content/characters/0/required_traits/0",
+                    "operation": "delete", "value_json": "null",
+                    "reason": "remove unlocked scarf"}],
+                "dependent_changes": [], "invalidated_facts": [],
+                "constraint_conflicts": [], "summary": "remove scarf"}))
+
+    monkeypatch.setattr(pc_mod, "Gateway", DeleteUnlockedGateway)
+    refined = pc_mod.APS_PromptComposer().compose(
+        AI_PROFILE=payload, text="去掉围巾，眼睛保持不变", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="", safety_tag="none",
+        prompt_session=created["ui"]["prompt_session"][0])
+    session = json.loads(refined["ui"]["prompt_session"][0])
+    traits = session["current_plan"]["model_plan"]["content"]["characters"][0][
+        "required_traits"]
+    assert traits == ["blue eyes"]
+    assert any("blue eyes" in value for value in session["locked_constraints"])
 
 
 def test_composer_rejects_ambiguous_v1_session_before_gateway(monkeypatch, store):
