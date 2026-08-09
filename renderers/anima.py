@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..schemas.character import CharacterBible
+from ..schemas.anima import AnimaCharacter, AnimaPromptPlan
 from ..schemas.prompt_plan import GenerationProfile
 
 # ---------------------------------------------------------------- 官方档案
@@ -54,47 +55,6 @@ PROFILE_SETTINGS = {
 }
 
 PROMPT_MODES = ["natural_language", "tags", "hybrid"]
-
-
-# ---------------------------------------------------------------- 结构化 Plan
-
-@dataclass
-class AnimaCharacter:
-    """一个人物绑定：身份特征（稳定/锁定）与可变特征分离，禁止属性串位。"""
-
-    character_id: str = ""
-    name: str = ""
-    required_traits: List[str] = field(default_factory=list)   # 锁定/稳定身份
-    variable_traits: List[str] = field(default_factory=list)   # 可变（服装/表情/姿态）
-    action: str = ""
-    position: str = ""               # left / right / center ...
-    description: str = ""            # LLM 生成的完整主体描述（优先使用）
-
-
-@dataclass
-class AnimaPromptPlan:
-    """ANIMA 中间计划：内容决策（LLM 或输入派生）与最终格式分离。
-
-    natural_body / characters / environment / style / composition / lighting
-    供 Natural 与 Hybrid 渲染；control/character/series/artist/visual 标签
-    供 Tags 与 Hybrid 渲染（Hybrid 只用 control 级别的少量元数据标签）。
-    """
-
-    natural_body: str = ""
-    characters: List[AnimaCharacter] = field(default_factory=list)
-    control_tags: List[str] = field(default_factory=list)      # quality/safety/meta/count
-    character_tags: List[str] = field(default_factory=list)
-    series_tags: List[str] = field(default_factory=list)
-    artist_tags: List[str] = field(default_factory=list)       # @artist
-    visual_tags: List[str] = field(default_factory=list)
-    style: List[str] = field(default_factory=list)
-    environment: List[str] = field(default_factory=list)
-    composition: str = ""
-    lighting: str = ""
-    negative_constraints: List[str] = field(default_factory=list)
-
-    def to_json(self) -> dict:
-        return json.loads(json.dumps(self, default=lambda o: o.__dict__))
 
 
 @dataclass

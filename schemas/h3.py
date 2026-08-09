@@ -157,3 +157,25 @@ class H3PromptPlan(Schema):
 
     def to_payload(self) -> dict:
         return self.to_json()
+
+    def to_llm_context(self) -> dict[str, Any]:
+        """Return only semantic facts needed for planning or refinement.
+
+        Raw provider output, validation artifacts, warnings, timestamps, and
+        generated identifiers are execution metadata and deliberately excluded.
+        """
+        data = self.to_json()
+        for key in ("schema_version", "plan_id", "raw", "warnings",
+                    "validation", "created_at"):
+            data.pop(key, None)
+        return _drop_empty(data)
+
+
+def _drop_empty(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: cleaned for key, item in value.items()
+                if (cleaned := _drop_empty(item)) not in (None, "", [], {})}
+    if isinstance(value, list):
+        return [cleaned for item in value
+                if (cleaned := _drop_empty(item)) not in (None, "", [], {})]
+    return value
