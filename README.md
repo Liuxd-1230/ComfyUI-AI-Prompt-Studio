@@ -13,6 +13,7 @@
 - **Reference Analyzer**：文本锚点 / 图片特征反推，多图共识与冲突，人物来源证据，输出参考资产清单。
 - **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID。
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
+- **Persistent Prompt Studio**：Composer 与 H3 保存结构化 Current Plan；第一次自动 CREATE，之后把看图/视频后的反馈作为 REFINE patch，支持 Current Prompt、最近 5 版、回退和新会话。
 - **Model Prompt Composer**：ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 专用提示词；旧 Generic/SDXL/FLUX 仅保留工作流兼容。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
 - **MiniMax H3 Prompt Director**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（另保留旧 R2V 别名），支持图片、视频和音频参考；LLM 产出结构化计划 + Python 确定性渲染 + 规则校验 + 修复循环。
@@ -41,7 +42,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 2. 新建档案，选择 provider、API 根地址和模型，保存后填写 API Key（只保存在本机 `user/ai_prompt_studio/secrets.json`）。先点“测试连接”，再点“重新探测”。
 3. “重新探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。
 4. 在节点图中放置 **AI Model Profile**，直接从“档案名称 [ID]”和该档案的模型目录下拉选择。
-5. 放置 **MiniMax H3 Prompt Director**（或 **Model Prompt Composer**），把 `AI_PROFILE` 连上，填剧情文本，运行。
+5. 放置 **MiniMax H3 Prompt Director**（或 **Model Prompt Composer**），连接 `AI_PROFILE`，填第一次需求并运行；看到真实结果后，在同一节点填本轮修改意见再运行，系统会只修改 Current Plan 的必要部分。
 6. H3：把 `prompt`（STRING）接到 H3 生成节点；图像模型：把 `positive` / `negative` 接到采样链路。
 
 示例工作流见 [`examples/`](examples/)：
@@ -63,9 +64,9 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 | **Character Bible** | 合并人物特征、锁定、冲突报告 | `CHARACTER_CANDIDATE`、`existing_bible` | `CHARACTER_BIBLE`、人物提示片段 |
 | **Storyboard Builder** | 剧情 → 结构化分镜（LLM） | `AI_PROFILE`、story_text | `STORYBOARD` |
 | **Storyboard Select / Batch** | 场景/镜头/区间/全部选择（不调模型） | `STORYBOARD` | 单项、容器及真实 ComfyUI `STORY_ITEMS` 列表输出 |
-| **Model Prompt Composer** | 文本/分镜/人物 → 目标模型提示词 | `AI_PROFILE`、text、target、operation | positive、negative、`PROMPT_PLAN`、`GENERATION_PROFILE` |
+| **Model Prompt Composer** | 持久图像 Plan：自动 CREATE/REFINE、回退 | `AI_PROFILE`、text、target、session | positive、negative、`PROMPT_PLAN`、validation |
 | **图片引用提示词（输入 @）** | 图片连接 → 模型引用语法与资产清单 | prompt、target、image_1～3 | prompt、`REFERENCE_MANIFEST`、references、count |
-| **MiniMax H3 Prompt Director** | H3 多模式提示词生成/改写/转换/审计/修复 | `AI_PROFILE`、text、mode、图片/视频/音频 | prompt(STRING)、`H3_PROMPT_PLAN`、validation |
+| **MiniMax H3 Prompt Director** | 持久 H3 Plan：逐镜头最小修改、回退 | `AI_PROFILE`、text、mode、session、媒体 | prompt(STRING)、`H3_PROMPT_PLAN`、validation |
 | **Local Runtime Control** | 本地模型加载/卸载/状态 | `AI_PROFILE`、action、backend | profile、status、loaded、op |
 | **Unload LM Studio Model** | LLM 后卸载 LM Studio，并把提示词透传给后续生成 | prompt、model、url | prompt、result(JSON)、status(文本) |
 

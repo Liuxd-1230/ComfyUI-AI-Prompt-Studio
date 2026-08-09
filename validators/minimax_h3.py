@@ -87,8 +87,11 @@ def validate_h3(prompt: str, mode: str = "T2VA", *, duration: float | None = Non
     if manifest is not None and mode in {"R2V", "Ref2VA"}:
         _check_reference_limits(report, manifest)
     _check_unresolved_references(report, prompt)
-    if plan is not None:
+    # T2VA is text-only. A manifest may still travel through a larger workflow,
+    # but its assets are not mandatory references for this generation mode.
+    if plan is not None and mode != "T2VA":
         _check_plan_references(report, plan)
+    if plan is not None:
         _check_plan_speakers(report, plan)
     return report
 

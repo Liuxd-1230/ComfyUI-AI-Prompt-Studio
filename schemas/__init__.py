@@ -48,6 +48,7 @@ from .prompt_plan import (
     ValidationReport,
     empty_validation,
 )
+from .prompt_session import PromptRevision, PromptSession
 from .references import (
     ANALYSIS_MODES,
     ASSET_TYPES,
@@ -88,6 +89,7 @@ from .types import (
     H3_PROMPT_PLAN,
     LLM_RESULT,
     PROMPT_PLAN,
+    PROMPT_SESSION,
     REFERENCE_ANALYSIS,
     REFERENCE_MANIFEST,
     STORYBOARD,
@@ -101,7 +103,7 @@ __all__ = [
     # types
     "AI_PROFILE", "LLM_RESULT", "CHAT_SESSION", "REFERENCE_ANALYSIS",
     "CHARACTER_CANDIDATE", "REFERENCE_MANIFEST", "CHARACTER_BIBLE",
-    "STORYBOARD", "STORY_ITEM", "STORY_ITEM_LIST", "PROMPT_PLAN",
+    "STORYBOARD", "STORY_ITEM", "STORY_ITEM_LIST", "PROMPT_PLAN", "PROMPT_SESSION",
     "GENERATION_PROFILE", "H3_PROMPT_PLAN", "schema_class_for",
     # profile
     "AIProfile", "DEFAULT_BASE_URL", "DEFAULT_MODEL",
@@ -121,6 +123,7 @@ __all__ = [
     # prompt_plan
     "PromptPlan", "GenerationProfile", "ValidationReport", "ValidationIssue",
     "empty_validation", "TARGET_FAMILIES", "ANIMA_VARIANTS", "PROMPT_MODES", "COMPOSER_OPERATIONS",
+    "PromptSession", "PromptRevision",
     # h3
     "H3PromptPlan", "H3Shot", "H3Speaker", "H3Subject", "H3Asset",
     "H3Dialogue", "H3Retention", "H3AudioField",

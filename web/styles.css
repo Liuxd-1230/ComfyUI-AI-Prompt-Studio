@@ -318,3 +318,40 @@
     grid-column: auto;
   }
 }
+.aps-prompt-studio {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  color: var(--fg-color, #ddd);
+  background: rgba(15, 18, 24, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  font: 12px/1.45 system-ui, sans-serif;
+}
+.aps-prompt-studio header,
+.aps-studio-actions { display: flex; justify-content: space-between; gap: 8px; }
+.aps-studio-revision { color: #8fc7ff; }
+.aps-studio-chat {
+  min-height: 84px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 7px;
+  background: rgba(0, 0, 0, 0.24);
+  border-radius: 6px;
+}
+.aps-studio-message { margin: 0 0 6px; white-space: pre-wrap; }
+.aps-studio-message.is-user { color: #b8dcff; }
+.aps-studio-message.is-ai { color: #bff0ca; }
+.aps-studio-summary { min-height: 18px; color: #f2d58a; white-space: pre-wrap; }
+.aps-studio-input,
+.aps-studio-preview {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.28);
+}
+.aps-studio-input { min-height: 76px; }
+.aps-studio-summary.is-error { color: #ff9b9b; }
+.aps-studio-actions button { flex: 1; cursor: pointer; }

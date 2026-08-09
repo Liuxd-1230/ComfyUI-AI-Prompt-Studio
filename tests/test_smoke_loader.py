@@ -68,6 +68,7 @@ def test_node_registration_path_replicated(loaded):
     assert os.path.isdir(web_dir)
     assert os.path.isfile(os.path.join(web_dir, "settings.js"))
     assert os.path.isfile(os.path.join(web_dir, "profile_widgets.js"))
+    assert os.path.isfile(os.path.join(web_dir, "prompt_studio.js"))
     assert os.path.isfile(os.path.join(web_dir, "styles.css"))
 
 
@@ -104,3 +105,27 @@ def test_settings_editor_exposes_saved_key_state():
     assert "aps-key-status" in source
     helper = (PROJECT_ROOT / "web" / "profile_widgets.js").read_text(encoding="utf-8")
     assert 'typeof v === "boolean" && k in node' in helper
+
+
+def test_prompt_studio_frontend_persists_backend_session_in_widget():
+    source = (PROJECT_ROOT / "web" / "prompt_studio.js").read_text(encoding="utf-8")
+    assert 'byName(node, "prompt_session")' in source
+    assert "onExecuted" in source
+    assert "message.prompt_session" in source
+    assert "current_prompt" in source
+    assert "aps-studio-input" in source
+    assert 'setWidget(node, "text", chatInput.value)' in source
+    assert 'addEventListener("execution_error"' in source
+    assert 'classList.remove("is-error")' in source
+    assert "继续上次方案" in source
+    assert "新会话" in source and "回退上一版" in source
+
+
+def test_session_widgets_are_appended_after_legacy_serialized_widgets(loaded):
+    """旧 workflow 的 widget_values 是位置数组；新字段只能追加，不能插队。"""
+    module, _, _ = loaded
+    composer = list(module.NODE_CLASS_MAPPINGS["APS_PromptComposer"].INPUT_TYPES()["optional"])
+    assert composer.index("content_tier") < composer.index("continue_previous")
+    assert composer[-3:] == ["continue_previous", "prompt_session", "session_action"]
+    h3 = list(module.NODE_CLASS_MAPPINGS["APS_MiniMaxH3Director"].INPUT_TYPES()["optional"])
+    assert h3[-3:] == ["continue_previous", "prompt_session", "session_action"]

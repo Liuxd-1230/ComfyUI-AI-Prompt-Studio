@@ -50,6 +50,9 @@ _Avoid_: 剧本拆分
 Composer 面向目标图像模型（ANIMA/Generic/SDXL/FLUX/自定义 Skill）生成的中间计划：正负提示词、目标模型、模式、校验结果。
 _Avoid_: 成稿
 
+**Prompt Session（提示词会话）**：
+Prompt Studio 的持久领域状态：Current Plan、Current Prompt、revision、最近版本、锁定约束、validation 与简短会话。由后端产生并写回 workflow widget；不依赖 Python 节点实例，也不靠重放聊天记录推断当前状态。
+
 **Generation Profile（生成档案）**：
 目标图像模型的采样参数建议（步数、CFG、调度器等），随 Prompt Plan 输出，供后续采样节点使用。
 

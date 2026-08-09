@@ -59,13 +59,18 @@ R2V_PLAN_JSON = {
                   "definition": "the girl from <Picture 1>"}],
     "assets": [{"label": "Picture 1", "kind": "picture", "source": "1",
                 "alignment_time": 0.0}],
-    "retention": [{"label": "Subject 1", "marker": "fully_preserved",
-                   "notes": "retained as-is", "shot_refs": ["Shot 1"]}],
+    "retention": [
+        {"label": "Subject 1", "marker": "fully_preserved",
+         "notes": "retained as-is", "shot_refs": ["Shot 1"]},
+        {"label": "Picture 1", "marker": "fully_preserved",
+         "notes": "identity source", "shot_refs": ["Shot 1"]},
+    ],
     "soundscape": "The cafe hums softly.",
     "non_diegetic_music": "N/A",
     "shots": [{"index": 1, "start_time": None,
                "description": ["The girl walks in."], "camera": "",
-               "characters": [], "dialogues": []}],
+               "characters": [], "references": ["Subject 1", "Picture 1"],
+               "dialogues": []}],
 }
 
 
@@ -104,10 +109,38 @@ def test_generate_t2va_full_chain(monkeypatch, store):
     assert manifest_json["assets"] == [] and manifest_json["subjects"] == []
 
 
+def test_h3_persistent_refine_changes_shot2_without_touching_shot1(monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
+    node = h3_mod.APS_MiniMaxH3Director()
+    created = node.direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA", duration=10.0))
+    session_json = created["ui"]["prompt_session"][0]
+    shot1_before = json.loads(session_json)["current_plan"]["h3_plan"]["shots"][0]
+
+    patch = {"base_revision": 1, "scope": "minimal", "changes": [{
+        "path": "h3_plan/shots/1/camera", "action": "replace",
+        "value": "The camera remains static."}],
+        "summary": "已将 Shot 2 攓为固定机位；Shot 1 与声音保持不变。"}
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(patch)))
+    refined = node.direct(**node_payload(
+        AI_PROFILE=payload, text="第二镜头改成固定机位，第一镜头不要动",
+        mode="T2VA", duration=10.0, prompt_session=session_json))
+    session_v2 = json.loads(refined["ui"]["prompt_session"][0])
+    assert session_v2["revision"] == 2
+    assert session_v2["current_plan"]["h3_plan"]["shots"][0] == shot1_before
+    assert "The camera remains static." in session_v2["current_prompt"]
+
+
 def test_generate_i2va_with_image_adds_instruction(monkeypatch, store):
     payload = setup_profile(store)
+    i2va_plan = json.loads(json.dumps(PLAN_JSON))
+    i2va_plan["retention"] = [{
+        "label": "Picture 1", "marker": "fully_preserved",
+        "notes": "first frame", "shot_refs": ["Shot 1"]}]
+    i2va_plan["shots"][0]["references"] = ["Picture 1"]
     monkeypatch.setattr(h3_mod, "Gateway",
-                        lambda: FakeGateway(json.dumps(PLAN_JSON)))
+                        lambda: FakeGateway(json.dumps(i2va_plan)))
     node = h3_mod.APS_MiniMaxH3Director()
     prompt, plan_json, _, validation, _ = node.direct(
         **node_payload(AI_PROFILE=payload, text="少女走进咖啡店", mode="I2VA",
@@ -234,20 +267,29 @@ def test_convert_storyboard_fallback_on_bad_llm(monkeypatch, store):
     assert "回退" in warnings
 
 
-def test_generate_plain_text_model_output_recovers_without_crashing(monkeypatch, store):
-    """第三方 Responses 端点可能接受 schema 却返回普通文本；节点必须降级。"""
+def test_generate_plain_text_model_output_does_not_commit_session(monkeypatch, store):
+    """协议要求 JSON 时普通文本不能伪装成稳定 revision。"""
     payload = setup_profile(store)
     monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(
         "A girl enters an old cafe on a rainy night and sits by the window."))
     node = h3_mod.APS_MiniMaxH3Director()
-    prompt, plan_json, _, validation, warnings = node.direct(
-        **node_payload(AI_PROFILE=payload, text="女孩雨夜走进咖啡馆", mode="T2VA",
-                       operation="generate", duration=10.0, auto_repair=False))
-    plan = H3PromptPlan.from_json(plan_json)
-    assert plan.shots
-    assert "integrated_multimodal_description" in prompt
-    assert "JSON" in warnings and "回退" in warnings
-    assert "h3_empty" not in validation
+    with pytest.raises(ValueError, match="结构化 Plan"):
+        node.direct(**node_payload(
+            AI_PROFILE=payload, text="女孩雨夜走进咖啡馆", mode="T2VA",
+            operation="generate", duration=10.0, auto_repair=False))
+
+
+def test_generate_with_storyboard_bad_json_does_not_commit(monkeypatch, store):
+    payload = setup_profile(store)
+    sb = Storyboard(title="t", scenes=[Scene(
+        title="s1", shots=[Shot(summary="walk in")])])
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway("不是 JSON"))
+    node = h3_mod.APS_MiniMaxH3Director()
+    with pytest.raises(ValueError, match="结构化 Plan"):
+        node.direct(**node_payload(
+            AI_PROFILE=payload, text="增强这个分镜", mode="T2VA",
+            operation="generate", duration=10.0, storyboard=sb.to_json(),
+            auto_repair=False))
 
 
 def test_no_profile():
@@ -308,20 +350,20 @@ def test_r2v_english_marks_error_when_repair_fails(monkeypatch, store):
     monkeypatch.setattr(h3_mod, "Gateway",
                         lambda: ScriptedGateway([json.dumps(CHINESE_R2V_PLAN)]))
     node = h3_mod.APS_MiniMaxH3Director()
-    _, _, _, validation, _ = node.direct(
-        **node_payload(AI_PROFILE=payload, text="少女走进咖啡馆", mode="R2V",
-                       operation="generate", duration=10.0))
-    assert "h3_r2v_english" in validation
+    with pytest.raises(ValueError, match="h3_r2v_english"):
+        node.direct(**node_payload(
+            AI_PROFILE=payload, text="少女走进咖啡馆", mode="R2V",
+            operation="generate", duration=10.0))
 
 
 def test_auto_repair_off_keeps_error(monkeypatch, store):
     payload = setup_profile(store)
     monkeypatch.setattr(h3_mod, "Gateway", lambda: ScriptedGateway([json.dumps(CHINESE_R2V_PLAN)]))
     node = h3_mod.APS_MiniMaxH3Director()
-    _, _, _, validation, _ = node.direct(
-        **node_payload(AI_PROFILE=payload, text="少女走进咖啡馆", mode="R2V",
-                       operation="generate", duration=10.0, auto_repair=False))
-    assert "h3_r2v_english" in validation
+    with pytest.raises(ValueError, match="h3_r2v_english"):
+        node.direct(**node_payload(
+            AI_PROFILE=payload, text="少女走进咖啡馆", mode="R2V",
+            operation="generate", duration=10.0, auto_repair=False))
 
 
 def test_mode_asset_error_i2va_without_image(monkeypatch, store):
@@ -329,10 +371,10 @@ def test_mode_asset_error_i2va_without_image(monkeypatch, store):
     monkeypatch.setattr(h3_mod, "Gateway",
                         lambda: ScriptedGateway([json.dumps(PLAN_JSON)]))
     node = h3_mod.APS_MiniMaxH3Director()
-    _, _, _, validation, _ = node.direct(
-        **node_payload(AI_PROFILE=payload, text="少女走进咖啡馆", mode="I2VA",
-                       operation="generate", duration=10.0))
-    assert "h3_asset_mode" in validation     # I2VA 需要 1 张参考图
+    with pytest.raises(ValueError, match="h3_asset_mode"):
+        node.direct(**node_payload(
+            AI_PROFILE=payload, text="少女走进咖啡馆", mode="I2VA",
+            operation="generate", duration=10.0))
 
 
 def test_character_book_speakers_flow(monkeypatch, store):
@@ -380,7 +422,7 @@ def test_plan_prompt_includes_book_role_table(monkeypatch, store):
                         lambda: FakeGateway(json.dumps(PLAN_JSON)))
     node = h3_mod.APS_MiniMaxH3Director()
     node.direct(**node_payload(AI_PROFILE=payload, text="分镜文本", mode="T2VA",
-                               operation="convert_storyboard", duration=5.0,
+                               operation="convert_storyboard", duration=10.0,
                                storyboard=sb.to_json(),
                                character_book=book.to_json()))
     sent = FakeGateway.last_req.messages[0].content

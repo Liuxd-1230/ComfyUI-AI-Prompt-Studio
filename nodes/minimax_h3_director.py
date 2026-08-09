@@ -14,6 +14,7 @@ from ..schemas import types
 from ..schemas.character import CharacterBible, CharacterBook
 from ..schemas.h3 import H3_MODES, H3_OPERATIONS, H3PromptPlan
 from ..schemas.profile import AIProfile
+from ..schemas.prompt_session import PromptSession
 from ..schemas.references import AssetRef, ReferenceManifest
 from ..schemas.storyboard import Scene, Shot, Storyboard
 from ..renderers.minimax_h3 import render_h3
@@ -28,6 +29,13 @@ from ..services.h3_plan import (
     sync_manifest_assets,
     h3_system_prompt,
 )
+from ..services.prompt_session import (
+    CREATE_POLICY,
+    apply_plan_patch,
+    node_execution_result,
+    patch_change_summary,
+    request_plan_patch,
+)
 from ..validators.minimax_h3 import r2v_english_issue, validate_h3
 from ._helpers import require_api_key, resolve_profile_input, try_api_key
 
@@ -37,7 +45,7 @@ MODE_IMAGE_REQUIREMENTS = {"T2VA": 0, "I2VA": 1, "FL2VA": 2, "L2VA": 1}
 
 class APS_MiniMaxH3Director:
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(cls) -> dict[str, Any]:
         return {"required": {
             "AI_PROFILE": (types.AI_PROFILE,),
             "text": ("STRING", {"default": "", "multiline": True,
@@ -62,6 +70,12 @@ class APS_MiniMaxH3Director:
             "audio_1": ("AUDIO", {"tooltip": "Ref2VA 音频参考 1（不能作为唯一参考）"}),
             "audio_2": ("AUDIO", {"tooltip": "Ref2VA 音频参考 2"}),
             "audio_3": ("AUDIO", {"tooltip": "Ref2VA 音频参考 3"}),
+            "continue_previous": ("BOOLEAN", {"default": True,
+                                                "tooltip": "开启：基于已保存 H3 Plan 做最小修改；关闭：从当前输入建立新会话"}),
+            "prompt_session": ("STRING", {"default": "", "multiline": True,
+                                            "tooltip": "工作流持久化状态（由导演工作台自动维护，请勿手改）"}),
+            "session_action": (["continue", "previous", "new"], {"default": "continue",
+                                  "tooltip": "会话动作（通常使用节点上的回退/新会话按钮）"}),
         }}
 
     RETURN_TYPES = ("STRING", types.H3_PROMPT_PLAN, types.REFERENCE_MANIFEST, "STRING", "STRING")
@@ -70,10 +84,14 @@ class APS_MiniMaxH3Director:
     CATEGORY = "AI Prompt Studio"
     DESCRIPTION = "按官方手册生成/改写/转换/审计/修复 MiniMax H3 提示词（输出 STRING 直连核心 H3 节点）。"
 
-    def direct(self, AI_PROFILE, text, mode, operation, duration, auto_repair=True,
-               storyboard=None, character_bible=None, character_book=None,
-               reference_manifest=None, images=None, video_1=None, video_2=None,
-               video_3=None, audio_1=None, audio_2=None, audio_3=None):
+    def direct(self, AI_PROFILE: Any, text: str, mode: str, operation: str,
+               duration: float, auto_repair: bool = True, storyboard: Any = None,
+               character_bible: Any = None, character_book: Any = None,
+               reference_manifest: Any = None, images: Any = None,
+               video_1: Any = None, video_2: Any = None, video_3: Any = None,
+               audio_1: Any = None, audio_2: Any = None, audio_3: Any = None,
+               continue_previous: bool = True, prompt_session: str = "",
+               session_action: str = "continue") -> Any:
         mode = _normalize_mode(mode)
         if not 4.0 <= float(duration) <= 15.0:
             raise ValueError("MiniMax H3 目标时长必须在 4–15 秒之间")
@@ -93,6 +111,24 @@ class APS_MiniMaxH3Director:
         sb = Storyboard.from_json(storyboard) if storyboard else None
         img_count = _count_images(images)
         _register_image_inputs(manifest, img_count)
+
+        persistent_lifecycle = operation in ("", "generate", "rewrite", "convert_storyboard")
+        session = PromptSession.from_json(prompt_session) if prompt_session else PromptSession()
+        if (not continue_previous or session_action == "new" or
+                (session.target_family and
+                 (session.target_family != "minimax_h3" or session.target_variant != mode))):
+            session = PromptSession(target_family="minimax_h3", target_variant=mode)
+        else:
+            session.target_family, session.target_variant = "minimax_h3", mode
+        if persistent_lifecycle and session_action == "previous":
+            if not session.revert_previous():
+                raise ValueError("当前 H3 会话没有可回退的上一版 revision")
+            return self._session_result(session, "已恢复上一版 H3 方案。")
+        if persistent_lifecycle and session.has_current_plan:
+            api_key = require_api_key(prof)
+            return self._refine_session(
+                prof, api_key, session, text or "", mode, duration, manifest,
+                img_count)
 
         # ------------------------------------------------------------ audit（完全离线，0.2.1）
         if operation == "audit":
@@ -136,7 +172,7 @@ class APS_MiniMaxH3Director:
                 storyboard=sb, bible=bible, book=book, manifest=manifest,
                 image_count=img_count, repair_issues=repair_issues)
             req = GenerateRequest(
-                system=h3_system_prompt(),
+                system=h3_system_prompt() + ("\n\n" + CREATE_POLICY if persistent_lifecycle else ""),
                 messages=[_msg(prompt)], web_search="off", reasoning="high",
                 max_tokens=8192, timeout=prof.timeout,
                 # 0.2.1 P1-17：Provider 支持原生 Structured Output → 协议层 schema；
@@ -157,6 +193,15 @@ class APS_MiniMaxH3Director:
             plan.warnings.append("无 API Key：已使用确定性分镜转换（有 API 时可获得更丰富的画面/声音描述）")
         if sb is not None and operation == "convert_storyboard":
             plan.storyboard_id = sb.story_id
+        parse_failed = any(
+            "模型没有返回合法 JSON" in warning or "计划解析失败" in warning
+            for warning in plan.warnings)
+        if persistent_lifecycle and parse_failed and operation != "convert_storyboard":
+            raise ValueError("H3 CREATE 模型没有返回合法结构化 Plan；会话与 revision 未改变")
+        # Legacy convert_storyboard keeps its documented deterministic fallback,
+        # but a protocol failure is not promoted to persistent session state.
+        if operation == "convert_storyboard" and parse_failed:
+            persistent_lifecycle = False
 
         # 模式资产约束（不满足则记 error，不生成错误引用）
         sync_manifest_assets(plan, manifest)
@@ -190,11 +235,23 @@ class APS_MiniMaxH3Director:
                        "R2V 语义段仍含大量非英语内容（修复后未通过；对白/歌词/画面文字除外）")
 
         plan.validation = report
-        return (rendered, plan.to_json(), manifest.to_json(),
-                report.as_text(), "\n".join(plan.warnings))
+        result_tuple = (rendered, plan.to_json(), manifest.to_json(),
+                        report.as_text(), "\n".join(plan.warnings))
+        if not persistent_lifecycle:
+            return result_tuple
+        if not report.valid:
+            raise ValueError("本轮 H3 CREATE 与一次自动修复均未通过；未写入会话：\n" +
+                             report.as_text())
+        bundle = {"h3_plan": plan.to_json(), "reference_manifest": manifest.to_json()}
+        summary = "已建立第一版 H3 方案。请先生成视频，再直接描述需要调整的镜头。"
+        session.commit(bundle, rendered, report, text or "", summary)
+        return node_execution_result(result_tuple, session.to_json_string(),
+                                     rendered, summary, session.revision)
 
     # ------------------------------------------------------------ 内部
-    def _parse_plan(self, raw, sb, mode, duration, manifest, book):
+    def _parse_plan(self, raw: str, sb: Storyboard | None, mode: str,
+                    duration: float, manifest: ReferenceManifest,
+                    book: CharacterBook | None) -> H3PromptPlan:
         try:
             plan = parse_plan_json(raw, mode, float(duration or 1.0))
             if not plan.shots and sb is not None:
@@ -207,10 +264,8 @@ class APS_MiniMaxH3Director:
                 plan = convert_storyboard(sb, mode, float(duration or 1.0), manifest, book)
                 plan.warnings.append(f"计划解析失败，已回退分镜转换：{exc}")
                 return plan
-            # 部分第三方 OpenAI/DeepSeek 代理会接受 json_schema 参数，却仍返回
-            # 普通文本。纯文本 generate 没有 Storyboard 时也必须产生可编辑结果，
-            # 不能让整个 Comfy 图在解析层崩溃。保留模型原文作为单镜头内容，
-            # 再由确定性 renderer/validator 形成完整三字段或六段提示词。
+            # 保留普通文本 fallback 只用于旧 convert_storyboard 兼容路径；
+            # CREATE 调用方会识别此 warning 并拒绝提交 persistent revision。
             fallback = Storyboard(
                 title="H3 plain-text fallback", summary=str(raw or "").strip(),
                 split_mode="shot", scenes=[Scene(
@@ -224,8 +279,11 @@ class APS_MiniMaxH3Director:
                 f"模型没有返回合法 JSON，已把其普通文本回退为单镜头计划：{exc}")
             return plan
 
-    def _repair_once(self, prof, api_key, text, mode, duration, report,
-                     sb, bible, book, manifest, img_count):
+    def _repair_once(self, prof: AIProfile, api_key: str, text: str, mode: str,
+                     duration: float, report: Any, sb: Storyboard | None,
+                     bible: CharacterBible | None, book: CharacterBook | None,
+                     manifest: ReferenceManifest,
+                     img_count: int) -> tuple[Any, str]:
         """最多一次 LLM 语义修复；同时返回失败原因，禁止静默吞错。"""
         prompt = build_plan_prompt(
             text.strip() if text else "", mode, float(duration or 1.0),
@@ -255,11 +313,85 @@ class APS_MiniMaxH3Director:
         self._apply_mode_asset_errors(report, mode, img_count)
         return (plan, rendered, report), ""
 
-    def _apply_mode_asset_errors(self, report, mode, img_count) -> None:
+    def _apply_mode_asset_errors(self, report: Any, mode: str,
+                                 img_count: int) -> None:
         need = MODE_IMAGE_REQUIREMENTS.get(mode)
         if need is not None and img_count != need:
             report.add("error", "h3_asset_mode",
                        f"{mode} 需要 {need} 张参考图，实际 {img_count}（该模式不应生成缺失图片的引用）")
+
+    def _refine_session(self, prof: AIProfile, api_key: str,
+                        session: PromptSession, feedback: str, mode: str,
+                        duration: float, manifest: ReferenceManifest,
+                        img_count: int) -> Any:
+        if not feedback.strip():
+            raise ValueError("H3 REFINE 需要在 text 中填写本轮修改意见")
+        saved_manifest = ReferenceManifest.from_json(
+            session.current_plan.get("reference_manifest", {}))
+        saved_manifest.merge(manifest)
+        manifest = saved_manifest
+        patch = request_plan_patch(Gateway(), prof, api_key, session, feedback)
+        # Broad redesign may intentionally change cast/reference roles. Protocol identity,
+        # manifest bindings and the explicit duration widget remain authoritative.
+        locked = ["h3_plan/mode", "h3_plan/plan_id", "h3_plan/created_at",
+                  "h3_plan/validation", "h3_plan/duration_seconds",
+                  "reference_manifest"]
+        if patch.get("scope") != "broad":
+            locked.extend(["h3_plan/speakers", "h3_plan/subjects", "h3_plan/assets"])
+        candidate = apply_plan_patch(
+            session.current_plan, patch, current_revision=session.revision,
+            locked_paths=locked, allowed_roots=["h3_plan"])
+        plan, rendered, report = self._render_session_candidate(
+            candidate, mode, duration, manifest, img_count)
+        if not report.valid:
+            repair_feedback = (feedback + "\n\nFix only these validation issues; preserve every "
+                               "unrelated shot and decision:\n" + report.as_text())
+            repair_patch = request_plan_patch(
+                Gateway(), prof, api_key, session, repair_feedback)
+            candidate = apply_plan_patch(
+                session.current_plan, repair_patch, current_revision=session.revision,
+                locked_paths=locked, allowed_roots=["h3_plan"])
+            patch = repair_patch
+            plan, rendered, report = self._render_session_candidate(
+                candidate, mode, duration, manifest, img_count)
+        if not report.valid:
+            raise ValueError("本轮 H3 REFINE 与一次自动修复均未通过；上一版保持不变：\n" + report.as_text())
+        plan.validation = report
+        candidate["h3_plan"] = plan.to_json()
+        candidate["reference_manifest"] = manifest.to_json()
+        summary = patch_change_summary(patch)
+        session.commit(candidate, rendered, report, feedback, summary)
+        result_tuple = (rendered, plan.to_json(), manifest.to_json(),
+                        report.as_text(), "\n".join(plan.warnings))
+        return node_execution_result(result_tuple, session.to_json_string(),
+                                     rendered, summary, session.revision)
+
+    def _render_session_candidate(
+            self, candidate: dict[str, Any], mode: str, duration: float,
+            manifest: ReferenceManifest,
+            img_count: int) -> tuple[H3PromptPlan, str, Any]:
+        plan = H3PromptPlan.from_json(candidate.get("h3_plan", {}))
+        # The visible node control is the sole source of truth for clip duration;
+        # an LLM patch can never silently override it.
+        plan.duration_seconds = float(duration)
+        sync_manifest_assets(plan, manifest)
+        plan.warnings.extend(map_image_assets(plan, img_count, mode))
+        normalize_media_labels(plan)
+        rendered = render_h3(plan)
+        report = validate_h3(rendered, mode, duration=duration,
+                             manifest=manifest, plan=plan)
+        self._apply_mode_asset_errors(report, mode, img_count)
+        return plan, rendered, report
+
+    @staticmethod
+    def _session_result(session: PromptSession, summary: str) -> Any:
+        bundle = session.current_plan
+        plan = H3PromptPlan.from_json(bundle.get("h3_plan", {}))
+        manifest = ReferenceManifest.from_json(bundle.get("reference_manifest", {}))
+        result_tuple = (session.current_prompt, plan.to_json(), manifest.to_json(),
+                        session.validation.as_text(), "\n".join(plan.warnings))
+        return node_execution_result(result_tuple, session.to_json_string(),
+                                     session.current_prompt, summary, session.revision)
 
 
 def _count_images(images: Any) -> int:
@@ -275,7 +407,7 @@ def _count_images(images: Any) -> int:
     return 1
 
 
-def _msg(content: str):
+def _msg(content: str) -> Any:
     from ..schemas.results import ChatMessage
 
     return ChatMessage(role="user", content=content)

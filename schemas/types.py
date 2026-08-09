@@ -15,6 +15,7 @@ STORYBOARD = "STORYBOARD"
 STORY_ITEM = "STORY_ITEM"
 STORY_ITEM_LIST = "STORY_ITEM_LIST"
 PROMPT_PLAN = "PROMPT_PLAN"
+PROMPT_SESSION = "PROMPT_SESSION"
 GENERATION_PROFILE = "GENERATION_PROFILE"
 H3_PROMPT_PLAN = "H3_PROMPT_PLAN"
 ATTACHMENT = "ATTACHMENT"
@@ -34,6 +35,7 @@ _SCHEMA_IMPORTS = {
     STORY_ITEM: (".storyboard", "StoryItem"),
     STORY_ITEM_LIST: (".storyboard", "StoryItemList"),
     PROMPT_PLAN: (".prompt_plan", "PromptPlan"),
+    PROMPT_SESSION: (".prompt_session", "PromptSession"),
     GENERATION_PROFILE: (".prompt_plan", "GenerationProfile"),
     H3_PROMPT_PLAN: (".h3", "H3PromptPlan"),
     ATTACHMENT: (".attachments", "Attachment"),

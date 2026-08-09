@@ -42,13 +42,13 @@
 
 ## APS_PromptComposer · 模型提示词编排
 
-输入：`AI_PROFILE`；`text` 是构想或待处理提示词；`target` 选择目标模型；`operation` 决定生成/扩写/改写/翻译/审计/修复/转换；`prompt_mode` 控制 ANIMA/Generic 的标签或自然语言形态；`negative` 覆盖负面词；`safety_tag` 仅按用户明确选择添加。可选端口接分镜项、人物档案/集合、参考清单、自定义 Skill 和 LoRA 触发词。
+输入：`AI_PROFILE`；`text` 第一次写构想、之后写最新反馈；`target` 选择目标模型；`prompt_mode` 控制标签或自然语言形态；`negative` 覆盖负面词；`safety_tag` 仅按用户明确选择添加。`continue_previous`、`prompt_session`、`session_action` 负责继续、workflow 持久化和回退/新会话。`operation` 仅保留旧工作流兼容，新 UI 隐藏。可选端口接分镜项、人物档案/集合、参考清单、自定义 `skill`、`lora_triggers` 和旧 `content_tier`。
 
 输出：`positive/negative` 直接接下游文本编码；`PROMPT_PLAN` 是结构化中间计划；`GENERATION_PROFILE` 给出步数/CFG 等建议；`validation` 有 error 时不要继续生成。
 
 ## APS_MiniMaxH3Director · H3 导演
 
-输入：`AI_PROFILE`；`text` 是剧情任务或待审计成品；`mode` 是 T2VA/I2VA/FL2VA/L2VA/Ref2VA；`operation` 控制生成、改写、分镜转换、审计或修复；`duration` 必须 4–15 秒；`auto_repair` 允许一次修复。可选接 Storyboard、人物资料、Manifest、IMAGE 批次及 3 路 VIDEO/3 路 AUDIO。
+输入：`AI_PROFILE`；`text` 第一次是剧情任务、之后是最新导演反馈；`mode` 是 T2VA/I2VA/FL2VA/L2VA/Ref2VA；`duration` 必须 4–15 秒；`auto_repair` 最多一次。`continue_previous`、`prompt_session`、`session_action` 保存并控制持续方案；`operation` 仅兼容旧工作流。可选接 `storyboard`、`character_bible`、`character_book`、`reference_manifest`、`images`、`video_1`/`video_2`/`video_3`、`audio_1`/`audio_2`/`audio_3`。
 
 输出：`prompt` 是可接 MiniMax H3 生成节点的最终 STRING；`H3_PROMPT_PLAN` 是可编辑结构；`REFERENCE_MANIFEST` 是同步后的媒体清单；`validation` 是规则报告；`warnings` 是回退/修复说明。
 

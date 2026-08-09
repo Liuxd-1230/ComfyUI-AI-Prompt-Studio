@@ -22,6 +22,7 @@ def test_llm_result_roundtrip():
     S.AIProfile, S.LLMResult, S.ChatSession, S.ReferenceAnalysis,
     S.CharacterCandidate, S.ReferenceManifest, S.CharacterBible, S.Storyboard,
     S.StoryItem, S.StoryItemList, S.PromptPlan, S.GenerationProfile, S.H3PromptPlan,
+    S.PromptSession,
 ])
 def test_all_core_types_roundtrip(cls):
     obj = cls.from_json({})
@@ -88,6 +89,7 @@ def test_profile_validate_urls_model_and_self_vision_reference():
 def test_type_registry():
     assert S.schema_class_for(S.H3_PROMPT_PLAN) is S.H3PromptPlan
     assert S.schema_class_for(S.AI_PROFILE) is S.AIProfile
+    assert S.schema_class_for(S.PROMPT_SESSION) is S.PromptSession
     assert S.schema_class_for("NOPE") is None
 
 

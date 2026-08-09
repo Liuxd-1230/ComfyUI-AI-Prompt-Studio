@@ -1,5 +1,6 @@
 # Changelog
 
+- 架构升级：Prompt Composer 与 MiniMax H3 Director 增加 workflow 持久化 `PromptSession`，自动 CREATE/REFINE、受限 Plan Patch、最近 5 版、回退/新会话、Current Prompt 与聊天摘要；新 UI 隐藏 operation，旧值继续兼容。
 - 增强 `APS_LLMGenerate` 默认 system prompt：强调准确遵循指令、合理利用上下文、在歧义时推断意图，并优先返回简洁可用的结果。
 - 修复 `APS_UnloadModel` 重复卸载已释放模型时报错：已卸载现在作为成功的幂等结果放行；错误模型 key 与服务故障仍会明确阻断。
 
