@@ -117,8 +117,13 @@ def test_prompt_studio_frontend_persists_backend_session_in_widget():
     assert 'setWidget(node, "text", chatInput.value)' in source
     assert 'addEventListener("execution_error"' in source
     assert 'classList.remove("is-error")' in source
-    assert "继续上次方案" in source
-    assert "新会话" in source and "回退上一版" in source
+    assert "继续上次方案" not in source
+    assert 'hideSerializedWidget(byName(node, name))' in source
+    assert "新会话" in source and "恢复上一版为新版本" in source
+    new_action = source[source.index("data-action=\"new\""):source.index(
+        "return root;", source.index("data-action=\"new\""))]
+    assert 'setWidget(node, "prompt_session", "")' not in new_action
+    assert "旧会话会保留到新结果成功提交" in new_action
 
 
 def test_binding_refactor_contracts_are_present_and_referenced():
@@ -141,6 +146,8 @@ def test_session_widgets_are_appended_after_legacy_serialized_widgets(loaded):
     module, _, _ = loaded
     composer = list(module.NODE_CLASS_MAPPINGS["APS_PromptComposer"].INPUT_TYPES()["optional"])
     assert composer.index("content_tier") < composer.index("continue_previous")
-    assert composer[-3:] == ["continue_previous", "prompt_session", "session_action"]
+    assert composer[-4:] == ["continue_previous", "prompt_session", "session_action",
+                             "message_nonce"]
     h3 = list(module.NODE_CLASS_MAPPINGS["APS_MiniMaxH3Director"].INPUT_TYPES()["optional"])
-    assert h3[-3:] == ["continue_previous", "prompt_session", "session_action"]
+    assert h3[-4:] == ["continue_previous", "prompt_session", "session_action",
+                       "message_nonce"]

@@ -13,7 +13,7 @@
 - **Reference Analyzer**：文本锚点 / 图片特征反推，多图共识与冲突，人物来源证据，输出参考资产清单。
 - **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID。
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
-- **Persistent Prompt Studio**：Composer 与 H3 保存结构化 Current Plan；第一次自动 CREATE，后续反馈只请求 reasoned ChangeSet，经影响分析、clone、Diff Guard、渲染/协议校验后原子提交。任一阶段失败都保留 Current Plan、Current Prompt 和 revision。支持最近 5 版、回退和新会话。ANIMA 使用 Plan Normal Form v2；无冲突的旧 v1 状态会自动迁移，歧义状态会保留原 revision 并明确报错。
+- **Persistent Prompt Studio**：Composer 与 H3 保存结构化 Current Plan；第一次自动 CREATE，后续反馈只请求 reasoned ChangeSet，经影响分析、clone、Diff Guard、渲染/协议校验后原子提交。任一阶段失败都保留 Current Plan、Current Prompt 和 revision。Session v2 保存最近 10 个不可变 revision；恢复旧版会创建新 revision，不删除历史。显式消息 nonce 防止重复 Queue 再次调用模型，target、实际 Model Core/Skill、来源对象及 H3 媒体内容指纹用于阻断静默上下文漂移。旧 v1 Session 保留结果但标记为未绑定，新修改必须显式新建会话；兼容端口 `continue_previous` 不再控制会话。ANIMA 使用 Plan Normal Form v2；旧 Session/Plan 有明确迁移路径。
   REFINE 使用两次紧凑的结构化调用：第一次提案，第二次独立审批直接/依赖路径，避免提案自己扩大授权范围。
 - **Model Prompt Composer**：ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 专用提示词；旧 Generic/SDXL/FLUX 仅保留工作流兼容。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
@@ -65,9 +65,9 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 | **Character Bible** | 合并人物特征、锁定、冲突报告 | `CHARACTER_CANDIDATE`、`existing_bible` | `CHARACTER_BIBLE`、人物提示片段 |
 | **Storyboard Builder** | 剧情 → 结构化分镜（LLM） | `AI_PROFILE`、story_text | `STORYBOARD` |
 | **Storyboard Select / Batch** | 场景/镜头/区间/全部选择（不调模型） | `STORYBOARD` | 单项、容器及真实 ComfyUI `STORY_ITEMS` 列表输出 |
-| **Model Prompt Composer** | 持久图像 Plan：自动 CREATE/REFINE、回退 | `AI_PROFILE`、text、target、session | positive、negative、`PROMPT_PLAN`、validation |
+| **Model Prompt Composer** | 持久图像 Plan：自动 CREATE/REFINE、不可变 revision 恢复 | `AI_PROFILE`、text、target、session | positive、negative、`PROMPT_PLAN`、validation |
 | **图片引用提示词（输入 @）** | 图片连接 → 模型引用语法与资产清单 | prompt、target、image_1～3 | prompt、`REFERENCE_MANIFEST`、references、count |
-| **MiniMax H3 Prompt Director** | 持久 H3 Plan：逐镜头最小修改、回退 | `AI_PROFILE`、text、mode、session、媒体 | prompt(STRING)、`H3_PROMPT_PLAN`、validation |
+| **MiniMax H3 Prompt Director** | 持久 H3 Plan：逐镜头最小修改、不可变 revision 恢复 | `AI_PROFILE`、text、mode、session、媒体 | prompt(STRING)、`H3_PROMPT_PLAN`、validation |
 | **Local Runtime Control** | 本地模型加载/卸载/状态 | `AI_PROFILE`、action、backend | profile、status、loaded、op |
 | **Unload LM Studio Model** | LLM 后卸载 LM Studio，并把提示词透传给后续生成 | prompt、model、url | prompt、result(JSON)、status(文本) |
 
@@ -135,7 +135,7 @@ python -m compileall nodes services renderers validators schemas server tests
 
 - 测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约和主链路回归；数量以本地 `pytest` 结果为准。
 - 架构与决策：`docs/decisions.md`、`docs/adr/`、`docs/compatibility.md`。
-- P0-P3 架构基线、Prompt 来源/所有权/Assembly、事务与语义一致性说明见 `docs/prompt-architecture/`。持久 REFINE 的低风险局部外观修改只跑确定性检查；动作、时间线、身份、参考和重大构图修改会用受影响 before/after 切片调用 Semantic Critic，错误或单次定向修复失败都不会覆盖上一 revision。四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
+- P0-P4 架构基线、Prompt 来源/所有权/Assembly、事务、语义一致性与 Session/Revision 说明见 `docs/prompt-architecture/`。持久 REFINE 的低风险局部外观修改只跑确定性检查；动作、时间线、身份、参考和重大构图修改会用受影响 before/after 切片调用 Semantic Critic，错误或单次定向修复失败都不会覆盖上一 revision。四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
 
 ## 许可与来源
 

@@ -5,6 +5,8 @@ import { api } from "../../scripts/api.js";
 
 const TARGETS = new Set(["APS_PromptComposer", "APS_MiniMaxH3Director"]);
 const byName = (node, name) => (node.widgets || []).find((widget) => widget.name === name);
+const newMessageNonce = () => globalThis.crypto?.randomUUID?.()
+  || `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function hideSerializedWidget(widget) {
   if (!widget) return;
@@ -34,7 +36,6 @@ function studioElement(node) {
   root.className = "aps-prompt-studio";
   root.innerHTML = `
     <header><strong>Prompt Studio</strong><span class="aps-studio-revision">v0</span></header>
-    <label class="aps-studio-continue"><input type="checkbox" checked> 继续上次方案</label>
     <div class="aps-studio-chat" aria-label="会话记录"></div>
     <div class="aps-studio-summary"></div>
     <label>本轮需求 / 修改意见
@@ -44,26 +45,27 @@ function studioElement(node) {
       <textarea class="aps-studio-preview" readonly placeholder="成功生成后，这里显示真正传给下游的 Prompt"></textarea>
     </label>
     <div class="aps-studio-actions">
-      <button type="button" data-action="previous">回退上一版</button>
+      <button type="button" data-action="previous">恢复上一版为新版本</button>
       <button type="button" data-action="new">新会话</button>
     </div>`;
-  const continueBox = root.querySelector(".aps-studio-continue input");
   const chatInput = root.querySelector(".aps-studio-input");
   chatInput.value = String(byName(node, "text")?.value || "");
-  chatInput.oninput = () => setWidget(node, "text", chatInput.value);
-  continueBox.checked = byName(node, "continue_previous")?.value !== false;
-  continueBox.onchange = () => setWidget(node, "continue_previous", continueBox.checked);
+  chatInput.oninput = () => {
+    setWidget(node, "text", chatInput.value);
+    setWidget(node, "message_nonce", newMessageNonce());
+  };
   root.querySelector('[data-action="previous"]').onclick = () => {
     setWidget(node, "session_action", "previous");
-    root.querySelector(".aps-studio-summary").textContent = "已选择回退上一版；请 Queue 执行。";
+    root.querySelector(".aps-studio-summary").textContent =
+      "已选择恢复上一版；执行后会创建新 revision，历史不会删除。";
   };
   root.querySelector('[data-action="new"]').onclick = () => {
-    setWidget(node, "prompt_session", "");
     setWidget(node, "session_action", "new");
     chatInput.value = "";
     setWidget(node, "text", "");
-    renderSession(node, root, {});
-    root.querySelector(".aps-studio-summary").textContent = "已开始新会话；填写需求后 Queue。";
+    setWidget(node, "message_nonce", "");
+    root.querySelector(".aps-studio-summary").textContent =
+      "已选择新会话；旧会话会保留到新结果成功提交。填写需求后 Queue。";
   };
   return root;
 }
@@ -88,7 +90,8 @@ function renderSession(node, root, session = parseSession(node), message = null)
 }
 
 function attachStudio(node) {
-  ["operation", "text", "prompt_session", "session_action", "continue_previous"].forEach(
+  ["operation", "text", "prompt_session", "session_action", "continue_previous",
+    "message_nonce"].forEach(
     (name) => hideSerializedWidget(byName(node, name)));
   const root = studioElement(node);
   node.addDOMWidget("prompt_studio_workbench", "PROMPT_STUDIO", root, {

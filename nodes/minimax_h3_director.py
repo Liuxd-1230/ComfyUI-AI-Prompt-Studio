@@ -39,8 +39,12 @@ from ..services.h3_plan import (
 from ..services.skills import get_skill
 from ..services.prompt_session import (
     CREATE_POLICY,
+    assert_session_fingerprints,
     broad_rewrite_requested,
+    build_session_fingerprints,
     changeset_summary,
+    media_fingerprint,
+    message_identity,
     node_execution_result,
     request_changeset,
 )
@@ -200,11 +204,13 @@ class APS_MiniMaxH3Director:
             "audio_2": ("AUDIO", {"tooltip": "Ref2VA 音频参考 2"}),
             "audio_3": ("AUDIO", {"tooltip": "Ref2VA 音频参考 3"}),
             "continue_previous": ("BOOLEAN", {"default": True,
-                                                "tooltip": "开启：基于已保存 H3 Plan 做最小修改；关闭：从当前输入建立新会话"}),
+                                                "tooltip": "（旧工作流兼容）工作台不再使用此开关；重新开始请显式选择 New Session"}),
             "prompt_session": ("STRING", {"default": "", "multiline": True,
                                             "tooltip": "工作流持久化状态（由导演工作台自动维护，请勿手改）"}),
             "session_action": (["continue", "previous", "new"], {"default": "continue",
                                   "tooltip": "会话动作（通常使用节点上的回退/新会话按钮）"}),
+            "message_nonce": ("STRING", {"default": "", "multiline": False,
+                                           "tooltip": "本轮消息唯一标识（由导演工作台维护，防止重复 Queue）"}),
         }}
 
     RETURN_TYPES = ("STRING", types.H3_PROMPT_PLAN, types.REFERENCE_MANIFEST, "STRING", "STRING")
@@ -220,7 +226,7 @@ class APS_MiniMaxH3Director:
                video_1: Any = None, video_2: Any = None, video_3: Any = None,
                audio_1: Any = None, audio_2: Any = None, audio_3: Any = None,
                continue_previous: bool = True, prompt_session: str = "",
-               session_action: str = "continue") -> Any:
+               session_action: str = "continue", message_nonce: str = "") -> Any:
         mode = _normalize_mode(mode)
         if not 4.0 <= float(duration) <= 15.0:
             raise ValueError("MiniMax H3 目标时长必须在 4–15 秒之间")
@@ -253,21 +259,46 @@ class APS_MiniMaxH3Director:
 
         persistent_lifecycle = operation in ("", "generate", "rewrite", "convert_storyboard")
         session = PromptSession.from_json(prompt_session) if prompt_session else PromptSession()
-        if (not continue_previous or session_action == "new" or
-                (session.target_family and
-                 (session.target_family != "minimax_h3" or session.target_variant != mode))):
+        h3_skill = get_skill("minimax_h3_director")
+        fingerprints = build_session_fingerprints(
+            target_signature=f"minimax_h3:{mode}",
+            model_core_components=(H3_SYSTEM_PROMPT, render_h3, validate_h3),
+            sources={"storyboard": sb, "character_bible": bible,
+                     "character_book": book, "reference_manifest": manifest,
+                     "images": media_fingerprint(images),
+                     "video_1": media_fingerprint(video_1),
+                     "video_2": media_fingerprint(video_2),
+                     "video_3": media_fingerprint(video_3),
+                     "audio_1": media_fingerprint(audio_1),
+                     "audio_2": media_fingerprint(audio_2),
+                     "audio_3": media_fingerprint(audio_3)},
+            skill_hashes=({h3_skill.id: h3_skill.hash
+                           or h3_skill.compute_hash()} if h3_skill else {}))
+        current_message_id = message_identity(message_nonce, text or "")
+        if session_action == "new":
             session = PromptSession(target_family="minimax_h3", target_variant=mode)
-        else:
+        elif not session.has_current_plan:
             session.target_family, session.target_variant = "minimax_h3", mode
         if persistent_lifecycle and session_action == "previous":
+            assert_session_fingerprints(session, fingerprints)
             if not session.revert_previous():
                 raise ValueError("当前 H3 会话没有可回退的上一版 revision")
             return self._session_result(session, "已恢复上一版 H3 方案。")
         if persistent_lifecycle and session.has_current_plan:
+            if (session.fingerprint_state == "legacy_unbound"
+                    and session.has_processed_message(current_message_id)):
+                return self._session_result(
+                    session, "没有新的消息；沿用当前 H3 方案，未调用模型。")
+            assert_session_fingerprints(session, fingerprints)
+            if (not (text or "").strip()
+                    or session.has_processed_message(current_message_id)):
+                return self._session_result(
+                    session, "没有新的消息；沿用当前 H3 方案，未调用模型。")
             api_key = require_api_key(prof)
             return self._refine_session(
                 prof, api_key, session, text or "", mode, duration, manifest,
-                img_count)
+                img_count, message_id=current_message_id,
+                fingerprints=fingerprints)
 
         # ------------------------------------------------------------ audit（完全离线，0.2.1）
         if operation == "audit":
@@ -427,7 +458,9 @@ class APS_MiniMaxH3Director:
         summary = "已建立第一版 H3 方案。请先生成视频，再直接描述需要调整的镜头。"
         session.locked_constraints = _h3_binding_locks(plan)
         session.commit(bundle, rendered, report, text or "", summary,
-                       expected_revision=0)
+                       expected_revision=0, message_id=current_message_id,
+                       fingerprints=fingerprints,
+                       renderer_signature=fingerprints.model_core_hash)
         return node_execution_result(result_tuple, session.to_json_string(),
                                      rendered, summary, session.revision)
 
@@ -556,7 +589,8 @@ class APS_MiniMaxH3Director:
     def _refine_session(self, prof: AIProfile, api_key: str,
                         session: PromptSession, feedback: str, mode: str,
                         duration: float, manifest: ReferenceManifest,
-                        img_count: int) -> Any:
+                        img_count: int, *, message_id: str = "",
+                        fingerprints: Any = None) -> Any:
         if not feedback.strip():
             raise ValueError("H3 REFINE 需要在 text 中填写本轮修改意见")
         saved_manifest = ReferenceManifest.from_json(
@@ -567,6 +601,7 @@ class APS_MiniMaxH3Director:
                                "image_count": img_count}
         changeset = request_changeset(
             Gateway(), prof, api_key, session, feedback, runtime_constraints)
+        revision_changeset = changeset
         # Broad redesign may intentionally change cast/reference roles. Protocol identity,
         # manifest bindings and the explicit duration widget remain authoritative.
         locked = ["mode", "operation", "storyboard_id", "plan_id", "created_at",
@@ -621,15 +656,25 @@ class APS_MiniMaxH3Director:
                 prof, api_key, plan, review_changeset, locked, previous_semantic,
                 force_critic=original_critic_required)
             _append_semantic_issues(report, semantic_issues)
+            revision_changeset = review_changeset
             changeset = repair_changeset
         if not report.valid:
             raise ValueError("本轮 H3 REFINE 与一次自动修复均未通过；上一版保持不变：\n" + report.as_text())
         plan.validation = report
         candidate["h3_plan"] = plan.to_json()
         candidate["reference_manifest"] = manifest.to_json()
-        summary = changeset_summary(changeset)
+        summary = changeset_summary(revision_changeset)
         session.commit(candidate, rendered, report, feedback, summary,
-                       expected_revision=changeset.base_revision)
+                       expected_revision=revision_changeset.base_revision,
+                       message_id=message_id, fingerprints=fingerprints,
+                       requested_paths=[item.path for item in
+                                        revision_changeset.requested_changes],
+                       dependent_paths=[item.path for item in
+                                        revision_changeset.dependent_changes],
+                       invalidated_paths=[item.path for item in
+                                          revision_changeset.invalidated_facts],
+                       renderer_signature=(fingerprints.model_core_hash
+                                           if fingerprints is not None else ""))
         result_tuple = (rendered, plan.to_json(), manifest.to_json(),
                         report.as_text(), "\n".join(plan.warnings))
         return node_execution_result(result_tuple, session.to_json_string(),

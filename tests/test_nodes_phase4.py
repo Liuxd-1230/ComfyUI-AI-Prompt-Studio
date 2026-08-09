@@ -186,6 +186,10 @@ def test_composer_persistent_create_then_minimal_refine(monkeypatch, store):
         prompt_session=session_json, continue_previous=True)
     session_v2 = json.loads(refined["ui"]["prompt_session"][0])
     assert session_v2["revision"] == 2
+    assert session_v2["revisions"][-1]["base_revision"] == 1
+    assert session_v2["revisions"][-1]["parent_revision"] == 1
+    assert session_v2["revisions"][-1]["requested_paths"] == [
+        "content/supplemental_tags/1"]
     assert session_v2["current_plan"]["prompt_plan"]["negative"] == old_negative
     migrated = session_v2["current_plan"]["model_plan"]["content"]
     assert migrated["normal_form_version"] == "2.0"
@@ -203,11 +207,107 @@ def test_composer_persistent_create_then_minimal_refine(monkeypatch, store):
         prompt_mode="tags", negative="", safety_tag="none",
         prompt_session=refined["ui"]["prompt_session"][0], session_action="previous")
     reverted_session = json.loads(reverted["ui"]["prompt_session"][0])
-    assert reverted_session["revision"] == 1
+    assert reverted_session["revision"] == 3
     assert "red dress" in reverted_session["current_prompt"]
+    assert [item["revision"] for item in reverted_session["revisions"]] == [1, 2, 3]
+    assert reverted_session["revisions"][-1]["parent_revision"] == 1
 
 
-def test_composer_continue_off_starts_new_session(store):
+def test_composer_same_message_nonce_is_noop_without_gateway(monkeypatch, store):
+    payload = setup_profile(store)
+    node = pc_mod.APS_PromptComposer()
+    created = node.compose(
+        AI_PROFILE=payload, text="1girl, red dress", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="",
+        safety_tag="none", message_nonce="message-1")
+    session_v1 = json.loads(created["ui"]["prompt_session"][0])
+    assert session_v1["last_processed_message_id"] == "message-1"
+    assert session_v1["fingerprints"]["target_signature"] == "anima:base:tags"
+    assert session_v1["revisions"][0]["message_id"] == "message-1"
+
+    class UnexpectedGateway:
+        def generate(self, profile, api_key, req):
+            raise AssertionError("same message nonce must not call Gateway")
+
+    monkeypatch.setattr(pc_mod, "Gateway", UnexpectedGateway)
+    repeated = node.compose(
+        AI_PROFILE=payload, text="1girl, red dress", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="",
+        safety_tag="none", message_nonce="message-1",
+        continue_previous=False,
+        prompt_session=created["ui"]["prompt_session"][0])
+    session_same = json.loads(repeated["ui"]["prompt_session"][0])
+    assert session_same["revision"] == 1
+    assert len(session_same["revisions"]) == 1
+    assert "没有新的消息" in repeated["ui"]["change_summary"][0]
+
+    empty = node.compose(
+        AI_PROFILE=payload, text="", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="",
+        safety_tag="none", message_nonce="message-2",
+        prompt_session=repeated["ui"]["prompt_session"][0])
+    assert json.loads(empty["ui"]["prompt_session"][0])["revision"] == 1
+    assert "没有新的消息" in empty["ui"]["change_summary"][0]
+
+
+def test_composer_pins_the_actual_builtin_model_skill(monkeypatch, store):
+    payload = setup_profile(store)
+    model_plan = {
+        "normal_form_version": "2.0",
+        "scene_description": "A solitary figure waits.",
+        "characters": [], "environment": ["Tokyo rain"],
+        "lighting": "neon reflections", "composition": "centered",
+        "style": ["cel shading"], "supplemental_tags": [],
+        "creative_notes": [],
+    }
+    monkeypatch.setattr(
+        pc_mod, "Gateway", lambda: FakeGateway(json.dumps(model_plan)))
+    created = pc_mod.APS_PromptComposer().compose(
+        AI_PROFILE=payload, text="a girl in Tokyo rain", target="anima_base",
+        operation="generate", prompt_mode="natural_language", negative="",
+        safety_tag="none", message_nonce="natural-create")
+    session = json.loads(created["ui"]["prompt_session"][0])
+    actual = pc_mod.get_skill("anima_expand")
+    assert session["fingerprints"]["skill_hashes"] == {
+        "anima_expand": actual.hash or actual.compute_hash()}
+
+
+def test_legacy_session_duplicate_is_noop_but_new_message_requires_new_session(
+        monkeypatch, store):
+    payload = setup_profile(store)
+    node = pc_mod.APS_PromptComposer()
+    created = node.compose(
+        AI_PROFILE=payload, text="1girl, red dress", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="",
+        safety_tag="none")
+    legacy = json.loads(created["ui"]["prompt_session"][0])
+    legacy["schema_version"] = "1.0"
+    legacy.pop("fingerprints", None)
+    legacy.pop("fingerprint_state", None)
+    legacy.pop("last_processed_message_id", None)
+    legacy_json = json.dumps(legacy, ensure_ascii=False)
+
+    class UnexpectedGateway:
+        def generate(self, profile, api_key, req):
+            raise AssertionError("legacy binding guard must run before Gateway")
+
+    monkeypatch.setattr(pc_mod, "Gateway", UnexpectedGateway)
+    repeated = node.compose(
+        AI_PROFILE=payload, text="1girl, red dress", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="",
+        safety_tag="none", prompt_session=legacy_json)
+    repeated_session = json.loads(repeated["ui"]["prompt_session"][0])
+    assert repeated_session["revision"] == 1
+    assert repeated_session["fingerprint_state"] == "legacy_unbound"
+    with pytest.raises(ValueError, match="legacy_unbound"):
+        node.compose(
+            AI_PROFILE=payload, text="change the dress to blue",
+            target="anima_base", operation="generate", prompt_mode="tags",
+            negative="", safety_tag="none", message_nonce="legacy-new",
+            prompt_session=legacy_json)
+
+
+def test_composer_new_session_requires_explicit_action(store):
     payload = setup_profile(store)
     node = pc_mod.APS_PromptComposer()
     first = node.compose(
@@ -217,7 +317,8 @@ def test_composer_continue_off_starts_new_session(store):
     second = node.compose(
         AI_PROFILE=payload, text="1girl, blue coat", target="anima_base",
         operation="generate", prompt_mode="tags", negative="", safety_tag="none",
-        prompt_session=first["ui"]["prompt_session"][0], continue_previous=False)
+        prompt_session=first["ui"]["prompt_session"][0], continue_previous=False,
+        session_action="new")
     second_session = json.loads(second["ui"]["prompt_session"][0])
     assert second_session["id"] != first_session["id"]
     assert second_session["revision"] == 1
@@ -380,6 +481,45 @@ def test_composer_persists_character_bible_identity_and_locked_trait_paths(store
                for value in locks)
 
 
+def test_composer_source_fingerprint_change_fails_before_gateway_or_commit(
+        monkeypatch, store):
+    payload = setup_profile(store)
+    original = CharacterBible(
+        character_id="alice", name="Alice",
+        traits=[CharacterTrait(name="eyes", value="blue eyes",
+                               category="stable", locked=True)])
+    created = pc_mod.APS_PromptComposer().compose(
+        AI_PROFILE=payload, text="Alice at a cafe", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="",
+        safety_tag="none", character_bible=original.to_json(),
+        message_nonce="create-1")
+    changed = CharacterBible(
+        character_id="alice", name="Alice",
+        traits=[CharacterTrait(name="eyes", value="green eyes",
+                               category="stable", locked=True)])
+    commit_calls: list[int] = []
+    original_commit = pc_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    class UnexpectedGateway:
+        def generate(self, profile, api_key, req):
+            raise AssertionError("source mismatch must fail before Gateway")
+
+    monkeypatch.setattr(pc_mod.PromptSession, "commit", commit_spy)
+    monkeypatch.setattr(pc_mod, "Gateway", UnexpectedGateway)
+    with pytest.raises(ValueError, match="source:character_bible"):
+        pc_mod.APS_PromptComposer().compose(
+            AI_PROFILE=payload, text="Alice at a cafe", target="anima_base",
+            operation="generate", prompt_mode="tags", negative="",
+            safety_tag="none", character_bible=changed.to_json(),
+            message_nonce="create-1",
+            prompt_session=created["ui"]["prompt_session"][0])
+    assert commit_calls == []
+
+
 def test_composer_create_rejects_llm_that_drops_character_bible(monkeypatch, store):
     payload = setup_profile(store)
     bible = CharacterBible(
@@ -447,6 +587,7 @@ def test_value_addressed_trait_lock_survives_earlier_list_delete(monkeypatch, st
     refined = pc_mod.APS_PromptComposer().compose(
         AI_PROFILE=payload, text="去掉围巾，眼睛保持不变", target="anima_base",
         operation="generate", prompt_mode="tags", negative="", safety_tag="none",
+        character_bible=bible.to_json(),
         prompt_session=created["ui"]["prompt_session"][0])
     session = json.loads(refined["ui"]["prompt_session"][0])
     traits = session["current_plan"]["model_plan"]["content"]["characters"][0][
@@ -548,7 +689,8 @@ def test_composer_custom_skill_missing(store):
                      reference_manifest=None, skill="nope", lora_triggers="")
 
 
-def test_switching_custom_skill_starts_a_new_session(monkeypatch, store):
+def test_switching_custom_skill_requires_explicit_migration_or_new_session(
+        monkeypatch, store):
     from types import SimpleNamespace
     from aps.schemas.prompt_plan import GenerationProfile
 
@@ -569,13 +711,11 @@ def test_switching_custom_skill_starts_a_new_session(monkeypatch, store):
     first = node.compose(payload, "first", "custom_skill", "generate",
                          "natural_language", "", skill="one")
     first_session = json.loads(first["ui"]["prompt_session"][0])
-    second = node.compose(
-        payload, "second", "custom_skill", "generate", "natural_language", "",
-        skill="two", prompt_session=first["ui"]["prompt_session"][0])
-    second_session = json.loads(second["ui"]["prompt_session"][0])
-    assert second_session["id"] != first_session["id"]
-    assert second_session["target_variant"] == "two"
-    assert second_session["current_plan"]["model_plan"]["skill_id"] == "two"
+    with pytest.raises(ValueError, match="target_signature|skill:"):
+        node.compose(
+            payload, "second", "custom_skill", "generate", "natural_language", "",
+            skill="two", prompt_session=first["ui"]["prompt_session"][0])
+    assert json.loads(first["ui"]["prompt_session"][0]) == first_session
 
 
 def test_composer_rejects_h3_skill_wrong_consumer(store):

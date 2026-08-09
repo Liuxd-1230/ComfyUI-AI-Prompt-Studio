@@ -48,7 +48,7 @@ from .prompt_plan import (
     ValidationReport,
     empty_validation,
 )
-from .prompt_session import PromptRevision, PromptSession
+from .prompt_session import PromptRevision, PromptSession, SessionFingerprints
 from .references import (
     ANALYSIS_MODES,
     ASSET_TYPES,
@@ -123,7 +123,7 @@ __all__ = [
     # prompt_plan
     "PromptPlan", "GenerationProfile", "ValidationReport", "ValidationIssue",
     "empty_validation", "TARGET_FAMILIES", "ANIMA_VARIANTS", "PROMPT_MODES", "COMPOSER_OPERATIONS",
-    "PromptSession", "PromptRevision",
+    "PromptSession", "PromptRevision", "SessionFingerprints",
     # h3
     "H3PromptPlan", "H3Shot", "H3Speaker", "H3Subject", "H3Asset",
     "H3Dialogue", "H3Retention", "H3AudioField",

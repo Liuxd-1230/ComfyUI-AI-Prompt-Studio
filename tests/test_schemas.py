@@ -27,7 +27,7 @@ def test_llm_result_roundtrip():
 def test_all_core_types_roundtrip(cls):
     obj = cls.from_json({})
     assert isinstance(obj, cls)
-    assert obj.schema_version == S.SCHEMA_VERSION
+    assert obj.schema_version == getattr(cls, "CURRENT_SCHEMA_VERSION", S.SCHEMA_VERSION)
     assert cls.from_json(obj.to_json()) == obj
 
 

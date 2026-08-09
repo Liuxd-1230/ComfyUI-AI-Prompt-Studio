@@ -1,6 +1,7 @@
 """节点层测试：MiniMax H3 Prompt Director（LLM mock + 确定性渲染 + 校验接线）。"""
 import json
 
+import numpy as np
 import pytest
 
 import aps.nodes.minimax_h3_director as h3_mod
@@ -138,6 +139,59 @@ def test_h3_create_persists_identity_and_reference_binding_locks(monkeypatch, st
                for value in session["locked_constraints"])
 
 
+def test_h3_same_message_nonce_is_noop_without_gateway(monkeypatch, store):
+    payload = setup_profile(store)
+    simple = json.loads(json.dumps(PLAN_JSON))
+    simple["shots"] = [simple["shots"][0]]
+    simple["shots"][0]["camera"] = ""
+    simple["shots"][0]["dialogues"] = []
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(simple)))
+    created = h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA",
+        duration=10.0, message_nonce="h3-message-1"))
+    session_v1 = json.loads(created["ui"]["prompt_session"][0])
+    assert session_v1["last_processed_message_id"] == "h3-message-1"
+    assert session_v1["fingerprints"]["target_signature"] == "minimax_h3:T2VA"
+
+    class UnexpectedGateway:
+        def generate(self, profile, api_key, req):
+            raise AssertionError("same H3 message nonce must not call Gateway")
+
+    monkeypatch.setattr(h3_mod, "Gateway", UnexpectedGateway)
+    repeated = h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA",
+        duration=10.0, message_nonce="h3-message-1",
+        prompt_session=created["ui"]["prompt_session"][0]))
+    session_same = json.loads(repeated["ui"]["prompt_session"][0])
+    assert session_same["revision"] == 1
+    assert len(session_same["revisions"]) == 1
+    assert "没有新的消息" in repeated["ui"]["change_summary"][0]
+
+
+def test_h3_mode_change_requires_explicit_new_session_before_gateway(
+        monkeypatch, store):
+    payload = setup_profile(store)
+    simple = json.loads(json.dumps(PLAN_JSON))
+    simple["shots"] = [simple["shots"][0]]
+    simple["shots"][0]["camera"] = ""
+    simple["shots"][0]["dialogues"] = []
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(simple)))
+    created = h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA",
+        duration=10.0, message_nonce="h3-mode-create"))
+
+    class UnexpectedGateway:
+        def generate(self, profile, api_key, req):
+            raise AssertionError("mode mismatch must fail before Gateway")
+
+    monkeypatch.setattr(h3_mod, "Gateway", UnexpectedGateway)
+    with pytest.raises(ValueError, match="target_signature"):
+        h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+            AI_PROFILE=payload, text="改为图生视频", mode="I2VA",
+            duration=10.0, message_nonce="h3-mode-refine",
+            prompt_session=created["ui"]["prompt_session"][0]))
+
+
 def test_h3_create_rejects_invisible_speech_speaker_without_commit(monkeypatch, store):
     payload = setup_profile(store)
     invalid = json.loads(json.dumps(PLAN_JSON))
@@ -218,6 +272,9 @@ def test_h3_persistent_refine_changes_shot2_without_touching_shot1(monkeypatch, 
         mode="T2VA", duration=10.0, prompt_session=session_json))
     session_v2 = json.loads(refined["ui"]["prompt_session"][0])
     assert session_v2["revision"] == 2
+    assert session_v2["revisions"][-1]["base_revision"] == 1
+    assert session_v2["revisions"][-1]["parent_revision"] == 1
+    assert session_v2["revisions"][-1]["requested_paths"] == ["shots/1/camera"]
     assert session_v2["current_plan"]["h3_plan"]["shots"][0] == shot1_before
     assert "The camera remains static." in session_v2["current_prompt"]
 
@@ -436,6 +493,43 @@ def test_generate_i2va_with_image_adds_instruction(monkeypatch, store):
     plan = H3PromptPlan.from_json(plan_json)
     assert any(a.label == "Picture 1" for a in plan.assets)
     assert "通过" in validation
+
+
+def test_h3_replacing_same_count_media_is_detected_before_gateway(
+        monkeypatch, store):
+    payload = setup_profile(store)
+    i2va_plan = json.loads(json.dumps(PLAN_JSON))
+    i2va_plan["retention"] = [{
+        "label": "Picture 1", "marker": "fully_preserved",
+        "notes": "first frame", "shot_refs": ["Shot 1"]}]
+    i2va_plan["shots"][0]["references"] = ["Picture 1"]
+    monkeypatch.setattr(
+        h3_mod, "Gateway", lambda: FakeGateway(json.dumps(i2va_plan)))
+    first_image = np.zeros((1, 8, 8, 3), dtype=np.float32)
+    created = h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="I2VA",
+        duration=10.0, images=first_image, message_nonce="create-media"))
+
+    class UnexpectedGateway:
+        def generate(self, profile, api_key, req):
+            raise AssertionError("changed media must fail before Gateway")
+
+    commit_calls: list[int] = []
+    original_commit = h3_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(h3_mod, "Gateway", UnexpectedGateway)
+    monkeypatch.setattr(h3_mod.PromptSession, "commit", commit_spy)
+    second_image = np.ones((1, 8, 8, 3), dtype=np.float32)
+    with pytest.raises(ValueError, match="source:images"):
+        h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+            AI_PROFILE=payload, text="少女走进咖啡店", mode="I2VA", duration=10.0,
+            images=second_image, message_nonce="create-media",
+            prompt_session=created["ui"]["prompt_session"][0]))
+    assert commit_calls == []
 
 
 def test_generate_r2v_full_sections(monkeypatch, store):

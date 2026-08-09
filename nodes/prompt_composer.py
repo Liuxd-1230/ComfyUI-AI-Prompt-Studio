@@ -39,8 +39,12 @@ from ..prompting.node_requests import assemble_prompt, report_payload, task_mess
 from ..services.skills import get_skill
 from ..services.prompt_session import (
     CREATE_POLICY,
+    assert_session_fingerprints,
     broad_rewrite_requested,
+    build_session_fingerprints,
     changeset_summary,
+    component_fingerprint,
+    message_identity,
     node_execution_result,
     request_changeset,
 )
@@ -66,6 +70,32 @@ def _normalize_safety_tag(safety_tag: str) -> str:
     if tag in CONTENT_TIER_MIGRATION:
         return CONTENT_TIER_MIGRATION[tag]
     return tag if tag in SAFETY_TAGS else "none"
+
+
+def _runtime_skill_ids(family: str, operation: str,
+                       prompt_mode: str) -> list[str]:
+    if family == "anima":
+        if operation in LLM_OPERATIONS:
+            return [{"expand": "anima_expand", "rewrite": "anima_rewrite",
+                     "translate": "translate_en", "repair": "anima_repair"}[operation]]
+        if operation == "generate" and prompt_mode != "tags":
+            return ["anima_expand"]
+    if family in {"z_image", "qwen_image_edit"} and (
+            operation in LLM_OPERATIONS or operation == "generate"):
+        return ["z_image_turbo_expand" if family == "z_image"
+                else "qwen_image_edit_2511"]
+    if family == "generic_image" and operation in LLM_OPERATIONS:
+        return [{"expand": "generic_expand", "rewrite": "generic_rewrite",
+                 "translate": "translate_en", "repair": "generic_repair"}[operation]]
+    return []
+
+
+def _model_core_components(family: str, variant: str) -> tuple[Any, ...]:
+    if family == "anima":
+        return family, variant, render_anima, validate_anima
+    if family in {"z_image", "qwen_image_edit"}:
+        return family, variant, render_special_image, _validate_special
+    return family, variant, render_generic
 
 
 class APS_PromptComposer:
@@ -99,11 +129,13 @@ class APS_PromptComposer:
                                         "tooltip": "（已弃用）旧参数，由 safety_tag 取代；传入 safe/sensitive 时自动迁移"}),
             # 必须放在所有旧 widget 之后：Comfy workflow 以 widget_values 位置序列化。
             "continue_previous": ("BOOLEAN", {"default": True,
-                                                "tooltip": "开启：有已保存 Plan 时按最新意见做最小修改；关闭：从当前输入建立新会话"}),
+                                                "tooltip": "（旧工作流兼容）工作台不再使用此开关；重新开始请显式选择 New Session"}),
             "prompt_session": ("STRING", {"default": "", "multiline": True,
                                             "tooltip": "工作流持久化状态（由 Prompt Studio 前端自动维护，请勿手改）"}),
             "session_action": (["continue", "previous", "new"], {"default": "continue",
                                   "tooltip": "会话动作（通常使用节点上的回退/新会话按钮）"}),
+            "message_nonce": ("STRING", {"default": "", "multiline": False,
+                                           "tooltip": "本轮消息唯一标识（由 Prompt Studio 前端维护，防止重复 Queue）"}),
         }}
 
     RETURN_TYPES = ("STRING", "STRING", types.PROMPT_PLAN, types.GENERATION_PROFILE, "STRING")
@@ -118,7 +150,8 @@ class APS_PromptComposer:
                 character_book: Any = None, reference_manifest: Any = None,
                 skill: str = "anima_expand", lora_triggers: str = "",
                 content_tier: str = "", continue_previous: bool = True,
-                prompt_session: str = "", session_action: str = "continue") -> Any:
+                prompt_session: str = "", session_action: str = "continue",
+                message_nonce: str = "") -> Any:
         family, variant = _split_target(target)
         selected_skill = None
         session_family, session_variant = family, variant
@@ -154,7 +187,8 @@ class APS_PromptComposer:
                          else [bible] if bible is not None else [])
         book_context = book.context_text() if book is not None else ""
         base_text = _base_text(story_item, text)
-        if not base_text.strip() and operation not in ("audit",):
+        if (not base_text.strip() and operation not in ("audit",)
+                and not prompt_session):
             raise ValueError("text 与 story_item 均为空，请至少提供一个")
 
         lora = [t.strip() for t in lora_triggers.split(",") if t.strip()] if lora_triggers else []
@@ -163,24 +197,63 @@ class APS_PromptComposer:
         # 非 generate 仅作为旧 workflow 兼容入口，新前端会隐藏 operation。
         persistent_lifecycle = operation in ("", "generate", "expand", "rewrite")
         session = PromptSession.from_json(prompt_session) if prompt_session else PromptSession()
-        saved_skill_id = str(session.current_plan.get("model_plan", {}).get("skill_id", ""))
+        active_skill_hashes = {}
+        if selected_skill is not None:
+            skill_hash = str(getattr(selected_skill, "hash", "") or "")
+            compute_hash = getattr(selected_skill, "compute_hash", None)
+            if not skill_hash and callable(compute_hash):
+                skill_hash = str(compute_hash())
+            if not skill_hash:
+                skill_hash = component_fingerprint(
+                    selected_skill.id, selected_skill.target_family,
+                    selected_skill.target_variant, selected_skill.renderer,
+                    getattr(selected_skill, "system_prompt", ""))
+            active_skill_hashes = {selected_skill.id: skill_hash}
+        else:
+            for skill_id in _runtime_skill_ids(
+                    session_family, operation, prompt_mode):
+                runtime_skill = get_skill(skill_id)
+                if runtime_skill is not None:
+                    active_skill_hashes[skill_id] = (
+                        runtime_skill.hash or runtime_skill.compute_hash())
+        fingerprints = build_session_fingerprints(
+            target_signature=f"{session_family}:{session_variant}:{prompt_mode}",
+            model_core_components=_model_core_components(
+                session_family, session_variant),
+            sources={"story_item": story_item,
+                     "character_bible": bible,
+                     "character_book": book,
+                     "reference_manifest": reference_manifest},
+            skill_hashes=active_skill_hashes)
+        current_message_id = message_identity(message_nonce, base_text)
         requested_skill_id = selected_skill.id if selected_skill is not None else ""
-        if (not continue_previous or session_action == "new" or
-                (session.target_family and
-                 (session.target_family != session_family or
-                  session.target_variant != session_variant)) or
-                (session.has_current_plan and saved_skill_id != requested_skill_id)):
+        if session_action == "new":
             session = PromptSession(target_family=session_family,
                                     target_variant=session_variant)
-        else:
+        elif not session.has_current_plan:
             session.target_family, session.target_variant = session_family, session_variant
         if persistent_lifecycle and session_action == "previous":
+            assert_session_fingerprints(session, fingerprints)
             if not session.revert_previous():
                 raise ValueError("当前会话没有可回退的上一版 revision")
             return self._session_result(session, "已恢复上一版方案。")
         if persistent_lifecycle and session.has_current_plan:
+            # A migrated v1 session has no reconstructable source fingerprints.
+            # Its exact last message may remain an idempotent compatibility no-op,
+            # but every bound session must compare context before any early return.
+            if (session.fingerprint_state == "legacy_unbound"
+                    and session.has_processed_message(current_message_id)):
+                return self._session_result(
+                    session, "没有新的消息；沿用当前方案，未调用模型。")
+            assert_session_fingerprints(session, fingerprints)
+            if (not base_text.strip()
+                    or session.has_processed_message(current_message_id)):
+                return self._session_result(
+                    session, "没有新的消息；沿用当前方案，未调用模型。")
             return self._refine_session(
-                prof, session, base_text, reference_manifest=reference_manifest)
+                prof, session, base_text, message_id=current_message_id,
+                fingerprints=fingerprints,
+                reference_manifest=reference_manifest)
 
         # -------- 按家族/操作分派（audit 完全离线；LLM 路径才取密钥）
         if family == "anima":
@@ -333,16 +406,20 @@ class APS_PromptComposer:
                 bundle.get("model_plan", {}).get("content", {}), source_bibles)
         session.locked_constraints = session_locks
         session.commit(bundle, positive, validation, base_text, summary,
-                       expected_revision=0)
+                       expected_revision=0, message_id=current_message_id,
+                       fingerprints=fingerprints,
+                       renderer_signature=fingerprints.model_core_hash)
         return node_execution_result(result_tuple, session.to_json_string(),
                                      positive, summary, session.revision)
 
     def _refine_session(self, prof: AIProfile, session: PromptSession, feedback: str,
+                        message_id: str = "", fingerprints: Any = None,
                         reference_manifest: Any = None) -> Any:
         if not feedback.strip():
             raise ValueError("REFINE 需要在 text 中填写本轮修改意见")
         working_session = self._session_with_migrated_plan(session)
         changeset = self._request_session_changeset(prof, working_session, feedback)
+        revision_changeset = changeset
         allow_broad = broad_rewrite_requested(feedback)
         candidate = _apply_semantic_changeset(
             working_session, changeset, allow_broad=allow_broad)
@@ -394,15 +471,26 @@ class APS_PromptComposer:
                 _session_locked_image_paths(session), working_session.current_plan,
                 reference_manifest, force_critic=original_critic_required)
             _append_semantic_issues(report, semantic_issues)
+            revision_changeset = revalidation_changeset(
+                original_changeset, repair_changeset)
             changeset = repair_changeset
         if not report.valid:
             raise ValueError("本轮 REFINE 与一次自动修复均未通过；上一版保持不变：\n" + report.as_text())
         plan.validation = report
         candidate["prompt_plan"] = plan.to_json()
         candidate["generation_profile"] = gprofile.to_json()
-        summary = changeset_summary(changeset)
+        summary = changeset_summary(revision_changeset)
         session.commit(candidate, plan.positive, report, feedback, summary,
-                       expected_revision=changeset.base_revision)
+                       expected_revision=revision_changeset.base_revision,
+                       message_id=message_id, fingerprints=fingerprints,
+                       requested_paths=[item.path for item in
+                                        revision_changeset.requested_changes],
+                       dependent_paths=[item.path for item in
+                                        revision_changeset.dependent_changes],
+                       invalidated_paths=[item.path for item in
+                                          revision_changeset.invalidated_facts],
+                       renderer_signature=(fingerprints.model_core_hash
+                                           if fingerprints is not None else ""))
         result_tuple = (plan.positive, plan.negative, plan.to_json(),
                         gprofile.to_json(), report.as_text())
         return node_execution_result(result_tuple, session.to_json_string(),

@@ -94,6 +94,7 @@ class Schema:
 
     # 迁移注册表：{"1.0": {"1.1": fn(data)->data, ...}, ...}
     MIGRATIONS: ClassVar[Dict[str, Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]]]] = {}
+    CURRENT_SCHEMA_VERSION: ClassVar[str] = SCHEMA_VERSION
 
     def to_json(self) -> Dict[str, Any]:
         """序列化为可 JSON 化的 dict（含 schema_version）。"""
@@ -117,7 +118,7 @@ class Schema:
                     f"{cls.__name__}: 数据迁移 {version}->{target} 失败：{exc}"
                 ) from exc
             version = target
-        data["schema_version"] = SCHEMA_VERSION
+        data["schema_version"] = cls.CURRENT_SCHEMA_VERSION
         return data
 
     @classmethod
