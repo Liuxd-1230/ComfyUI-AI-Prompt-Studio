@@ -124,11 +124,21 @@ def test_composer_persistent_create_then_minimal_refine(monkeypatch, store):
         req = None
 
         def generate(self, profile, api_key, req):
+            if "approved_requested_paths" in (req.output_schema or {}).get("properties", {}):
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": ["content/supplemental_tags/1"],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
             PatchGateway.req = req
             return LLMResult(text=json.dumps({
-                "base_revision": 1, "scope": "minimal",
-                "changes": [{"path": "model_plan/content/supplemental_tags/1", "action": "replace",
-                             "value": "white dress"}],
+                "base_revision": 1, "plan_type": "anima",
+                "change_category": "minimal_refine",
+                "intent_scope": ["content/supplemental_tags/1"],
+                "requested_changes": [{"path": "content/supplemental_tags/1",
+                    "operation": "set", "value_json": "\"white dress\"",
+                    "reason": "user request"}],
+                "dependent_changes": [], "invalidated_facts": [],
+                "constraint_conflicts": [],
                 "summary": "已把红裙改为白裙，其他内容保持不变。",
             }))
 
@@ -175,6 +185,93 @@ def test_composer_continue_off_starts_new_session(store):
     assert second_session["id"] != first_session["id"]
     assert second_session["revision"] == 1
     assert "blue coat" in second_session["current_prompt"]
+
+
+def test_composer_stale_changeset_preserves_serialized_session(monkeypatch, store):
+    payload = setup_profile(store)
+    node = pc_mod.APS_PromptComposer()
+    created = node.compose(
+        AI_PROFILE=payload, text="1girl, red dress", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="", safety_tag="none")
+    stable_json = created["ui"]["prompt_session"][0]
+    stable = json.loads(stable_json)
+    commit_calls = []
+    original_commit = pc_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(pc_mod.PromptSession, "commit", commit_spy)
+
+    class StaleGateway:
+        def generate(self, profile, api_key, req):
+            if "approved_requested_paths" in (req.output_schema or {}).get("properties", {}):
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": ["content/supplemental_tags/1"],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
+            return LLMResult(text=json.dumps({
+                "base_revision": 0, "plan_type": "anima",
+                "change_category": "minimal_refine",
+                "intent_scope": ["content/supplemental_tags/1"],
+                "requested_changes": [{"path": "content/supplemental_tags/1",
+                    "operation": "set", "value_json": "\"blue dress\"",
+                    "reason": "user request"}],
+                "dependent_changes": [], "invalidated_facts": [],
+                "constraint_conflicts": [], "summary": "stale"}))
+
+    monkeypatch.setattr(pc_mod, "Gateway", StaleGateway)
+    with pytest.raises(ValueError, match="revision"):
+        node.compose(
+            AI_PROFILE=payload, text="change dress", target="anima_base",
+            operation="generate", prompt_mode="tags", negative="",
+            safety_tag="none", prompt_session=stable_json, continue_previous=True)
+    assert json.loads(stable_json)["revision"] == stable["revision"]
+    assert json.loads(stable_json)["current_prompt"] == stable["current_prompt"]
+    assert commit_calls == []
+
+
+def test_composer_unresolved_positive_negative_impact_never_commits(monkeypatch, store):
+    payload = setup_profile(store)
+    node = pc_mod.APS_PromptComposer()
+    created = node.compose(
+        AI_PROFILE=payload, text="1girl, red dress", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="hat", safety_tag="none")
+    stable_json = created["ui"]["prompt_session"][0]
+    commit_calls = []
+    original_commit = pc_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(pc_mod.PromptSession, "commit", commit_spy)
+
+    class ConflictGateway:
+        def generate(self, profile, api_key, req):
+            if "approved_requested_paths" in (req.output_schema or {}).get("properties", {}):
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": ["content/supplemental_tags"],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
+            return LLMResult(text=json.dumps({
+                "base_revision": 1, "plan_type": "anima",
+                "change_category": "minimal_refine",
+                "intent_scope": ["content/supplemental_tags"],
+                "requested_changes": [{"path": "content/supplemental_tags",
+                    "operation": "set", "value_json": "[\"black wide-brim hat\"]",
+                    "reason": "user request"}],
+                "dependent_changes": [], "invalidated_facts": [],
+                "constraint_conflicts": [], "summary": "add hat"}))
+
+    monkeypatch.setattr(pc_mod, "Gateway", ConflictGateway)
+    with pytest.raises(ValueError, match="失效事实"):
+        node.compose(
+            AI_PROFILE=payload, text="add a black wide-brim hat",
+            target="anima_base", operation="generate", prompt_mode="tags",
+            negative="hat", safety_tag="none", prompt_session=stable_json)
+    assert commit_calls == []
 
 
 def test_composer_rejects_ambiguous_v1_session_before_gateway(monkeypatch, store):

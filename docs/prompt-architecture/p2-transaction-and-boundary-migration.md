@@ -1,12 +1,46 @@
 # P2 Transaction and Data-Boundary Migration
 
-## Safe Semantic Mutation
+## Production Transaction Path
 
-`schemas/changeset.py` defines a reasoned `ChangeSet`: base revision, intent scope, requested and dependent changes, invalidated facts, constraint conflicts, and summary. Every mutation requires an operation, semantic path, and reason.
+`schemas/changeset.py` defines the reasoned mutation contract: base revision, plan
+type, change category, intent scope, requested and dependent changes, invalidated
+facts, constraint conflicts, and summary. Each mutation has an operation, semantic
+path, typed JSON value, and reason. `services/prompt_session.request_changeset()`
+is the only REFINE proposal path used by Prompt Composer and H3 Director.
 
-`domain/transactions.py` applies changes to a normalized clone. It rejects malformed or stale revisions, unresolved conflicts, missing paths, unauthorized diffs, and deterministic semantic-check failures before calling the commit callback. List insertion/deletion authorizes only the affected list's structural index shift. The original plan therefore remains untouched on every failure path.
+The proposal does not authorize itself. A second compact structured call receives
+the stable plan, latest instruction, runtime constraints, and proposed ChangeSet,
+then returns exact approved requested/dependent paths. The transaction rejects every
+path missing from that independent intent/impact approval. Deterministic dependencies
+added by Python are approved by their analyzer rather than by the proposal model.
 
-This is the canonical P2 mutation seam. The older root-oriented patch code remains only behind Composer/H3 workflow compatibility and is explicitly non-canonical.
+`domain/transactions.py` gives Impact Analysis a clone, validates the returned
+ChangeSet, then applies it to another clone. It rejects stale revisions, wrong plan
+types, malformed/magic paths, missing or out-of-range indices, incompatible values,
+locked or disallowed fields, unresolved invalidations/conflicts, and unauthorized
+structural diffs. Requested changes must fall inside `intent_scope`; duplicate path
+operations are rejected. A model-labelled `broad_rewrite` is accepted only when a
+conservative parser also finds explicit whole-plan redesign wording in the user's
+message. Normalizer changes pass through a separate Diff Guard authorization set.
+
+Image sessions transact `{content, negative}` together, so a new positive phrase that
+contains a negative token cannot be committed without resolving the
+negative field. H3 impact analysis similarly blocks a shortened duration while an
+old shot cut remains outside the new timeline. Semantic paraphrase and narrative
+causality are intentionally deferred to the risk-triggered P3 critic.
+
+H3 duration widgets, connected manifests, media-label normalization, and session
+locks enter the transaction as authoritative runtime inputs; they are not applied
+after Diff Guard. After the transaction, the deterministic renderer and target
+validator run.
+At most one targeted repair ChangeSet is attempted. `PromptSession.commit()` builds
+the complete next state on an isolated copy and swaps it only after plan, prompt,
+validation, revision snapshot, conversation, and timestamps all succeed. Commit also
+performs a final expected-revision CAS check. Every
+failure therefore preserves Current Plan, Current Prompt, and revision.
+
+The pre-P2 `request_plan_patch()` / `apply_plan_patch()` functions remain importable
+for direct compatibility tests, but no production node calls them.
 
 ## Live Prompt Boundary Migration
 
@@ -17,6 +51,6 @@ All creative calls now attach a `PromptAssemblyReport` to `GenerateRequest`; dir
 - Storyboard Builder sends story, limits, CharacterBook, and ReferenceManifest as structured data. Its live request no longer copies the JSON Schema into prose.
 - Prompt Composer identifies each legacy Skill as a versioned migration source and sends prompt, book, references, and validation issues as distinct task-data blocks.
 - H3 Director separates immutable protocol, editable strategy, operation policy, and typed request data. Live create/repair no longer use the legacy hand-copied JSON template.
-- Transitional session refinement now uses the same assembly boundary and remains labelled as a legacy patch contract.
+- Persistent session refinement uses the same assembly boundary and the canonical `semantic-changeset.schema@2` contract.
 
 `build_storyboard_prompt()`, `build_plan_prompt()`, and `h3_system_prompt()` remain compatibility entry points for existing callers and tests. New live paths use structured builders; later phases may remove the legacy functions only with a documented migration.

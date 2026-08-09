@@ -4,10 +4,16 @@ import json
 import pytest
 
 from aps.schemas.prompt_session import PromptSession
-from aps.services.prompt_session import apply_plan_patch
+from aps.services.prompt_session import apply_plan_patch, broad_rewrite_requested
 
 
 VALID = {"valid": True, "issues": [], "checks": ["non_empty"]}
+
+
+def test_broad_rewrite_authority_requires_explicit_user_wording():
+    assert broad_rewrite_requested("整个重新设计，不用保留旧方案") is True
+    assert broad_rewrite_requested("rebuild the entire plan") is True
+    assert broad_rewrite_requested("把外套改成蓝色") is False
 
 
 def test_session_commits_and_survives_workflow_roundtrip():
@@ -36,6 +42,30 @@ def test_invalid_revision_never_replaces_last_valid_state():
         session.commit({"positive": "broken"}, "broken",
                        {"valid": False, "issues": []}, "change", "failed")
 
+    assert session.to_json() == before
+
+
+def test_commit_stages_every_field_before_swapping(monkeypatch):
+    session = PromptSession(target_family="anima", current_plan={"old": True},
+                            current_prompt="old", revision=1)
+    before = session.to_json()
+
+    def fail_message(*args, **kwargs):
+        raise RuntimeError("conversation failed")
+
+    monkeypatch.setattr("aps.schemas.prompt_session.ChatMessage", fail_message)
+    with pytest.raises(RuntimeError, match="conversation failed"):
+        session.commit({"new": True}, "new", VALID, "change", "summary")
+    assert session.to_json() == before
+
+
+def test_commit_rechecks_expected_revision_before_swap():
+    session = PromptSession(target_family="anima")
+    session.commit({"v": 1}, "one", VALID, "create", "v1", expected_revision=0)
+    before = session.to_json()
+    with pytest.raises(ValueError, match="CAS"):
+        session.commit({"v": 2}, "two", VALID, "change", "v2",
+                       expected_revision=0)
     assert session.to_json() == before
 
 

@@ -13,7 +13,8 @@
 - **Reference Analyzer**：文本锚点 / 图片特征反推，多图共识与冲突，人物来源证据，输出参考资产清单。
 - **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID。
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
-- **Persistent Prompt Studio**：Composer 与 H3 保存结构化 Current Plan；第一次自动 CREATE，之后把看图/视频后的反馈作为 REFINE patch，支持 Current Prompt、最近 5 版、回退和新会话。ANIMA 使用 Plan Normal Form v2：人物特征、动作、位置和场景描述各有唯一事实字段；无冲突的旧 v1 状态会自动迁移，含重复事实的旧状态会保留原 revision 并明确要求新建会话或整理旧计划。
+- **Persistent Prompt Studio**：Composer 与 H3 保存结构化 Current Plan；第一次自动 CREATE，后续反馈只请求 reasoned ChangeSet，经影响分析、clone、Diff Guard、渲染/协议校验后原子提交。任一阶段失败都保留 Current Plan、Current Prompt 和 revision。支持最近 5 版、回退和新会话。ANIMA 使用 Plan Normal Form v2；无冲突的旧 v1 状态会自动迁移，歧义状态会保留原 revision 并明确报错。
+  REFINE 使用两次紧凑的结构化调用：第一次提案，第二次独立审批直接/依赖路径，避免提案自己扩大授权范围。
 - **Model Prompt Composer**：ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 专用提示词；旧 Generic/SDXL/FLUX 仅保留工作流兼容。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
 - **MiniMax H3 Prompt Director**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（另保留旧 R2V 别名），支持图片、视频和音频参考；LLM 产出结构化计划 + Python 确定性渲染 + 规则校验 + 修复循环。

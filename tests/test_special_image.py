@@ -79,10 +79,20 @@ def test_z_image_refine_patches_one_clause_and_preserves_others(ext, store, monk
 
     class PatchGateway:
         def generate(self, profile, api_key, req):
+            if "approved_requested_paths" in (req.output_schema or {}).get("properties", {}):
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": ["content/clauses/1/text"],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
             return LLMResult(text=json.dumps({
-                "base_revision": 1, "scope": "minimal",
-                "changes": [{"path": "model_plan/content/clauses/1/text",
-                             "action": "replace", "value": "white coat"}],
+                "base_revision": 1, "plan_type": "z_image",
+                "change_category": "minimal_refine",
+                "intent_scope": ["content/clauses/1/text"],
+                "requested_changes": [{"path": "content/clauses/1/text",
+                    "operation": "set", "value_json": "\"white coat\"",
+                    "reason": "user request"}],
+                "dependent_changes": [], "invalidated_facts": [],
+                "constraint_conflicts": [],
                 "summary": "只把红外套改为白外套。"}))
 
     monkeypatch.setattr(composer_mod, "Gateway", PatchGateway)

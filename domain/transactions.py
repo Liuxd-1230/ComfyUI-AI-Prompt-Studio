@@ -33,15 +33,41 @@ class SemanticTransaction(Generic[PlanT]):
                 current_revision: int,
                 impact_analyzer: Callable[[PlanT, ChangeSet], ChangeSet] | None = None,
                 semantic_check: Callable[[PlanT], list[Any]] | None = None,
-                commit: Callable[[PlanT], None] | None = None) -> TransactionResult[PlanT]:
-        effective = (impact_analyzer(current, deepcopy(changeset))
-                     if impact_analyzer is not None else changeset)
-        issues = effective.validate()
-        if issues:
-            raise TransactionRejected("ChangeSet 校验失败：" + "；".join(issues))
-        if effective.base_revision != current_revision:
+                allowed_roots: list[str] | tuple[str, ...] = (),
+                locked_paths: list[str] | tuple[str, ...] = (),
+                broad_only_roots: list[str] | tuple[str, ...] = (),
+                normalization_paths: list[str] | tuple[str, ...] = (),
+                normalizer: Callable[[PlanT], PlanT] | None = None,
+                allow_broad: bool = False) -> TransactionResult[PlanT]:
+        proposed = deepcopy(changeset)
+        self._validate_contract(proposed, current_revision)
+        proposed_dependent = {change.path for change in proposed.dependent_changes}
+        analysis_plan = self.adapter.clone(current)
+        effective = (impact_analyzer(analysis_plan, proposed)
+                     if impact_analyzer is not None else proposed)
+        self._validate_contract(effective, current_revision)
+        if effective.change_category == "broad_rewrite" and not allow_broad:
             raise TransactionRejected(
-                f"revision 冲突：请求基于 {effective.base_revision}，当前为 {current_revision}")
+                "broad_rewrite 未获得用户明确的大范围重建授权")
+        unapproved_requested = [
+            change.path for change in effective.requested_changes
+            if not _within_allowed(change.path, tuple(effective.approved_requested_paths))]
+        if unapproved_requested:
+            raise TransactionRejected(
+                "Intent Grounding 未授权请求变更：" +
+                ", ".join(unapproved_requested))
+        deterministic_dependencies = {
+            change.path for change in effective.dependent_changes
+            if change.path not in proposed_dependent}
+        approved_dependencies = tuple(
+            [*effective.approved_dependent_paths, *deterministic_dependencies])
+        unapproved_dependencies = [
+            change.path for change in effective.dependent_changes
+            if not _within_allowed(change.path, approved_dependencies)]
+        if unapproved_dependencies:
+            raise TransactionRejected(
+                "Impact Analysis 未批准依赖变更：" +
+                ", ".join(unapproved_dependencies))
         if effective.constraint_conflicts:
             details = "；".join(conflict.reason for conflict in effective.constraint_conflicts)
             raise TransactionRejected("存在未解决约束冲突：" + details)
@@ -53,30 +79,125 @@ class SemanticTransaction(Generic[PlanT]):
                 "存在未解决失效事实：" + "；".join(
                     f"{fact.path} ({fact.reason})" for fact in unresolved))
 
-        before = self.adapter.normalize(self.adapter.clone(current))
-        payload = before.to_json()  # type: ignore[attr-defined]
+        before = self.adapter.clone(current)
+        payload = self.adapter.dump(before)
         for change in effective.all_changes():
+            if (effective.change_category != "broad_rewrite"
+                    and change.path in broad_only_roots):
+                raise TransactionRejected(
+                    f"change category {effective.change_category} 不允许替换结构根: {change.path}")
+            _authorize_change(change, payload, tuple(allowed_roots), tuple(locked_paths))
             _apply(payload, change)
-        candidate = self.adapter.normalize(self.adapter.load(payload))
-
-        changed = tuple(sorted(_diff_paths(before.to_json(), candidate.to_json())))  # type: ignore[attr-defined]
-        authorized = tuple(_authorization_root(change)
-                           for change in effective.all_changes())
-        unauthorized = [path for path in changed if not _authorized(path, authorized)]
+        applied = self.adapter.load(payload)
+        proposal_changed = tuple(sorted(_diff_paths(
+            self.adapter.dump(before), self.adapter.dump(applied))))
+        proposal_authorized = tuple(_authorization_root(change)
+                                    for change in effective.all_changes()) + tuple(
+                                        fact.path for fact in effective.invalidated_facts)
+        unauthorized = [path for path in proposal_changed
+                        if not _authorized(path, proposal_authorized)]
         if unauthorized:
             raise TransactionRejected(
                 "Diff Guard 拒绝未授权变更：" + ", ".join(unauthorized))
+        candidate = self.adapter.normalize(applied)
+        if normalizer is not None:
+            candidate = normalizer(self.adapter.clone(candidate))
+        normalization_changed = tuple(sorted(_diff_paths(
+            self.adapter.dump(applied), self.adapter.dump(candidate))))
+        locked_normalization = [path for path in normalization_changed
+                                if any(_paths_overlap(path, locked)
+                                       for locked in locked_paths)]
+        if locked_normalization:
+            raise TransactionRejected(
+                "locked path 拒绝确定性归一化变更：" +
+                ", ".join(locked_normalization))
+        unauthorized_normalization = [path for path in normalization_changed
+                                      if not _authorized(path, tuple(normalization_paths))]
+        if unauthorized_normalization:
+            raise TransactionRejected(
+                "Diff Guard 拒绝未授权的确定性归一化：" +
+                ", ".join(unauthorized_normalization))
+        changed = tuple(sorted(_diff_paths(
+            self.adapter.dump(before), self.adapter.dump(candidate))))
         semantic_issues = semantic_check(candidate) if semantic_check else []
         if semantic_issues:
             raise TransactionRejected("语义校验失败：" + "；".join(
                 str(getattr(issue, "message", issue)) for issue in semantic_issues))
-        if commit is not None:
-            commit(candidate)
         return TransactionResult(candidate, changed, effective)
+
+    def _validate_contract(self, changeset: ChangeSet,
+                           current_revision: int) -> None:
+        issues = changeset.validate()
+        if issues:
+            raise TransactionRejected("ChangeSet 校验失败：" + "；".join(issues))
+        if changeset.base_revision != current_revision:
+            raise TransactionRejected(
+                f"revision 冲突：请求基于 {changeset.base_revision}，当前为 {current_revision}")
+        if changeset.plan_type != self.adapter.family:
+            raise TransactionRejected(
+                f"plan_type 不匹配：请求为 {changeset.plan_type!r}，"
+                f"当前计划为 {self.adapter.family!r}")
 
 
 def _parts(path: str) -> list[str]:
     return [part for part in path.split("/") if part]
+
+
+_IMMUTABLE_ROOTS = {"schema_version", "normal_form_version", "plan_type"}
+
+
+def _authorize_change(change: SemanticChange, payload: dict[str, Any],
+                      allowed_roots: tuple[str, ...],
+                      locked_paths: tuple[str, ...]) -> None:
+    parts = _parts(change.path)
+    if (not parts or any(part in _IMMUTABLE_ROOTS for part in parts)
+            or any(part.startswith("__") for part in parts)):
+        raise TransactionRejected(f"禁止修改不可变或魔术路径: {change.path}")
+    if allowed_roots and not _within_allowed(change.path, allowed_roots):
+        raise TransactionRejected(f"allowed root 拒绝变更: {change.path}")
+    if any(_paths_overlap(change.path, locked) for locked in locked_paths):
+        raise TransactionRejected(f"locked path 拒绝变更: {change.path}")
+    if change.operation == "insert":
+        if "/" not in change.path:
+            raise TransactionRejected(f"insert 路径必须包含列表索引: {change.path}")
+        parent_path, leaf = change.path.rsplit("/", 1)
+        parent = _read(payload, parent_path)
+        if not isinstance(parent, list) or not leaf.isdigit() or int(leaf) > len(parent):
+            raise TransactionRejected(f"insert 列表索引无效: {change.path}")
+        if parent and not _compatible_value(parent[0], change.value):
+            raise TransactionRejected(f"value type 不匹配: {change.path}")
+        return
+    current = _read(payload, change.path)
+    if change.operation == "set" and not _compatible_value(current, change.value):
+        raise TransactionRejected(
+            f"value type 不匹配: {change.path} 期望 {type(current).__name__}，"
+            f"实际 {type(change.value).__name__}")
+
+
+def _read(root: Any, path: str) -> Any:
+    current = root
+    try:
+        for part in _parts(path):
+            current = current[int(part)] if isinstance(current, list) else current[part]
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        raise TransactionRejected(f"无法应用变更，路径不存在: {path}") from exc
+    return current
+
+
+def _compatible_value(current: Any, proposed: Any) -> bool:
+    if current is None:
+        return True
+    if isinstance(current, bool):
+        return isinstance(proposed, bool)
+    return type(current) is type(proposed)
+
+
+def _paths_overlap(left: str, right: str) -> bool:
+    return left == right or left.startswith(right + "/") or right.startswith(left + "/")
+
+
+def _within_allowed(path: str, roots: tuple[str, ...]) -> bool:
+    return any(path == root or path.startswith(root + "/") for root in roots)
 
 
 def _apply(root: dict[str, Any], change: SemanticChange) -> None:

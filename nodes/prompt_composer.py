@@ -13,11 +13,14 @@ from __future__ import annotations
 
 import json
 import re
+import copy
 from typing import Any
 
 from ..renderers import render_anima, render_generic, render_special_image
 from ..schemas import types
 from ..schemas.character import CharacterBible
+from ..schemas.changeset import ChangeSet
+from ..schemas.image_semantic_plan import ImageSemanticPlan
 from ..schemas.profile import AIProfile
 from ..schemas.prompt_plan import (
     ANIMA_VARIANTS,
@@ -35,10 +38,10 @@ from ..prompting.node_requests import assemble_prompt, report_payload, task_mess
 from ..services.skills import get_skill
 from ..services.prompt_session import (
     CREATE_POLICY,
-    apply_plan_patch,
+    broad_rewrite_requested,
+    changeset_summary,
     node_execution_result,
-    patch_change_summary,
-    request_plan_patch,
+    request_changeset,
 )
 from ..validators.anima import validate_anima
 from ._helpers import require_api_key, resolve_profile_input, try_api_key
@@ -257,17 +260,11 @@ class APS_PromptComposer:
                     target_family=session.target_family,
                     target_variant=session.target_variant,
                     current_plan=bundle, current_prompt=positive, revision=0)
-                repair_patch = self._request_session_patch(
+                repair_changeset = self._request_session_changeset(
                     prof, repair_session,
                     "Fix only these validation issues. Preserve all unrelated content.\n" +
                     validation.as_text())
-                candidate = apply_plan_patch(
-                    bundle, repair_patch, current_revision=0,
-                    locked_paths=["prompt_plan", "generation_profile",
-                                  "model_plan/prompt_mode", "model_plan/safety_tag",
-                                  "model_plan/lora_triggers", "model_plan/family",
-                                  "model_plan/skill_id"],
-                    allowed_roots=["model_plan"])
+                candidate = _apply_semantic_changeset(repair_session, repair_changeset)
                 plan, gprofile = self._render_session_candidate(candidate)
                 validation = self._validate_plan(
                     plan, reference_manifest,
@@ -287,7 +284,8 @@ class APS_PromptComposer:
                 raise ValueError("本轮 CREATE 与一次自动修复均未通过；未写入会话" +
                                  detail + "\n" + validation.as_text())
         summary = "已建立第一版方案。你可以先生成图片，再直接描述需要调整的部分。"
-        session.commit(bundle, positive, validation, base_text, summary)
+        session.commit(bundle, positive, validation, base_text, summary,
+                       expected_revision=0)
         return node_execution_result(result_tuple, session.to_json_string(),
                                      positive, summary, session.revision)
 
@@ -296,13 +294,10 @@ class APS_PromptComposer:
         if not feedback.strip():
             raise ValueError("REFINE 需要在 text 中填写本轮修改意见")
         working_session = self._session_with_migrated_plan(session)
-        patch = self._request_session_patch(prof, working_session, feedback)
-        locked = ["prompt_plan", "generation_profile", "model_plan/prompt_mode",
-                  "model_plan/safety_tag", "model_plan/lora_triggers",
-                  "model_plan/family", "model_plan/skill_id"]
-        candidate = apply_plan_patch(
-            working_session.current_plan, patch, current_revision=session.revision,
-            locked_paths=locked, allowed_roots=["model_plan"])
+        changeset = self._request_session_changeset(prof, working_session, feedback)
+        allow_broad = broad_rewrite_requested(feedback)
+        candidate = _apply_semantic_changeset(
+            working_session, changeset, allow_broad=allow_broad)
         plan, gprofile = self._render_session_candidate(candidate)
         report = self._validate_plan(
             plan, reference_manifest,
@@ -310,12 +305,11 @@ class APS_PromptComposer:
         if not report.valid:
             repair_feedback = ("Fix only the following validation issues; preserve the requested "
                                "change and every unrelated field.\n" + report.as_text())
-            repair_patch = self._request_session_patch(
+            repair_changeset = self._request_session_changeset(
                 prof, working_session, feedback + "\n\n" + repair_feedback)
-            candidate = apply_plan_patch(
-                working_session.current_plan, repair_patch, current_revision=session.revision,
-                locked_paths=locked, allowed_roots=["model_plan"])
-            patch = repair_patch
+            candidate = _apply_semantic_changeset(
+                working_session, repair_changeset, allow_broad=allow_broad)
+            changeset = repair_changeset
             plan, gprofile = self._render_session_candidate(candidate)
             report = self._validate_plan(
                 plan, reference_manifest,
@@ -325,8 +319,9 @@ class APS_PromptComposer:
         plan.validation = report
         candidate["prompt_plan"] = plan.to_json()
         candidate["generation_profile"] = gprofile.to_json()
-        summary = patch_change_summary(patch)
-        session.commit(candidate, plan.positive, report, feedback, summary)
+        summary = changeset_summary(changeset)
+        session.commit(candidate, plan.positive, report, feedback, summary,
+                       expected_revision=changeset.base_revision)
         result_tuple = (plan.positive, plan.negative, plan.to_json(),
                         gprofile.to_json(), report.as_text())
         return node_execution_result(result_tuple, session.to_json_string(),
@@ -381,10 +376,10 @@ class APS_PromptComposer:
         plan.warnings = out.get("warnings", [])
         return plan, out["profile"]
 
-    def _request_session_patch(self, prof: Any, session: PromptSession,
-                               feedback: str) -> dict[str, Any]:
+    def _request_session_changeset(self, prof: Any, session: PromptSession,
+                                   feedback: str) -> ChangeSet:
         api_key = require_api_key(prof)
-        return request_plan_patch(Gateway(), prof, api_key, session, feedback)
+        return request_changeset(Gateway(), prof, api_key, session, feedback)
 
     @staticmethod
     def _validate_plan(plan: PromptPlan,
@@ -760,6 +755,53 @@ def _model_plan_from_rendered(content: dict[str, Any], negative: str,
     return {"family": family, "content": content, "negative": negative,
             "prompt_mode": prompt_mode, "safety_tag": safety_tag,
             "lora_triggers": list(lora)}
+
+
+def _apply_semantic_changeset(session: PromptSession,
+                              changeset: ChangeSet, *,
+                              allow_broad: bool = False) -> dict[str, Any]:
+    """Run the canonical P2 transaction and return an isolated session bundle."""
+    from ..domain.impact_analysis import analyze_image_impacts
+    from ..domain.plan_adapters import get_session_plan_adapter
+    from ..domain.transactions import SemanticTransaction
+
+    family = session.target_family
+    adapter = get_session_plan_adapter(family)
+    bundle = copy.deepcopy(session.current_plan)
+    model_plan = bundle.get("model_plan", {})
+    semantic = adapter.load({"content": model_plan.get("content", {}),
+                             "negative": model_plan.get("negative", "")})
+    payload = adapter.dump(semantic)
+    allowed = ["content", "negative"]
+    locked = []
+    for raw in session.locked_constraints:
+        value = str(raw).strip().strip("/")
+        if value.startswith("model_plan/content/"):
+            value = "content/" + value[len("model_plan/content/"):]
+        elif value == "model_plan/negative":
+            value = "negative"
+        locked.append(value)
+    result = SemanticTransaction(adapter).execute(
+        semantic, changeset, current_revision=session.revision,
+        impact_analyzer=analyze_image_impacts, allowed_roots=allowed,
+        locked_paths=locked, broad_only_roots=["content"],
+        allow_broad=allow_broad,
+        semantic_check=lambda plan: _image_semantic_issues(plan, family))
+    rendered_state = adapter.dump(result.plan)
+    model_plan["content"] = rendered_state["content"]
+    model_plan["negative"] = rendered_state["negative"]
+    return bundle
+
+
+def _image_semantic_issues(plan: ImageSemanticPlan, family: str) -> list[str]:
+    from ..domain.impact_analysis import validate_image_candidate
+
+    issues = validate_image_candidate(plan)
+    if family == "anima":
+        from ..schemas.anima import AnimaPromptPlan
+
+        issues.extend(AnimaPromptPlan.from_json(plan.content).validate())
+    return issues
 
 
 def _unpack_rendered(values: tuple[Any, ...], base_text: str, family: str,

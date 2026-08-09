@@ -25,6 +25,15 @@ class FakeGateway:
 
     def generate(self, profile, api_key, req):
         FakeGateway.last_req = req
+        properties = (req.output_schema or {}).get("properties", {})
+        if "approved_requested_paths" in properties:
+            proposal = json.loads(self.text)
+            return LLMResult(text=json.dumps({
+                "approved_requested_paths": [item["path"]
+                    for item in proposal.get("requested_changes", [])],
+                "approved_dependent_paths": [item["path"]
+                    for item in proposal.get("dependent_changes", [])],
+                "rejected_reasons": [], "summary": "approved"}))
         return LLMResult(text=self.text)
 
 
@@ -118,9 +127,11 @@ def test_h3_persistent_refine_changes_shot2_without_touching_shot1(monkeypatch, 
     session_json = created["ui"]["prompt_session"][0]
     shot1_before = json.loads(session_json)["current_plan"]["h3_plan"]["shots"][0]
 
-    patch = {"base_revision": 1, "scope": "minimal", "changes": [{
-        "path": "h3_plan/shots/1/camera", "action": "replace",
-        "value": "The camera remains static."}],
+    patch = {"base_revision": 1, "plan_type": "minimax_h3",
+        "change_category": "minimal_refine", "intent_scope": ["shots/1/camera"],
+        "requested_changes": [{"path": "shots/1/camera", "operation": "set",
+        "value_json": "\"The camera remains static.\"", "reason": "user request"}],
+        "dependent_changes": [], "invalidated_facts": [], "constraint_conflicts": [],
         "summary": "已将 Shot 2 攓为固定机位；Shot 1 与声音保持不变。"}
     monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(patch)))
     refined = node.direct(**node_payload(
@@ -130,6 +141,38 @@ def test_h3_persistent_refine_changes_shot2_without_touching_shot1(monkeypatch, 
     assert session_v2["revision"] == 2
     assert session_v2["current_plan"]["h3_plan"]["shots"][0] == shot1_before
     assert "The camera remains static." in session_v2["current_prompt"]
+
+
+def test_h3_refine_enforces_session_lock_and_preserves_input_session(monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
+    node = h3_mod.APS_MiniMaxH3Director()
+    created = node.direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA", duration=10.0))
+    stable = json.loads(created["ui"]["prompt_session"][0])
+    stable["locked_constraints"] = ["h3_plan/shots/1/camera"]
+    stable_json = json.dumps(stable, ensure_ascii=False)
+    commit_calls = []
+    original_commit = h3_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(h3_mod.PromptSession, "commit", commit_spy)
+    change = {"base_revision": 1, "plan_type": "minimax_h3",
+        "change_category": "minimal_refine", "intent_scope": ["shots/1/camera"],
+        "requested_changes": [{"path": "shots/1/camera", "operation": "set",
+            "value_json": "\"handheld camera\"", "reason": "user request"}],
+        "dependent_changes": [], "invalidated_facts": [], "constraint_conflicts": [],
+        "summary": "camera"}
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(change)))
+    with pytest.raises(ValueError, match="locked"):
+        node.direct(**node_payload(
+            AI_PROFILE=payload, text="change camera", mode="T2VA", duration=10.0,
+            prompt_session=stable_json))
+    assert json.loads(stable_json)["revision"] == 1
+    assert commit_calls == []
 
 
 def test_generate_i2va_with_image_adds_instruction(monkeypatch, store):

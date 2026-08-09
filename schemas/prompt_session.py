@@ -57,30 +57,37 @@ class PromptSession(Schema):
 
     def commit(self, plan: Dict[str, Any], prompt: str,
                validation: Dict[str, Any] | ValidationReport,
-               user_instruction: str, change_summary: str) -> None:
+               user_instruction: str, change_summary: str, *,
+               expected_revision: int | None = None) -> None:
         """Atomically commit a valid plan+prompt pair; invalid input changes nothing."""
+        if expected_revision is not None and self.revision != expected_revision:
+            raise ValueError(
+                f"revision CAS 冲突：期望 {expected_revision}，当前 {self.revision}")
         report = ValidationReport.from_json(validation)
         if not report.valid:
             raise ValueError("validation 未通过，不能提交 PromptSession revision")
         if not isinstance(plan, dict) or not plan or not str(prompt or "").strip():
             raise ValueError("plan 与 prompt 必须是非空的有效结果")
-        new_revision = self.revision + 1
+        staged = copy.deepcopy(self)
+        new_revision = staged.revision + 1
         snapshot = PromptRevision(
             revision=new_revision, plan=copy.deepcopy(plan), prompt=str(prompt),
             validation=copy.deepcopy(report), user_instruction=user_instruction,
             change_summary=change_summary)
-        self.current_plan = copy.deepcopy(snapshot.plan)
-        self.current_prompt = snapshot.prompt
-        self.validation = copy.deepcopy(report)
-        self.revision = new_revision
-        self.revisions.append(snapshot)
-        self.revisions = self.revisions[-5:]
-        self.conversation.extend([
+        staged.current_plan = copy.deepcopy(snapshot.plan)
+        staged.current_prompt = snapshot.prompt
+        staged.validation = copy.deepcopy(report)
+        staged.revision = new_revision
+        staged.revisions.append(snapshot)
+        staged.revisions = staged.revisions[-5:]
+        staged.conversation.extend([
             ChatMessage(role="user", content=user_instruction),
             ChatMessage(role="assistant", content=change_summary),
         ])
-        self.conversation = self.conversation[-20:]
-        self.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        staged.conversation = staged.conversation[-20:]
+        staged.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        # The stable object is swapped only after the complete next state exists.
+        self.__dict__ = staged.__dict__
 
     def revert_previous(self) -> bool:
         if len(self.revisions) < 2:

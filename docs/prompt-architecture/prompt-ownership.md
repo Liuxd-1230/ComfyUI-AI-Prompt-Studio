@@ -23,7 +23,9 @@ Prompt content has one authoritative owner per semantic layer. Rendered request 
 
 `APS_PromptComposer` and `APS_MiniMaxH3Director` remain one-shot public facades. Their class names, widget order, required input names, return types, and workflow JSON compatibility are frozen unless a migration is supplied. Stateful Studio nodes are separate consumers of the same adapters, renderers, and validators; they do not call a one-shot node internally.
 
-The existing persistence embedded in Composer and H3 Director is transitional. During P0-P3 it is contained behind compatibility adapters. It must not become the canonical Studio transaction implementation.
+Composer and H3 Director now delegate persistent REFINE to the canonical semantic
+transaction. The old root-oriented patch helpers remain callable only for pre-P2
+Python consumers and are not allowed in node execution paths.
 
 ## Mutation Authority
 

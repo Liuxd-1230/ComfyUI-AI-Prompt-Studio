@@ -8,10 +8,12 @@ LLM 产出结构化计划（内容决策）→ Python renderer 确定性拼装�
 """
 from __future__ import annotations
 
+import copy
 from typing import Any, List, Optional
 
 from ..schemas import types
 from ..schemas.character import CharacterBible, CharacterBook
+from ..schemas.changeset import ChangeSet, SemanticChange
 from ..schemas.h3 import H3_MODES, H3_OPERATIONS, H3PromptPlan
 from ..schemas.profile import AIProfile
 from ..schemas.prompt_session import PromptSession
@@ -36,16 +38,68 @@ from ..services.h3_plan import (
 from ..services.skills import get_skill
 from ..services.prompt_session import (
     CREATE_POLICY,
-    apply_plan_patch,
+    broad_rewrite_requested,
+    changeset_summary,
     node_execution_result,
-    patch_change_summary,
-    request_plan_patch,
+    request_changeset,
 )
 from ..validators.minimax_h3 import r2v_english_issue, validate_h3
 from ._helpers import require_api_key, resolve_profile_input, try_api_key
 
 # 模式资产约束：T2VA=0；I2VA=1（首帧）；FL2VA=2（首尾）；L2VA=1（尾帧）；R2V 不限
 MODE_IMAGE_REQUIREMENTS = {"T2VA": 0, "I2VA": 1, "FL2VA": 2, "L2VA": 1}
+
+
+def _apply_h3_changeset(session: PromptSession, changeset: ChangeSet,
+                        locked_paths: list[str], *, mode: str, duration: float,
+                        manifest: ReferenceManifest, img_count: int,
+                        allow_broad: bool = False) -> dict[str, Any]:
+    """Apply an H3 ChangeSet through the canonical clone/Diff Guard seam."""
+    from ..domain.impact_analysis import analyze_h3_impacts
+    from ..domain.plan_adapters import get_plan_adapter
+    from ..domain.transactions import SemanticTransaction
+
+    adapter = get_plan_adapter("minimax_h3")
+    bundle = copy.deepcopy(session.current_plan)
+    semantic = adapter.load(bundle.get("h3_plan", {}))
+    duration_changed = float(semantic.duration_seconds) != float(duration)
+    duration_change = next((item for item in changeset.all_changes()
+                            if item.path == "duration_seconds"), None)
+    if duration_changed:
+        if (duration_change is not None
+                and (not isinstance(duration_change.value, (int, float))
+                     or float(duration_change.value) != float(duration))):
+            raise ValueError("ChangeSet duration_seconds 与节点 duration 输入冲突")
+        if duration_change is None:
+            changeset.intent_scope.append("duration_seconds")
+            changeset.approved_requested_paths.append("duration_seconds")
+            changeset.requested_changes.append(SemanticChange(
+                path="duration_seconds", operation="set", value=float(duration),
+                reason="用户修改了 H3 Director 的 duration 节点输入"))
+        locked_paths = [path for path in locked_paths if path != "duration_seconds"]
+
+    def normalize_runtime(plan: H3PromptPlan) -> H3PromptPlan:
+        plan.duration_seconds = float(duration)
+        sync_manifest_assets(plan, manifest)
+        plan.warnings = list(dict.fromkeys(
+            [*plan.warnings, *map_image_assets(plan, img_count, mode)]))
+        normalize_media_labels(plan)
+        return plan
+
+    payload = adapter.dump(semantic)
+    allowed = [key for key in payload if key not in {
+        "schema_version", "plan_id", "created_at", "validation", "raw", "warnings",
+        "operation", "storyboard_id"}]
+    result = SemanticTransaction(adapter).execute(
+        semantic, changeset, current_revision=session.revision,
+        impact_analyzer=analyze_h3_impacts, allowed_roots=allowed,
+        locked_paths=locked_paths,
+        broad_only_roots=["shots", "speakers", "subjects", "assets", "retention"],
+        normalization_paths=["duration_seconds", "shots", "speakers", "assets",
+                             "subjects", "retention", "warnings"],
+        normalizer=normalize_runtime, allow_broad=allow_broad)
+    bundle["h3_plan"] = adapter.dump(result.plan)
+    return bundle
 
 
 def _assemble_h3(task_payload: dict[str, Any], operation: str, *,
@@ -285,7 +339,8 @@ class APS_MiniMaxH3Director:
                              report.as_text())
         bundle = {"h3_plan": plan.to_json(), "reference_manifest": manifest.to_json()}
         summary = "已建立第一版 H3 方案。请先生成视频，再直接描述需要调整的镜头。"
-        session.commit(bundle, rendered, report, text or "", summary)
+        session.commit(bundle, rendered, report, text or "", summary,
+                       expected_revision=0)
         return node_execution_result(result_tuple, session.to_json_string(),
                                      rendered, summary, session.revision)
 
@@ -372,28 +427,33 @@ class APS_MiniMaxH3Director:
             session.current_plan.get("reference_manifest", {}))
         saved_manifest.merge(manifest)
         manifest = saved_manifest
-        patch = request_plan_patch(Gateway(), prof, api_key, session, feedback)
+        runtime_constraints = {"mode": mode, "duration_seconds": float(duration),
+                               "image_count": img_count}
+        changeset = request_changeset(
+            Gateway(), prof, api_key, session, feedback, runtime_constraints)
         # Broad redesign may intentionally change cast/reference roles. Protocol identity,
         # manifest bindings and the explicit duration widget remain authoritative.
-        locked = ["h3_plan/mode", "h3_plan/plan_id", "h3_plan/created_at",
-                  "h3_plan/validation", "h3_plan/duration_seconds",
-                  "reference_manifest"]
-        if patch.get("scope") != "broad":
-            locked.extend(["h3_plan/speakers", "h3_plan/subjects", "h3_plan/assets"])
-        candidate = apply_plan_patch(
-            session.current_plan, patch, current_revision=session.revision,
-            locked_paths=locked, allowed_roots=["h3_plan"])
+        locked = ["mode", "operation", "storyboard_id", "plan_id", "created_at",
+                  "validation", "raw", "duration_seconds"]
+        for raw in session.locked_constraints:
+            value = str(raw).strip().strip("/")
+            locked.append(value[len("h3_plan/"):] if value.startswith("h3_plan/") else value)
+        allow_broad = broad_rewrite_requested(feedback)
+        candidate = _apply_h3_changeset(
+            session, changeset, locked, mode=mode, duration=duration,
+            manifest=manifest, img_count=img_count, allow_broad=allow_broad)
         plan, rendered, report = self._render_session_candidate(
             candidate, mode, duration, manifest, img_count)
         if not report.valid:
             repair_feedback = (feedback + "\n\nFix only these validation issues; preserve every "
                                "unrelated shot and decision:\n" + report.as_text())
-            repair_patch = request_plan_patch(
-                Gateway(), prof, api_key, session, repair_feedback)
-            candidate = apply_plan_patch(
-                session.current_plan, repair_patch, current_revision=session.revision,
-                locked_paths=locked, allowed_roots=["h3_plan"])
-            patch = repair_patch
+            repair_changeset = request_changeset(
+                Gateway(), prof, api_key, session, repair_feedback,
+                runtime_constraints)
+            candidate = _apply_h3_changeset(
+                session, repair_changeset, locked, mode=mode, duration=duration,
+                manifest=manifest, img_count=img_count, allow_broad=allow_broad)
+            changeset = repair_changeset
             plan, rendered, report = self._render_session_candidate(
                 candidate, mode, duration, manifest, img_count)
         if not report.valid:
@@ -401,8 +461,9 @@ class APS_MiniMaxH3Director:
         plan.validation = report
         candidate["h3_plan"] = plan.to_json()
         candidate["reference_manifest"] = manifest.to_json()
-        summary = patch_change_summary(patch)
-        session.commit(candidate, rendered, report, feedback, summary)
+        summary = changeset_summary(changeset)
+        session.commit(candidate, rendered, report, feedback, summary,
+                       expected_revision=changeset.base_revision)
         result_tuple = (rendered, plan.to_json(), manifest.to_json(),
                         report.as_text(), "\n".join(plan.warnings))
         return node_execution_result(result_tuple, session.to_json_string(),
@@ -413,12 +474,6 @@ class APS_MiniMaxH3Director:
             manifest: ReferenceManifest,
             img_count: int) -> tuple[H3PromptPlan, str, Any]:
         plan = H3PromptPlan.from_json(candidate.get("h3_plan", {}))
-        # The visible node control is the sole source of truth for clip duration;
-        # an LLM patch can never silently override it.
-        plan.duration_seconds = float(duration)
-        sync_manifest_assets(plan, manifest)
-        plan.warnings.extend(map_image_assets(plan, img_count, mode))
-        normalize_media_labels(plan)
         rendered = render_h3(plan)
         report = validate_h3(rendered, mode, duration=duration,
                              manifest=manifest, plan=plan)

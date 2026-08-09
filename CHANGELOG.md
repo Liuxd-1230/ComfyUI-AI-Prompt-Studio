@@ -1,5 +1,6 @@
 # Changelog
 
+- Persistent P2 事务返工：Composer 与 H3 Director 的生产 REFINE 已从根对象 Plan Patch 迁移到 reasoned `ChangeSet`；每次修改包含 revision、plan type、请求/依赖变更、失效事实、约束冲突和 reason。提案后会再做一次独立的紧凑结构化 intent/impact 审批，未批准的直接或依赖路径不得进入授权集。新主链实行 clone-first Impact Analysis、intent scope/路径/索引/值类型/锁/不可变元数据校验、提案与 normalizer 分段 Diff Guard、用户文本独立授权的 broad rewrite、最多一次定向修复和带 revision CAS 的 Session 整体原子交换。图像事务把 positive content 与 negative 放入同一影响图并对最终候选做冲突校验；H3 把 duration、manifest、媒体编号和 Session locks 纳入事务，拦截未闭合的时长/镜头切点失效。旧 Patch API 仅保留为非节点兼容入口。
 - Persistent P1 返工：ANIMA Plan Normal Form 升级到 v2，移除可编辑的 `natural_body`、人物 `description` 与平行 tag 缓存双真源；Natural/Tags/Hybrid 统一从正式 Plan 派生，负向约束进入最终 negative。新增显式 v1→v2 迁移（歧义旧 prose 安全拒绝且不改 revision）、统一字段矩阵的确定性所有权校验、生产 Session 使用的 `PlanAdapter.to_llm_context()`，并把四个 ANIMA 结构化 Skill、renderer、Prompt Composer CREATE/REFINE 及 workflow Session 统一到 v2。
 - 架构升级：Prompt Composer 与 MiniMax H3 Director 增加 workflow 持久化 `PromptSession`，自动 CREATE/REFINE、受限 Plan Patch、最近 5 版、回退/新会话、Current Prompt 与聊天摘要；新 UI 隐藏 operation，旧值继续兼容。
 - 增强 `APS_LLMGenerate` 默认 system prompt：强调准确遵循指令、合理利用上下文、在歧义时推断意图，并优先返回简洁可用的结果。

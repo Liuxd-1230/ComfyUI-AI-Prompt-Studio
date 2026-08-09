@@ -16,7 +16,8 @@ import pytest
 
 
 def _changeset(path: str) -> ChangeSet:
-    return ChangeSet(base_revision=1, intent_scope=[path],
+    return ChangeSet(base_revision=1, plan_type="anima", intent_scope=[path],
+                     approved_requested_paths=[path],
                      requested_changes=[SemanticChange(
                          path=path, value="x", reason="用户明确要求")],
                      summary="test")
@@ -62,7 +63,8 @@ def test_anima_pnf_needs_no_derived_prose_cleanup_and_blocks_stale_lighting() ->
         scene_description="street", environment=["street"], lighting="neon",
         characters=[AnimaCharacter(character_id="c1")])
     trait_change = ChangeSet(
-        base_revision=1, intent_scope=["character.action"],
+        base_revision=1, plan_type="anima", intent_scope=["characters/0/action"],
+        approved_requested_paths=["characters/0/action"],
         requested_changes=[SemanticChange(
             path="characters/0/action", value="running", reason="用户要求")],
         summary="改动作")
@@ -72,7 +74,8 @@ def test_anima_pnf_needs_no_derived_prose_cleanup_and_blocks_stale_lighting() ->
     assert result.changeset.dependent_changes == []
 
     environment_change = ChangeSet(
-        base_revision=1, intent_scope=["environment"],
+        base_revision=1, plan_type="anima", intent_scope=["environment"],
+        approved_requested_paths=["environment"],
         requested_changes=[SemanticChange(
             path="environment", value=["beach"], reason="用户要求")],
         summary="换场景")

@@ -5,10 +5,11 @@ from copy import deepcopy
 from typing import Any, Callable, Generic, Protocol, TypeVar
 
 from ..schemas.anima import AnimaPromptPlan
-from ..schemas.changeset import ChangeSet, InvalidatedFact, SemanticChange
+from ..schemas.changeset import ChangeSet
 from ..schemas.h3 import H3PromptPlan
 from ..schemas.semantic import ConsistencyResult, RiskAssessment, SemanticIssue
 from .plan_adapters import PlanAdapter
+from .impact_analysis import analyze_anima_impacts
 
 
 PlanT = TypeVar("PlanT")
@@ -51,19 +52,6 @@ def assess_risk(changeset: ChangeSet) -> RiskAssessment:
     level = "high" if score >= 3 else "medium" if score else "low"
     return RiskAssessment(level=level, score=score, reasons=_dedupe(reasons),
                           critic_required=level == "high")
-
-
-def analyze_anima_impacts(plan: AnimaPromptPlan,
-                          changeset: ChangeSet) -> ChangeSet:
-    """Add the minimum known dependency closure for ANIMA normal form."""
-    existing = {change.path for change in changeset.all_changes()}
-    for change in list(changeset.all_changes()):
-        if change.path == "environment" and plan.lighting:
-            if "lighting" not in existing:
-                changeset.invalidated_facts.append(InvalidatedFact(
-                    path="lighting",
-                    reason="环境变化可能使原光线来源与时间条件失效；必须确认或同步更新"))
-    return changeset
 
 
 class SemanticConsistencyPipeline(Generic[PlanT]):
