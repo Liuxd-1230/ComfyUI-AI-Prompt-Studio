@@ -27,8 +27,12 @@ class PlanAdapter(ABC, Generic[PlanT]):
         raise NotImplementedError
 
     @abstractmethod
-    def llm_context(self, plan: PlanT) -> dict[str, Any]:
+    def to_llm_context(self, plan: PlanT) -> dict[str, Any]:
         raise NotImplementedError
+
+    def llm_context(self, plan: PlanT) -> dict[str, Any]:
+        """Compatibility alias for the short-lived P1 pre-release API."""
+        return self.to_llm_context(plan)
 
     def clone(self, plan: PlanT) -> PlanT:
         return deepcopy(plan)
@@ -44,7 +48,7 @@ class AnimaPlanAdapter(PlanAdapter[AnimaPromptPlan]):
     def normalize(self, plan: AnimaPromptPlan) -> AnimaPromptPlan:
         return plan.normalized()
 
-    def llm_context(self, plan: AnimaPromptPlan) -> dict[str, Any]:
+    def to_llm_context(self, plan: AnimaPromptPlan) -> dict[str, Any]:
         return plan.to_llm_context()
 
 
@@ -61,7 +65,7 @@ class H3PlanAdapter(PlanAdapter[H3PromptPlan]):
         clone.speakers.sort(key=lambda speaker: speaker.speaker_id)
         return clone
 
-    def llm_context(self, plan: H3PromptPlan) -> dict[str, Any]:
+    def to_llm_context(self, plan: H3PromptPlan) -> dict[str, Any]:
         return plan.to_llm_context()
 
 

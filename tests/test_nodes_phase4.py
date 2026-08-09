@@ -114,6 +114,10 @@ def test_composer_persistent_create_then_minimal_refine(monkeypatch, store):
     session_json = json.loads(workflow_json)["nodes"][0]["widgets_values"]["prompt_session"]
     node = pc_mod.APS_PromptComposer()
     session_v1 = json.loads(session_json)
+    legacy_content = session_v1["current_plan"]["model_plan"]["content"]
+    legacy_content["normal_form_version"] = "1.0"
+    legacy_content["natural_body"] = legacy_content.pop("scene_description")
+    session_json = json.dumps(session_v1, ensure_ascii=False)
     old_negative = session_v1["current_plan"]["prompt_plan"]["negative"]
 
     class PatchGateway:
@@ -123,7 +127,7 @@ def test_composer_persistent_create_then_minimal_refine(monkeypatch, store):
             PatchGateway.req = req
             return LLMResult(text=json.dumps({
                 "base_revision": 1, "scope": "minimal",
-                "changes": [{"path": "model_plan/content/visual_tags/1", "action": "replace",
+                "changes": [{"path": "model_plan/content/supplemental_tags/1", "action": "replace",
                              "value": "white dress"}],
                 "summary": "已把红裙改为白裙，其他内容保持不变。",
             }))
@@ -136,9 +140,15 @@ def test_composer_persistent_create_then_minimal_refine(monkeypatch, store):
     session_v2 = json.loads(refined["ui"]["prompt_session"][0])
     assert session_v2["revision"] == 2
     assert session_v2["current_plan"]["prompt_plan"]["negative"] == old_negative
+    migrated = session_v2["current_plan"]["model_plan"]["content"]
+    assert migrated["normal_form_version"] == "2.0"
+    assert "scene_description" in migrated and "natural_body" not in migrated
     assert "white dress" in session_v2["current_prompt"]
     sent = PatchGateway.req.messages[0].content
     assert "current_plan" in sent and "latest_user_instruction" in sent
+    assert "supplemental_tags" in sent and "natural_body" not in sent
+    assert '"prompt_plan"' not in sent
+    assert '"generation_profile"' not in sent
     assert "已把红裙" not in sent  # 不重放 AI 聊天 transcript
 
     reverted = node.compose(
@@ -165,6 +175,36 @@ def test_composer_continue_off_starts_new_session(store):
     assert second_session["id"] != first_session["id"]
     assert second_session["revision"] == 1
     assert "blue coat" in second_session["current_prompt"]
+
+
+def test_composer_rejects_ambiguous_v1_session_before_gateway(monkeypatch, store):
+    payload = setup_profile(store)
+    node = pc_mod.APS_PromptComposer()
+    created = node.compose(
+        AI_PROFILE=payload, text="1girl, red coat", target="anima_base",
+        operation="generate", prompt_mode="tags", negative="", safety_tag="none")
+    legacy = json.loads(created["ui"]["prompt_session"][0])
+    content = legacy["current_plan"]["model_plan"]["content"]
+    content["normal_form_version"] = "1.0"
+    content.pop("scene_description", None)
+    content["natural_body"] = "Alice wears a red coat."
+    content["characters"] = [{
+        "character_id": "c1", "name": "Alice",
+        "required_traits": [], "variable_traits": ["red coat"],
+        "action": "", "position": "",
+    }]
+
+    class ForbiddenGateway:
+        def generate(self, profile, api_key, req):
+            raise AssertionError("ambiguous migration must fail before an LLM patch")
+
+    monkeypatch.setattr(pc_mod, "Gateway", ForbiddenGateway)
+    with pytest.raises(ValueError, match="保持不变"):
+        node.compose(
+            AI_PROFILE=payload, text="change the coat", target="anima_base",
+            operation="generate", prompt_mode="tags", negative="", safety_tag="none",
+            prompt_session=json.dumps(legacy, ensure_ascii=False))
+    assert legacy["revision"] == 1
 
 
 def test_composer_anima_aesthetic_no_score(store):

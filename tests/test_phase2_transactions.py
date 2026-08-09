@@ -11,7 +11,7 @@ from aps.schemas.changeset import (ChangeSet, ConstraintConflict,
 
 def _plan() -> AnimaPromptPlan:
     return AnimaPromptPlan(
-        natural_body="A rainy street.",
+        scene_description="A rainy street.",
         characters=[AnimaCharacter(character_id="c1", variable_traits=["red coat"],
                                    action="walking")],
         lighting="blue hour")

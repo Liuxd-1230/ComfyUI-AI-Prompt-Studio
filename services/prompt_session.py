@@ -73,7 +73,7 @@ def request_plan_patch(gateway: Any, profile: AIProfile, api_key: str,
     from .reference import extract_json_object
 
     task_data = {
-        "current_plan": session.current_plan,
+        "current_plan": _compact_current_plan(session),
         "locked_constraints": session.locked_constraints,
         "latest_user_instruction": feedback,
         "base_revision": session.revision,
@@ -113,6 +113,39 @@ def request_plan_patch(gateway: Any, profile: AIProfile, api_key: str,
             raise ValueError("broad rebuild_plan_json 必须表示对象；上一版保持不变")
         patch["rebuild_plan"] = rebuilt
     return patch
+
+
+def _compact_current_plan(session: PromptSession) -> dict[str, Any]:
+    """Serialize only semantic state needed to propose the next patch."""
+    current = session.current_plan
+    if session.target_family == "anima":
+        from ..domain.plan_adapters import get_plan_adapter
+
+        model_plan = current.get("model_plan", {})
+        adapter = get_plan_adapter("anima")
+        semantic = adapter.load(model_plan.get("content", {}))
+        return {"model_plan": {
+            "family": model_plan.get("family", "anima"),
+            "content": adapter.to_llm_context(semantic),
+            "negative": model_plan.get("negative", ""),
+            "prompt_mode": model_plan.get("prompt_mode", "natural_language"),
+            "safety_tag": model_plan.get("safety_tag", "none"),
+            "lora_triggers": model_plan.get("lora_triggers", []),
+            "skill_id": model_plan.get("skill_id", ""),
+        }}
+    if session.target_family == "minimax_h3":
+        from ..domain.plan_adapters import get_plan_adapter
+
+        adapter = get_plan_adapter("minimax_h3")
+        semantic = adapter.load(current.get("h3_plan", {}))
+        return {"h3_plan": adapter.to_llm_context(semantic),
+                "reference_manifest": current.get("reference_manifest", {})}
+    model_plan = current.get("model_plan", {})
+    return {"model_plan": {
+        key: model_plan.get(key)
+        for key in ("family", "content", "negative", "prompt_mode", "skill_id")
+        if key in model_plan
+    }}
 
 
 def apply_plan_patch(current_plan: dict[str, Any], patch: dict[str, Any], *,

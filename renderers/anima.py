@@ -187,7 +187,7 @@ def _extract_json(raw: str) -> Optional[dict]:
 
 def build_anima_plan(text: str, bible: Optional[CharacterBible] = None) -> AnimaPromptPlan:
     """确定性构建：输入文本为自然正文；Bible 锁定/稳定特征 → 人物绑定。"""
-    plan = AnimaPromptPlan(natural_body=(text or "").strip())
+    plan = AnimaPromptPlan(scene_description=(text or "").strip())
     if bible is not None and (bible.character_prompt() or bible.name):
         c = AnimaCharacter(character_id=bible.character_id, name=bible.name or "")
         for t in bible.traits:
@@ -206,38 +206,29 @@ def build_anima_plan(text: str, bible: Optional[CharacterBible] = None) -> Anima
 def parse_anima_plan(raw: str, bible: Optional[CharacterBible] = None) -> AnimaPromptPlan:
     """把 LLM 输出的计划 JSON 容错解析为 AnimaPromptPlan。
 
-    非 JSON 时回退：整段文本作为 natural_body，Bible 派生人物绑定（不伪造）。
+    非 JSON 时回退：整段文本作为 scene_description，Bible 派生人物绑定（不伪造）。
+    v1 的 natural_description/natural_body/character.description 只在 schema
+    迁移边界消费，renderer 永远只接收 PNF v2。
     """
     data = _extract_json(raw)
     if data is not None:
-        plan = AnimaPromptPlan()
-        plan.natural_body = _s(data.get("natural_description")) or _s(data.get("natural_body"))
-        plan.control_tags = _str_list(data.get("control_tags")) or _str_list(data.get("quality"))
-        plan.character_tags = _str_list(data.get("character_tags"))
-        plan.series_tags = _str_list(data.get("series_tags"))
-        plan.artist_tags = _str_list(data.get("artist_tags"))
-        plan.visual_tags = _str_list(data.get("visual_tags"))
-        plan.style = _str_list(data.get("style"))
-        plan.environment = _str_list(data.get("environment"))
-        plan.composition = _s(data.get("composition"))
-        plan.lighting = _s(data.get("lighting"))
-        plan.negative_constraints = _str_list(data.get("negative_constraints"))
-        for c in data.get("characters") or []:
-            if not isinstance(c, dict):
-                continue
-            plan.characters.append(AnimaCharacter(
-                character_id=_s(c.get("character_id")),
-                name=_s(c.get("name")),
-                required_traits=_str_list(c.get("required_traits")),
-                variable_traits=_str_list(c.get("variable_traits")),
-                action=_s(c.get("action")),
-                position=_s(c.get("position")),
-                description=_s(c.get("description"))))
+        legacy_payload = dict(data)
+        legacy_payload.setdefault("normal_form_version", "1.0")
+        legacy_payload["natural_body"] = (
+            _s(data.get("natural_description")) or _s(data.get("natural_body")))
+        legacy_payload["control_tags"] = (
+            _str_list(data.get("control_tags")) or _str_list(data.get("quality")))
+        plan = AnimaPromptPlan.from_json(legacy_payload).normalized()
         if not plan.characters and bible is not None:
             plan.characters = build_anima_plan("", bible).characters
-        if not plan.natural_body and not plan.characters and not plan.control_tags:
+        if (not plan.scene_description and not plan.creative_notes and
+                not plan.characters and
+                not plan.control_tags and not plan.series_tags and
+                not plan.artist_tags and not plan.supplemental_tags and
+                not plan.environment and not plan.style and
+                not plan.composition and not plan.lighting):
             # 空计划：兜底为原文
-            plan.natural_body = (raw or "").strip()
+            plan.scene_description = (raw or "").strip()
         return plan
     plan = build_anima_plan(raw or "", bible)
     return plan
@@ -303,6 +294,9 @@ def render_anima_plan(
 
     negative = (negative_override.strip() if negative_override and negative_override.strip()
                 else (ANIMA_BASE_NEGATIVE if variant == "base" else ANIMA_QUALITY_NEGATIVE))
+    constraints = [item.strip() for item in plan.negative_constraints if item.strip()]
+    if constraints:
+        negative = ", ".join(_dedupe(split_tags(negative) + constraints))
     lora = [t.strip() for t in (lora_triggers or []) if t and t.strip()]
 
     if prompt_mode == "natural_language":
@@ -351,11 +345,13 @@ def render_anima_plan(
 def _natural_body(plan: AnimaPromptPlan) -> str:
     """自然正文：人物绑定 → 用户/LLM 正文 → 环境/光照/构图/风格。逐项与正文去重。"""
     parts: List[str] = []
-    body = plan.natural_body or ""
+    body = plan.scene_description or ""
     for c in plan.characters:
-        desc = c.description.strip() if c.description and c.description.strip() else _assemble_character(c, body)
+        desc = _assemble_character(c, body)
         if desc and not _fragment_in(body, desc):
             parts.append(desc)
+    parts.extend(note.strip() for note in plan.creative_notes
+                 if note.strip() and not _fragment_in(body, note))
     if body:
         parts.append(body)
     for env in plan.environment:
@@ -384,24 +380,34 @@ def _assemble_character(c: AnimaCharacter, body: str) -> str:
         base += f", {c.action.strip()}"
     if c.position and c.position.strip():
         base = f"On the {c.position.strip()}, {base}"
+    notes = [note.strip() for note in c.creative_notes
+             if note.strip() and not _fragment_in(body, note)]
+    if notes:
+        base += ", " + ", ".join(notes)
     if base.strip() == name:
         return ""  # 没有任何新增信息，不输出孤立的角色名块
     return base
 
 
 def _plan_tags(plan: AnimaPromptPlan) -> List[str]:
-    """Tags 模式标签源：显式标签字段；为空时按 tags 语义把正文切为标签。
+    """Derive tags from the same authoritative Plan used by natural rendering.
 
     0.2.1：plan.control_tags 里的 safety 标签（如 LLM Plan 建议 safe）不自动注入——
     safety 标签只由用户节点参数 safety_tag 决定（产品决策）。
     """
-    explicit = _dedupe(plan.control_tags + plan.character_tags + plan.series_tags
-                       + plan.artist_tags + plan.visual_tags)
-    if explicit:
-        return [t for t in explicit if t not in SAFETY_TAGS]
-    if plan.natural_body:
-        return split_tags(plan.natural_body)
-    return []
+    tags = list(plan.control_tags + plan.series_tags + plan.artist_tags)
+    for character in plan.characters:
+        tags.extend([character.name, *character.required_traits,
+                     *character.variable_traits, character.action,
+                     character.position, *character.creative_notes])
+    tags.extend(plan.environment)
+    tags.extend(plan.style)
+    tags.extend([plan.composition, plan.lighting])
+    tags.extend(plan.creative_notes)
+    tags.extend(plan.supplemental_tags)
+    if plan.scene_description:
+        tags.extend(split_tags(plan.scene_description))
+    return [tag for tag in _dedupe(tags) if tag not in SAFETY_TAGS]
 
 
 def _render_tags_from_text(text, *, variant, safety_tag, bible, negative_override,

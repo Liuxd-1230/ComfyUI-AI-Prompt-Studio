@@ -48,7 +48,7 @@ def _pipeline_anima_multi_char(inp):
             variable_traits=[t["value"] for t in c["traits"]
                              if t["category"] != "stable"])
             for c in inp["characters"]],
-        natural_body="")
+        scene_description="")
     result = render_anima_plan(plan, variant="base",
                                prompt_mode=inp["prompt_mode"])
     positive = result.positive

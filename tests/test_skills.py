@@ -36,7 +36,7 @@ def test_builtin_skills_loaded():
 def test_skill_fields():
     s = get_skill("anima_expand")
     assert s.id == "anima_expand"
-    assert s.version == "2.0"
+    assert s.version == "3.0"
     assert s.target_family == "anima"
     assert s.renderer == "anima_plan"
     assert "anima" in s.validators

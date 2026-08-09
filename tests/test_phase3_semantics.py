@@ -30,7 +30,7 @@ def test_risk_classifier_only_requires_critic_for_high_impact_paths() -> None:
 
 
 def test_low_risk_skips_critic_and_high_risk_invokes_it_once() -> None:
-    plan = AnimaPromptPlan(natural_body="a street")
+    plan = AnimaPromptPlan(scene_description="a street")
     calls: list[int] = []
 
     def critic(_plan, _changeset):
@@ -57,10 +57,10 @@ def test_anima_detects_identity_ownership_and_positive_negative_conflict() -> No
     assert codes == {"anima_trait_ownership", "anima_positive_negative_conflict"}
 
 
-def test_impact_closure_clears_legacy_owner_and_blocks_unresolved_lighting() -> None:
+def test_anima_pnf_needs_no_derived_prose_cleanup_and_blocks_stale_lighting() -> None:
     plan = AnimaPromptPlan(
-        natural_body="street", environment=["street"], lighting="neon",
-        characters=[AnimaCharacter(character_id="c1", description="legacy full prose")])
+        scene_description="street", environment=["street"], lighting="neon",
+        characters=[AnimaCharacter(character_id="c1")])
     trait_change = ChangeSet(
         base_revision=1, intent_scope=["character.action"],
         requested_changes=[SemanticChange(
@@ -69,8 +69,7 @@ def test_impact_closure_clears_legacy_owner_and_blocks_unresolved_lighting() -> 
     result = SemanticTransaction(AnimaPlanAdapter()).execute(
         plan, trait_change, current_revision=1, impact_analyzer=analyze_anima_impacts)
     assert result.plan.characters[0].action == "running"
-    assert result.plan.characters[0].description == ""
-    assert result.changeset.dependent_changes[0].reason
+    assert result.changeset.dependent_changes == []
 
     environment_change = ChangeSet(
         base_revision=1, intent_scope=["environment"],

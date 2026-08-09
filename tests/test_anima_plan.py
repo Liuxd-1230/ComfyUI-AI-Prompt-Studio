@@ -83,14 +83,15 @@ def test_multi_person_spec_scenario_binding():
     plan = AnimaPromptPlan(
         characters=[
             AnimaCharacter(character_id="char_01", name="A",
-                           description="A man with short black hair wearing a white "
-                                       "military uniform",
+                           required_traits=["short black hair"],
+                           variable_traits=["white military uniform"],
                            action="holds B's hand", position="left"),
             AnimaCharacter(character_id="char_02", name="B",
-                           description="A woman with long blonde hair wearing a black dress",
+                           required_traits=["long blonde hair"],
+                           variable_traits=["black dress"],
                            position="right"),
         ],
-        natural_body="A holds B's hand.")
+        scene_description="")
     r = render_anima_plan(plan, variant="base", prompt_mode="natural_language")
     pos = r.positive
     assert "short black hair" in pos
@@ -119,14 +120,15 @@ def test_build_anima_plan_separates_required_and_variable():
 def test_hybrid_no_duplication_with_llm_plan():
     plan = AnimaPromptPlan(
         control_tags=["1girl", "masterpiece"],
-        natural_body="A girl with long black hair and blue eyes stands by the window.")
+        scene_description="A girl stands by the window.",
+        characters=[AnimaCharacter(name="A girl",
+                                   required_traits=["long black hair", "blue eyes"])])
     r = render_anima_plan(plan, variant="base", prompt_mode="hybrid")
     # 控制标签块出现一次，正文出现一次，正文绝不再次被当标签追加
     assert r.positive.count("long black hair") == 1
     assert r.positive.count("1girl") == 1
     assert r.positive.count("stands by the window") == 1
-    body_dup = plan.natural_body.split(" by the window")[0]
-    assert r.positive.count(body_dup) == 1
+    assert r.positive.count(plan.scene_description) == 1
 
 
 def test_hybrid_input_text_not_reappended_as_tags():
@@ -143,15 +145,16 @@ def test_multi_character_binding_preserved():
     plan = AnimaPromptPlan(
         characters=[
             AnimaCharacter(character_id="char_01", name="A",
-                           description="On the left, a young woman with short black hair "
-                                       "wearing a white uniform holds B's hand.",
+                           required_traits=["short black hair"],
+                           variable_traits=["white uniform"],
+                           action="holds B's hand",
                            position="left"),
             AnimaCharacter(character_id="char_02", name="B",
-                           description="On the right, a woman with long blonde hair "
-                                       "wearing a black evening dress.",
+                           required_traits=["long blonde hair"],
+                           variable_traits=["black evening dress"],
                            position="right"),
         ],
-        natural_body="The two stand facing each other.",
+        scene_description="The two stand facing each other.",
         environment=["a dim bar interior"])
     r = render_anima_plan(plan, variant="base", prompt_mode="natural_language")
     pos = r.positive
@@ -167,24 +170,24 @@ def test_multi_character_binding_preserved():
 
 def test_llm_plan_json_parse_multi_character():
     raw = json.dumps({
+        "normal_form_version": "2.0",
         "characters": [
             {"character_id": "char_01", "name": "A",
              "required_traits": ["short black hair"],
              "variable_traits": ["white uniform"], "action": "grabbing B's hand",
-             "position": "left", "description": "A with short black hair in a white uniform."},
+             "position": "left"},
             {"character_id": "char_02", "name": "B",
              "required_traits": ["long blonde hair"],
-             "variable_traits": ["black dress"], "position": "right",
-             "description": "B with long blonde hair in a black dress."},
+             "variable_traits": ["black dress"], "position": "right"},
         ],
-        "natural_description": "They face each other in a corridor.",
+        "scene_description": "They face each other in a corridor.",
         "environment": ["school corridor"], "lighting": "soft window light",
         "style": ["anime"],
     })
     plan = parse_anima_plan(raw)
     assert len(plan.characters) == 2
     assert plan.characters[0].character_id == "char_01"
-    assert plan.natural_body == "They face each other in a corridor."
+    assert plan.scene_description == "They face each other in a corridor."
     assert plan.environment == ["school corridor"]
     assert plan.lighting == "soft window light"
     r = render_anima_plan(plan, prompt_mode="natural_language")
@@ -195,7 +198,7 @@ def test_llm_plan_json_parse_multi_character():
 
 def test_parse_anima_plan_fallback_plain_text():
     plan = parse_anima_plan("A girl walks into a cafe.")
-    assert plan.natural_body == "A girl walks into a cafe."
+    assert plan.scene_description == "A girl walks into a cafe."
     assert plan.characters == []
 
 
@@ -210,21 +213,37 @@ def test_parse_anima_plan_fallback_keeps_bible():
 
 def test_tags_mode_from_plan_control_tags():
     plan = AnimaPromptPlan(control_tags=["score_7", "safe", "masterpiece"],
-                           character_tags=["1girl"],
-                           visual_tags=["long_hair"],
+                           characters=[AnimaCharacter(
+                               name="1girl", required_traits=["long_hair"],
+                               action="running")],
+                           environment=["rainy street"], style=["anime"],
                            artist_tags=["@big chungus"])
     r = render_anima_plan(plan, variant="base", prompt_mode="tags")
     # 0.2.1：Plan 里的 safety 标签不自动注入（只随用户 safety_tag），默认 none
     assert r.positive.startswith("masterpiece, best quality, score_7, ")
     assert "safe" not in r.positive
     assert "long hair" in r.positive  # 下划线规范化
+    assert "running" in r.positive
+    assert "rainy street" in r.positive
+    assert "anime" in r.positive
     assert "@big chungus" in r.positive
 
 
 def test_tags_mode_user_safety_tag_wins():
     plan = AnimaPromptPlan(control_tags=["score_7", "masterpiece"],
-                           character_tags=["1girl"])
+                           supplemental_tags=["1girl"])
     r = render_anima_plan(plan, variant="base", prompt_mode="tags",
                           safety_tag="nsfw")
     assert "nsfw" in r.positive
     assert "safe" not in r.positive
+
+
+def test_formal_plan_negative_constraints_reach_negative_prompt():
+    plan = AnimaPromptPlan(
+        scene_description="A portrait.",
+        negative_constraints=["blue eyes", "extra fingers"],
+    )
+
+    result = render_anima_plan(plan, prompt_mode="natural_language")
+    assert "blue eyes" in result.negative
+    assert "extra fingers" in result.negative

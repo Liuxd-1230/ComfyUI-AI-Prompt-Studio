@@ -217,6 +217,9 @@ class APS_PromptComposer:
                 rendered_values, base_text, family, prompt_mode, bible)
             validation = empty_report()
 
+        if family == "anima":
+            _append_anima_plan_ownership_issues(validation, model_content)
+
         # 渲染器/Skill 的可执行性警告也必须出现在可见 validation 输出中，
         # 不能只藏在 PROMPT_PLAN JSON 里显示“通过且 0 warning”。
         for index, warning in enumerate(warnings):
@@ -266,7 +269,9 @@ class APS_PromptComposer:
                                   "model_plan/skill_id"],
                     allowed_roots=["model_plan"])
                 plan, gprofile = self._render_session_candidate(candidate)
-                validation = self._validate_plan(plan, reference_manifest)
+                validation = self._validate_plan(
+                    plan, reference_manifest,
+                    candidate.get("model_plan", {}).get("content"))
                 if validation.valid:
                     plan.validation = validation
                     bundle = candidate
@@ -290,26 +295,31 @@ class APS_PromptComposer:
                         reference_manifest: Any = None) -> Any:
         if not feedback.strip():
             raise ValueError("REFINE 需要在 text 中填写本轮修改意见")
-        patch = self._request_session_patch(prof, session, feedback)
+        working_session = self._session_with_migrated_plan(session)
+        patch = self._request_session_patch(prof, working_session, feedback)
         locked = ["prompt_plan", "generation_profile", "model_plan/prompt_mode",
                   "model_plan/safety_tag", "model_plan/lora_triggers",
                   "model_plan/family", "model_plan/skill_id"]
         candidate = apply_plan_patch(
-            session.current_plan, patch, current_revision=session.revision,
+            working_session.current_plan, patch, current_revision=session.revision,
             locked_paths=locked, allowed_roots=["model_plan"])
         plan, gprofile = self._render_session_candidate(candidate)
-        report = self._validate_plan(plan, reference_manifest)
+        report = self._validate_plan(
+            plan, reference_manifest,
+            candidate.get("model_plan", {}).get("content"))
         if not report.valid:
             repair_feedback = ("Fix only the following validation issues; preserve the requested "
                                "change and every unrelated field.\n" + report.as_text())
             repair_patch = self._request_session_patch(
-                prof, session, feedback + "\n\n" + repair_feedback)
+                prof, working_session, feedback + "\n\n" + repair_feedback)
             candidate = apply_plan_patch(
-                session.current_plan, repair_patch, current_revision=session.revision,
+                working_session.current_plan, repair_patch, current_revision=session.revision,
                 locked_paths=locked, allowed_roots=["model_plan"])
             patch = repair_patch
             plan, gprofile = self._render_session_candidate(candidate)
-            report = self._validate_plan(plan, reference_manifest)
+            report = self._validate_plan(
+                plan, reference_manifest,
+                candidate.get("model_plan", {}).get("content"))
         if not report.valid:
             raise ValueError("本轮 REFINE 与一次自动修复均未通过；上一版保持不变：\n" + report.as_text())
         plan.validation = report
@@ -323,6 +333,20 @@ class APS_PromptComposer:
                                      plan.positive, summary, session.revision)
 
     @staticmethod
+    def _session_with_migrated_plan(session: PromptSession) -> PromptSession:
+        """Prepare an isolated PNF migration; the stable session is untouched on failure."""
+        working = PromptSession.from_json(session.to_json())
+        if working.target_family != "anima":
+            return working
+        model_plan = working.current_plan.get("model_plan", {})
+        content = model_plan.get("content")
+        if content:
+            from ..schemas.anima import AnimaPromptPlan
+
+            model_plan["content"] = AnimaPromptPlan.from_json(content).to_json()
+        return working
+
+    @staticmethod
     def _render_session_candidate(
             candidate: dict[str, Any]) -> tuple[PromptPlan, GenerationProfile]:
         plan = PromptPlan.from_json(candidate.get("prompt_plan", {}))
@@ -334,6 +358,7 @@ class APS_PromptComposer:
             from ..renderers.anima import parse_anima_plan, render_anima_plan
 
             semantic = parse_anima_plan(json.dumps(content, ensure_ascii=False))
+            model_plan["content"] = semantic.to_json()
             out = _as_dict(render_anima_plan(
                 semantic, variant=plan.target_variant or "base",
                 prompt_mode=str(model_plan.get("prompt_mode", plan.prompt_mode)),
@@ -363,11 +388,13 @@ class APS_PromptComposer:
 
     @staticmethod
     def _validate_plan(plan: PromptPlan,
-                       reference_manifest: Any = None) -> ValidationReport:
+                       reference_manifest: Any = None,
+                       model_content: Any = None) -> ValidationReport:
         if plan.target_family == "anima":
             report = validate_anima(plan.positive, plan.negative,
                                     variant=plan.target_variant or "base",
                                     prompt_mode=plan.prompt_mode)
+            _append_anima_plan_ownership_issues(report, model_content)
         elif plan.target_family in {"z_image", "qwen_image_edit"}:
             manifest = None
             if reference_manifest:
@@ -549,7 +576,7 @@ class APS_PromptComposer:
         assembly = assemble_prompt(
             sources, task_data=task_items,
             output_contract_id=(f"{skill.renderer}.schema@1"
-                                if special_schema else "anima-plan.schema@1"))
+                                if special_schema else "anima-plan.schema@2"))
         req = GenerateRequest(system=assembly.system,
                               messages=[task_message(assembly)],
                               web_search="off", reasoning="medium",
@@ -571,7 +598,7 @@ class APS_PromptComposer:
                     safety_tag=safety_tag, negative_override=negative,
                     lora_triggers=lora))
             else:
-                body = plan.natural_body or llm_out
+                body = plan.scene_description or llm_out
                 out = render_generic(body, family=family, variant=variant,
                                      prompt_mode=prompt_mode, bible=bible, book=book,
                                      negative_override=negative)
@@ -684,6 +711,18 @@ def _validate_special(positive: str, family: str, reference_manifest=None):
     return report
 
 
+def _append_anima_plan_ownership_issues(report: ValidationReport,
+                                        model_content: Any) -> None:
+    """Expose PNF ownership violations through the node's normal validation seam."""
+    if not model_content:
+        return
+    from ..schemas.anima import AnimaPromptPlan
+
+    semantic = AnimaPromptPlan.from_json(model_content)
+    for index, issue in enumerate(semantic.validate(), start=1):
+        report.add("error", f"anima_plan_ownership_{index}", issue)
+
+
 def _split_target(target: str):
     if target.startswith("anima_"):
         return "anima", target[len("anima_"):]
@@ -734,8 +773,14 @@ def _unpack_rendered(values: tuple[Any, ...], base_text: str, family: str,
 
         semantic = build_anima_plan(base_text, bible)
         if prompt_mode == "tags":
-            semantic.natural_body = ""
-            semantic.visual_tags = split_tags(base_text)
+            semantic.scene_description = ""
+            owned = {value.strip().casefold() for character in semantic.characters
+                     for value in [character.name, *character.required_traits,
+                                   *character.variable_traits, character.action,
+                                   character.position, *character.creative_notes]
+                     if value.strip()}
+            semantic.supplemental_tags = [
+                tag for tag in split_tags(base_text) if tag.casefold() not in owned]
         content = semantic.to_json()
     else:
         content = _text_content(positive)

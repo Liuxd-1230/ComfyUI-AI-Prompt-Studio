@@ -47,8 +47,9 @@ class FakeGateway:
 
 def plan_json(text="1girl, long hair, red dress"):
     return json.dumps({
+        "normal_form_version": "2.0",
         "characters": [],
-        "natural_description": text,
+        "scene_description": text,
         "environment": [], "style": [], "composition": "", "lighting": "",
         "negative_constraints": [],
     })
@@ -139,17 +140,45 @@ def test_flow2_reference_to_bible_to_anima_natural(monkeypatch, store):
     assert any(t.value == "long black hair" for t in bible.traits)
 
     # Bible → Prompt Composer ANIMA Natural
-    gw = FakeGateway(plan_json("A girl with long black hair sits by the window."))
+    gw = FakeGateway(plan_json("A girl sits by the window."))
     monkeypatch.setattr(pc_mod, "Gateway", lambda: gw)
     comp = pc_mod.APS_PromptComposer()
-    positive, _, plan_json_out, _, _ = comp.compose(
+    created = comp.compose(
         AI_PROFILE=payload, text="少女坐在窗边", target="anima_base",
         operation="generate", prompt_mode="natural_language", negative="",
         safety_tag="none", character_bible=bible_json)
+    positive, _, plan_json_out, _, _ = created
     # 稳定特征出现在最终 prompt（自然语言，非 tag soup）
     assert "long black hair" in positive
     assert positive.startswith("masterpiece, best quality, score_7, ")
     assert "safe" not in positive      # safety_tag=none 不注入安全标签
+    session = json.loads(created["ui"]["prompt_session"][0])
+    content = session["current_plan"]["model_plan"]["content"]
+    assert content["normal_form_version"] == "2.0"
+    assert "scene_description" in content
+    assert "natural_body" not in content
+
+
+def test_composer_rejects_anima_plan_with_duplicate_fact_owners(monkeypatch, store):
+    payload = make_profile(store)
+    duplicate_plan = json.dumps({
+        "normal_form_version": "2.0",
+        "characters": [{
+            "character_id": "c1", "name": "Alice",
+            "required_traits": [], "variable_traits": ["red coat"],
+            "action": "", "position": "",
+        }],
+        "scene_description": "Alice in a red coat waits at the station.",
+        "environment": [], "style": [], "composition": "", "lighting": "",
+        "negative_constraints": [],
+    })
+    monkeypatch.setattr(pc_mod, "Gateway", lambda: FakeGateway(duplicate_plan))
+
+    with pytest.raises(ValueError, match="未通过"):
+        pc_mod.APS_PromptComposer().compose(
+            AI_PROFILE=payload, text="Alice waits", target="anima_base",
+            operation="generate", prompt_mode="natural_language", negative="",
+            safety_tag="none")
 
 
 # ================================================================ Flow 3：多人物 → Storyboard → ANIMA
@@ -181,18 +210,17 @@ def test_flow3_multi_character_book_storyboard_anima(monkeypatch, store):
 
     # Book + Storyboard → Prompt Composer ANIMA Natural（人物信息正确传递）
     gw = FakeGateway(json.dumps({
+        "normal_form_version": "2.0",
         "characters": [
             {"character_id": "char_01", "name": "A",
              "required_traits": ["black short hair"],
              "variable_traits": ["white military uniform"],
-             "action": "holds B's hand", "position": "left",
-             "description": "A man with black short hair wearing a white military uniform"},
+             "action": "holds B's hand", "position": "left"},
             {"character_id": "char_02", "name": "B",
              "required_traits": ["long blonde hair"],
-             "variable_traits": ["black dress"], "action": "", "position": "right",
-             "description": "A woman with long blonde hair wearing a black dress"},
+             "variable_traits": ["black dress"], "action": "", "position": "right"},
         ],
-        "natural_description": "A holds B's hand at the street corner.",
+        "scene_description": "At the street corner.",
         "environment": [], "style": [], "composition": "", "lighting": "",
         "negative_constraints": []}))
     monkeypatch.setattr(pc_mod, "Gateway", lambda: gw)

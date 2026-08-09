@@ -58,18 +58,6 @@ def analyze_anima_impacts(plan: AnimaPromptPlan,
     """Add the minimum known dependency closure for ANIMA normal form."""
     existing = {change.path for change in changeset.all_changes()}
     for change in list(changeset.all_changes()):
-        parts = change.path.split("/")
-        if (len(parts) >= 3 and parts[0] == "characters"
-                and parts[1].isdigit()
-                and parts[2] in {"required_traits", "variable_traits", "action", "position"}):
-            index = int(parts[1])
-            if index < len(plan.characters) and plan.characters[index].description:
-                description_path = f"characters/{index}/description"
-                if description_path not in existing:
-                    changeset.dependent_changes.append(SemanticChange(
-                        path=description_path, operation="set", value="",
-                        reason="结构化人物字段变化后，旧 description 缓存不再是事实真源"))
-                    existing.add(description_path)
         if change.path == "environment" and plan.lighting:
             if "lighting" not in existing:
                 changeset.invalidated_facts.append(InvalidatedFact(
@@ -127,14 +115,6 @@ def validate_anima_semantics(plan: AnimaPromptPlan) -> list[SemanticIssue]:
                 "anima_trait_ownership", base,
                 "同一特征不能同时由稳定与可变字段拥有",
                 evidence=sorted(overlap), repairable=True))
-        if character.description and (
-                character.required_traits or character.variable_traits
-                or character.action or character.position):
-            issues.append(SemanticIssue(
-                severity="warning", code="anima_legacy_description",
-                path=base + "/description",
-                message="description 是旧兼容回退；结构化人物字段是事实真源",
-                reason="Plan Normal Form 禁止同一人物事实有两个可编辑所有者"))
     positives = {item.lower() for character in plan.characters
                  for item in [*character.required_traits, *character.variable_traits]
                  if item.strip()}

@@ -1,5 +1,6 @@
 # Changelog
 
+- Persistent P1 返工：ANIMA Plan Normal Form 升级到 v2，移除可编辑的 `natural_body`、人物 `description` 与平行 tag 缓存双真源；Natural/Tags/Hybrid 统一从正式 Plan 派生，负向约束进入最终 negative。新增显式 v1→v2 迁移（歧义旧 prose 安全拒绝且不改 revision）、统一字段矩阵的确定性所有权校验、生产 Session 使用的 `PlanAdapter.to_llm_context()`，并把四个 ANIMA 结构化 Skill、renderer、Prompt Composer CREATE/REFINE 及 workflow Session 统一到 v2。
 - 架构升级：Prompt Composer 与 MiniMax H3 Director 增加 workflow 持久化 `PromptSession`，自动 CREATE/REFINE、受限 Plan Patch、最近 5 版、回退/新会话、Current Prompt 与聊天摘要；新 UI 隐藏 operation，旧值继续兼容。
 - 增强 `APS_LLMGenerate` 默认 system prompt：强调准确遵循指令、合理利用上下文、在歧义时推断意图，并优先返回简洁可用的结果。
 - 修复 `APS_UnloadModel` 重复卸载已释放模型时报错：已卸载现在作为成功的幂等结果放行；错误模型 key 与服务故障仍会明确阻断。
