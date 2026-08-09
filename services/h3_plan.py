@@ -195,6 +195,37 @@ def build_plan_prompt(
     )
 
 
+def build_plan_task_data(
+    text: str,
+    mode: str,
+    duration: float,
+    *,
+    storyboard: Optional[Storyboard] = None,
+    bible: Optional[CharacterBible] = None,
+    book: Optional[CharacterBook] = None,
+    manifest: Optional[ReferenceManifest] = None,
+    image_count: int = 0,
+    repair_issues: str = "",
+) -> dict:
+    """Build typed H3 task data without instruction prose or a copied schema."""
+    character_data = None
+    if book is not None and book.characters:
+        character_data = book.to_json()
+    elif bible is not None:
+        character_data = bible.to_json()
+    return {
+        "user_task": (text or "").strip(),
+        "mode": mode,
+        "mode_hint": MODE_HINTS.get(mode, ""),
+        "duration_seconds": float(duration),
+        "image_count": int(image_count),
+        "characters": character_data,
+        "reference_manifest": manifest.to_json() if manifest is not None else None,
+        "storyboard": storyboard.to_json() if storyboard is not None else None,
+        "validation_issues": repair_issues or None,
+    }
+
+
 def parse_plan_json(raw: str, mode: str, duration: float,
                     storyboard_id: str = "") -> H3PromptPlan:
     """把 LLM 输出 JSON 容错解析为 H3PromptPlan（失败抛可读错误）。"""

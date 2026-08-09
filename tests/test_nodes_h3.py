@@ -223,7 +223,7 @@ def test_repair_includes_issues_in_llm_prompt(monkeypatch, store):
                                operation="repair"))
     assert FakeGateway.last_req is not None
     sent = FakeGateway.last_req.messages[0].content
-    assert "[需修复的校验问题]" in sent
+    assert '"validation_issues":' in sent
 
 
 def test_convert_storyboard_uses_storyboard_structure(monkeypatch, store):
@@ -426,6 +426,7 @@ def test_plan_prompt_includes_book_role_table(monkeypatch, store):
                                storyboard=sb.to_json(),
                                character_book=book.to_json()))
     sent = FakeGateway.last_req.messages[0].content
-    assert "角色表" in sent
-    assert "c1 (S5, A)" in sent                  # 稳定 Speaker ID 传给了 LLM
-    assert "禁止自行发明" in sent
+    assert '"characters":{' in sent
+    assert '"character_id":"c1"' in sent
+    assert '"speaker_id":"S5"' in sent          # 稳定 Speaker ID 作为结构化数据传给 LLM
+    assert "never invent new IDs" in FakeGateway.last_req.system

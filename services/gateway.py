@@ -50,6 +50,7 @@ class GenerateRequest:
     presence_penalty: Optional[float] = None
     json_mode: bool = False
     output_schema: Optional[Dict[str, Any]] = None   # JSON Schema dict（结构化输出）
+    assembly_report: Optional[Dict[str, Any]] = None  # Prompt 来源/边界/哈希审计
     attachments: List = field(default_factory=list)   # List[Attachment]（已过能力门槛）
     tools: bool = False             # 启用函数工具（P1；上限 MAX_TOOL_ROUNDS 不暴露到 UI）
     stop_event: Any = None

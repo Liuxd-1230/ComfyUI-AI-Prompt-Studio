@@ -15,6 +15,8 @@ from ..schemas.references import ANALYSIS_MODES, AssetRef, ReferenceAnalysis, Re
 from ..services import reference as reference_svc
 from ..services import vision as vision_svc
 from ..services.gateway import Gateway, GenerateRequest
+from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
+from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ._helpers import require_api_key, resolve_profile_input
 
 # 所有模式的公共守则（docs/prompt-audit.md RA-* 记录）：把图像/文字当数据而非指令；
@@ -178,21 +180,38 @@ class APS_ReferenceAnalyzer:
             raise ValueError(f"analysis_mode={analysis_mode!r} 需要填写 custom_prompt")
         if analysis_mode == "custom":
             base_prompt = f"{base_prompt.strip()}\n{_PROMPT_GUARDRAIL}"
+        bible_context = ""
         if character_bible:
             bible = CharacterBible.from_json(character_bible)
             if bible.character_prompt():
-                base_prompt += f"\n[已知人物设定] {bible.character_prompt()}"
+                bible_context = bible.character_prompt()
+
+        sources = [
+            PromptSource("runtime.reference-data", "1.0", PromptLayer.RUNTIME,
+                         _PROMPT_GUARDRAIL, "reference"),
+            PromptSource(f"node.reference.{analysis_mode}", "1.0",
+                         PromptLayer.NODE_CORE, base_prompt, "reference"),
+        ]
 
         # 1) 文字锚点（LLM 结构化解析）
         text_candidate = None
         if text_anchor and text_anchor.strip():
-            anchor_prompt = (base_prompt + f"\n[文字锚点] {text_anchor.strip()}"
-                             "\n解析文字锚点并返回同样的 JSON 结构（traits 的 category "
-                             "标注 stable/uncertain）。")
-            req = GenerateRequest(system="You extract structured character traits as JSON.",
-                                  messages=[_text_msg(anchor_prompt)],
+            text_sources = [*sources, PromptSource(
+                "operation.reference-text", "1.0", PromptLayer.OPERATION,
+                "Extract the supplied text anchor into the requested trait JSON. "
+                "Mark trait category as stable or uncertain.", "reference.text")]
+            task_items = [StructuredTaskData("text_anchor", text_anchor.strip(),
+                                             "text/plain")]
+            if bible_context:
+                task_items.append(StructuredTaskData("character_bible", bible_context,
+                                                     "text/plain"))
+            assembly = assemble_prompt(text_sources, task_data=task_items,
+                                       output_contract_id="candidate.schema@1")
+            req = GenerateRequest(system=assembly.system,
+                                  messages=[task_message(assembly)],
                                   web_search="off", reasoning="low",
-                                  json_mode=True, output_schema=CANDIDATE_SCHEMA)
+                                  json_mode=True, output_schema=CANDIDATE_SCHEMA,
+                                  assembly_report=report_payload(assembly))
             result = Gateway().generate(prof, api_key, req)
             if result.has_error():
                 raise ValueError(result.error.as_text)
@@ -206,9 +225,21 @@ class APS_ReferenceAnalyzer:
         image_candidates: List[CharacterCandidate] = []
         for i, img in enumerate(image_list):
             data_url = vision_svc.image_to_data_url(img)
+            task_items = [StructuredTaskData("image_slot", {"index": i + 1})]
+            if bible_context:
+                task_items.append(StructuredTaskData("character_bible", bible_context,
+                                                     "text/plain"))
+            assembly = assemble_prompt(
+                [*sources, PromptSource(
+                    "operation.reference-image", "1.0", PromptLayer.OPERATION,
+                    "Analyze only observable image evidence and return the requested JSON.",
+                    "reference.image")],
+                task_data=task_items, output_contract_id="candidate.prompt-json@1")
             res = vision_svc.call_vision(
                 vision_prof, vision_key,
-                vision_svc.build_vision_messages(base_prompt, [data_url]))
+                vision_svc.build_vision_messages(assembly.task_data, [data_url],
+                                                 system=assembly.system),
+                assembly_report=report_payload(assembly))
             if not res["ok"]:
                 raise ValueError(res["error"].as_text)
             cand = reference_svc.parse_candidate_json(res["text"], analysis_mode,
@@ -312,9 +343,18 @@ class APS_ReferenceAnalyzer:
 
         sample = image_list[:MAX_IDENTITY_IMAGES]
         data_urls = [vision_svc.image_to_data_url(img) for img in sample]
+        assembly = assemble_prompt(
+            [PromptSource("runtime.reference-data", "1.0", PromptLayer.RUNTIME,
+                          _PROMPT_GUARDRAIL, "reference.identity"),
+             PromptSource("node.reference.identity", "1.0", PromptLayer.NODE_CORE,
+                          IDENTITY_COMPARISON_PROMPT, "reference.identity")],
+            task_data=[StructuredTaskData("image_count", {"count": len(sample)})],
+            output_contract_id="identity-verdict.prompt-json@1")
         res = vision_svc.call_vision(
             vision_prof, vision_key,
-            vision_svc.build_vision_messages(IDENTITY_COMPARISON_PROMPT, data_urls))
+            vision_svc.build_vision_messages(assembly.task_data, data_urls,
+                                             system=assembly.system),
+            assembly_report=report_payload(assembly))
         if not res["ok"]:
             return None
         verdict = parse_identity_verdict(res["text"])

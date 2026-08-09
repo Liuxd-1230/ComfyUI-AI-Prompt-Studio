@@ -197,7 +197,8 @@ def test_context_only_is_not_duplicated_as_user_instruction(monkeypatch, store):
     llm_chat_mod.APS_LLMGenerate().generate(
         AI_PROFILE=payload, system_prompt="", user_prompt="", context="DATA-ONLY",
         history_mode="off", output_mode="text", json_schema="")
-    assert fake.req.system.count("DATA-ONLY") == 1
+    assert "DATA-ONLY" not in fake.req.system
+    assert sum(message.content.count("DATA-ONLY") for message in fake.req.messages) == 1
     assert fake.req.messages[-1].content == "请根据上方附加上下文完成任务。"
 
 

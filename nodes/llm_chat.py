@@ -12,6 +12,8 @@ from ..schemas import types
 from ..schemas.profile import AIProfile
 from ..schemas.results import ChatMessage, ChatSession
 from ..services.gateway import Gateway, GenerateRequest
+from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
+from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ._helpers import require_api_key, resolve_profile_input
 
 HISTORY_MODES = ["append", "replace", "off"]
@@ -103,9 +105,12 @@ class APS_LLMGenerate:
             raise ValueError("附件校验失败：" + "；".join(att_problems[:5]))
         # 内部守则 + 用户 system_prompt 合并（内部在前优先，用户指令不丢弃）
         user_system = system_prompt or DEFAULT_SYSTEM_PROMPT
-        system = f"{INTERNAL_SYSTEM_PROMPT}\n\n{user_system}"
-        if ctx_text:
-            system = f"{system}\n\n[附加上下文]\n{ctx_text}"
+        sources = [
+            PromptSource("runtime.llm-chat", "1.0", PromptLayer.RUNTIME,
+                         INTERNAL_SYSTEM_PROMPT, "llm.generate"),
+            PromptSource("user.system", "workflow", PromptLayer.SUPPLEMENT,
+                         user_system, "llm.generate"),
+        ]
 
         sess = ChatSession.from_payload(session) if session else ChatSession(
             profile_id=prof.profile_id, model=prof.model)
@@ -140,13 +145,27 @@ class APS_LLMGenerate:
                 schema_warnings.append(
                     "json_schema 不是合法 JSON 对象；已降级为提示词约束，"
                     "模型输出不保证严格符合该 Schema")
-                system = (f"{system}\n\n[输出约束]\n必须输出合法的 JSON 对象，"
-                          f"严格符合以下 JSON Schema：\n{json_schema.strip()}")
+                sources.append(PromptSource(
+                    "output.invalid-schema-fallback", "1.0", PromptLayer.OPERATION,
+                    "必须输出合法 JSON 对象，并尽量遵守用户提供但无法解析的 JSON Schema：\n"
+                    + json_schema.strip(), "llm.generate"))
                 output_schema = None
         json_mode = output_mode in ("json", "json_schema")
-        if output_mode == "json" and "输出约束" not in system:
-            system = (f"{system}\n\n[输出约束]\n必须只输出一个合法的 JSON 对象，"
-                      f"不要任何解释或额外文本。")
+        if output_mode == "json":
+            sources.append(PromptSource(
+                "output.json-object", "1.0", PromptLayer.OPERATION,
+                "必须只输出一个合法 JSON 对象，不要解释或额外文本。",
+                "llm.generate"))
+
+        assembly = assemble_prompt(
+            sources,
+            task_data=([StructuredTaskData("context", ctx_text, "text/plain")]
+                       if ctx_text else []),
+            output_contract_id=("user-json-schema" if output_schema else output_mode))
+        system = assembly.system
+        if ctx_text:
+            context_msg = task_message(assembly)
+            messages.insert(max(0, len(messages) - 1), context_msg)
 
         req = GenerateRequest(
             system=system,
@@ -160,6 +179,7 @@ class APS_LLMGenerate:
             presence_penalty=prof.presence_penalty,
             json_mode=json_mode,
             output_schema=output_schema,
+            assembly_report=report_payload(assembly),
             attachments=att_list,
             stop_event=stop_event,
             timeout=prof.timeout,

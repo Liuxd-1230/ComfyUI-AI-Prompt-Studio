@@ -73,13 +73,18 @@ def image_to_data_url(image, max_side: int = MAX_IMAGE_SIDE) -> str:
     return f"data:image/png;base64,{b64}"
 
 
-def build_vision_messages(prompt: str, data_urls: List[str]) -> List[Dict[str, Any]]:
+def build_vision_messages(prompt: str, data_urls: List[str], *,
+                          system: str = "") -> List[Dict[str, Any]]:
     """构造多模态 user 消息（文本 + 图片 content parts）。"""
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     for url in data_urls:
         content.append({"type": "image_url",
                         "image_url": {"url": url}})
-    return [{"role": "user", "content": content}]
+    messages: List[Dict[str, Any]] = []
+    if system.strip():
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": content})
+    return messages
 
 
 def require_vision(profile: AIProfile) -> str:
@@ -132,7 +137,8 @@ def linked_vision_profile(target: AIProfile) -> AIProfile:
 
 
 def call_vision(profile: AIProfile, api_key: str, messages: List[Dict[str, Any]],
-                *, timeout: float = 120.0) -> Dict[str, Any]:
+                *, timeout: float = 120.0,
+                assembly_report: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """调用视觉端点，返回 {ok, text, error}。
 
     复用 Chat Completions 的请求形态（{vision_base_url}/chat/completions），
@@ -175,7 +181,8 @@ def call_vision(profile: AIProfile, api_key: str, messages: List[Dict[str, Any]]
         text = payload["choices"][0]["message"]["content"] or ""
     except Exception:  # noqa: BLE001
         return {"ok": False, "error": make_error("server_error", "视觉端点响应结构异常")}
-    return {"ok": True, "text": text, "raw": _safe_body(resp)}
+    return {"ok": True, "text": text, "raw": _safe_body(resp),
+            "assembly_report": assembly_report or {}}
 
 
 def _safe_body(resp) -> str:
