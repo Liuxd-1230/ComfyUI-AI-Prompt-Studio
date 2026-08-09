@@ -89,13 +89,13 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 
 ## ANIMA 提示词（官方档案）
 
-- **Base**：前缀 `masterpiece, best quality, score_7, `（0.2.1 起 **不再强制注入 `safe`**，见下方 Safety 标签）+ 官方负面（`worst quality, low quality, score_1..3, artist name, blurry, jpeg artifacts, chromatic aberration`），建议 30-50 步 / CFG 4-6。
+- **Base**：前缀 `masterpiece, best quality, score_7, `（0.2.1 起 **不再强制注入 `safe`**，见下方 Safety 标签）+ 官方负面（`worst quality, low quality, score_1..3, artist name, blurry, jpeg artifacts, chromatic aberration`），建议 30-50 步 / CFG 4-5。
 - **Aesthetic**：官方建议正负提示词都不用 `score_*` 标签，30-50 步 / CFG 4.5。
 - **Turbo**：官方示例前缀 + **CFG 1 / 8-12 步**。
 - 语法：小写标签、空格分隔（`score_*` 是唯一带下划线的标签）、`@artist` 艺术家前缀、标签分段排序（quality/meta/year/safety → count → artist → general）、LoRA 触发词原样保留追加。
 - 支持 `tags` / `natural_language` / `hybrid` 三模式。
 - **语言要求**：最终视觉描述与标签使用英文；Composer 的 ANIMA 扩写、改写和修复 Skill 会把中文输入保真转换为英文。角色名、专有名词与画面内文字可以保留原语言。
-- **Safety 标签（0.2.1）**：节点参数 `safety_tag` ∈ `none / safe / sensitive / nsfw / explicit`，**默认 `none` = 不注入任何 Safety 标签**（Composer 不在用户未要求时给提示词增加内容语义，也不做内容审查——审查留给模型服务端）。官方 safety 标签全集为 `safe / sensitive / nsfw / explicit`，`safe` 只是官方示例默认而非强制项；Composer 只按用户明确选择渲染。旧参数 `content_tier`（safe/sensitive）自动迁移。
+- **Safety 标签（0.2.1）**：节点参数 `safety_tag` ∈ `none / safe / sensitive / nsfw / explicit`，**默认 `none` = 不注入任何 Safety 标签**（Composer 不在用户未要求时给提示词增加内容语义，也不做内容审查——审查留给模型服务端）。官方模型卡推荐前缀包含 `safe`；本项目把它明确作为用户可选的产品覆盖，而不冒充官方默认。旧参数 `content_tier`（safe/sensitive）自动迁移。
 
 ## MiniMax H3（官方手册规则）
 
@@ -133,8 +133,9 @@ python -m compileall nodes services renderers validators schemas server tests
 ```
 
 - 测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约和主链路回归；数量以本地 `pytest` 结果为准。
-- 架构与决策：`docs/decisions.md`、`docs/research/`（含来源与日期）、`docs/adr/`、`docs/compatibility.md`。
+- 架构与决策：`docs/decisions.md`、`docs/adr/`、`docs/compatibility.md`。
+- P0-P3 架构基线、Prompt 来源/所有权/Assembly、事务与语义一致性说明见 `docs/prompt-architecture/`；四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
 
 ## 许可与来源
 
-MIT License（见 [LICENSE](LICENSE)）。提示词格式规范来自 ANIMA 官方模型卡（CircleStone Labs / Civitai 2458426）与 MiniMax H3 官方手册（用户提供，存档于 `docs/sources/`，不入 git）。参考实现的边界见 `docs/licenses-and-sources.md`；不复制 ANIMA_BOOSTER / ComfyUI-Prompt-Assistant 内部实现。
+MIT License（见 [LICENSE](LICENSE)）。目标提示词规范只采用模型作者的一手资料；固定版本、访问日期和本地差异见 `docs/prompt-architecture/official-source-ledger.md`。参考实现的边界见 `docs/licenses-and-sources.md`；不复制 ANIMA_BOOSTER / ComfyUI-Prompt-Assistant 内部实现。

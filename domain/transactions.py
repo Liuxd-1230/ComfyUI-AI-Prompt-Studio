@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+from copy import deepcopy
 from typing import Any, Callable, Generic, TypeVar
 
 from ..schemas.changeset import ChangeSet, SemanticChange
@@ -30,37 +31,48 @@ class SemanticTransaction(Generic[PlanT]):
 
     def execute(self, current: PlanT, changeset: ChangeSet, *,
                 current_revision: int,
-                semantic_check: Callable[[PlanT], list[str]] | None = None,
+                impact_analyzer: Callable[[PlanT, ChangeSet], ChangeSet] | None = None,
+                semantic_check: Callable[[PlanT], list[Any]] | None = None,
                 commit: Callable[[PlanT], None] | None = None) -> TransactionResult[PlanT]:
-        issues = changeset.validate()
+        effective = (impact_analyzer(current, deepcopy(changeset))
+                     if impact_analyzer is not None else changeset)
+        issues = effective.validate()
         if issues:
             raise TransactionRejected("ChangeSet 校验失败：" + "；".join(issues))
-        if changeset.base_revision != current_revision:
+        if effective.base_revision != current_revision:
             raise TransactionRejected(
-                f"revision 冲突：请求基于 {changeset.base_revision}，当前为 {current_revision}")
-        if changeset.constraint_conflicts:
-            details = "；".join(conflict.reason for conflict in changeset.constraint_conflicts)
+                f"revision 冲突：请求基于 {effective.base_revision}，当前为 {current_revision}")
+        if effective.constraint_conflicts:
+            details = "；".join(conflict.reason for conflict in effective.constraint_conflicts)
             raise TransactionRejected("存在未解决约束冲突：" + details)
+        changed_roots = tuple(change.path for change in effective.all_changes())
+        unresolved = [fact for fact in effective.invalidated_facts
+                      if not _authorized(fact.path, changed_roots)]
+        if unresolved:
+            raise TransactionRejected(
+                "存在未解决失效事实：" + "；".join(
+                    f"{fact.path} ({fact.reason})" for fact in unresolved))
 
         before = self.adapter.normalize(self.adapter.clone(current))
         payload = before.to_json()  # type: ignore[attr-defined]
-        for change in changeset.all_changes():
+        for change in effective.all_changes():
             _apply(payload, change)
         candidate = self.adapter.normalize(self.adapter.load(payload))
 
         changed = tuple(sorted(_diff_paths(before.to_json(), candidate.to_json())))  # type: ignore[attr-defined]
         authorized = tuple(_authorization_root(change)
-                           for change in changeset.all_changes())
+                           for change in effective.all_changes())
         unauthorized = [path for path in changed if not _authorized(path, authorized)]
         if unauthorized:
             raise TransactionRejected(
                 "Diff Guard 拒绝未授权变更：" + ", ".join(unauthorized))
         semantic_issues = semantic_check(candidate) if semantic_check else []
         if semantic_issues:
-            raise TransactionRejected("语义校验失败：" + "；".join(semantic_issues))
+            raise TransactionRejected("语义校验失败：" + "；".join(
+                str(getattr(issue, "message", issue)) for issue in semantic_issues))
         if commit is not None:
             commit(candidate)
-        return TransactionResult(candidate, changed, changeset)
+        return TransactionResult(candidate, changed, effective)
 
 
 def _parts(path: str) -> list[str]:
