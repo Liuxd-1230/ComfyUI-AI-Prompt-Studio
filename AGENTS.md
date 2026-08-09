@@ -17,9 +17,16 @@ node --check web/settings.js
 node --check web/profile_widgets.js
 node --check web/reference_mentions.js
 node --check web/director_workbench.js
+node --check web/prompt_studio.js
 ```
 
 `pytest` uses ComfyUI-style package loading. `compileall` catches Python compilation issues; `node --check` validates JavaScript syntax. Optional features use `pip install "Pillow>=10.0" "numpy>=1.24"` for vision or `pip install "pypdf>=4.0" "python-docx>=1.1"` for document extraction.
+
+## Binding Refactor Contracts
+
+Before changing any LLM call, prompt assembly, semantic plan, session/revision behavior, Studio UI, model core, Skill/supplement system, renderer, validator, or related schema, read both files under `docs/重构约束/` completely at the current HEAD. `APS_Persistent_Semantic_Architecture_Agent_Prompt.md` and `APS_Whole_Library_Prompt_Architecture_Agent_Prompt.md` are binding architecture and completion contracts, not optional backlogs.
+
+Start at the contract's applicable audit/phase and define its testable acceptance criteria before editing. A feature is incomplete when it uses placeholders, no-op branches, mock-only proof, disconnected UI, swallowed errors, or documentation claims without an executable end-to-end path. Before declaring each work unit complete, audit the diff against both contracts, run all required targeted and full checks, update affected documentation and CHANGELOG, commit the coherent unit, and push it to the configured GitHub remote. Report any unmet criterion as unfinished work instead of weakening or relabeling it.
 
 ## Coding Style & Naming Conventions
 

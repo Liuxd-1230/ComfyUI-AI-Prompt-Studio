@@ -121,6 +121,21 @@ def test_prompt_studio_frontend_persists_backend_session_in_widget():
     assert "新会话" in source and "回退上一版" in source
 
 
+def test_binding_refactor_contracts_are_present_and_referenced():
+    """Architecture work must not silently lose its durable repository contract."""
+    agents = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8")
+    contract_dir = PROJECT_ROOT / "docs" / "重构约束"
+    names = (
+        "APS_Persistent_Semantic_Architecture_Agent_Prompt.md",
+        "APS_Whole_Library_Prompt_Architecture_Agent_Prompt.md",
+    )
+    for name in names:
+        path = contract_dir / name
+        assert path.exists(), f"缺少重构约束：{name}"
+        assert path.stat().st_size > 50_000, f"重构约束疑似被占位或截断：{name}"
+        assert name in agents, f"AGENTS.md 未强制引用重构约束：{name}"
+
+
 def test_session_widgets_are_appended_after_legacy_serialized_widgets(loaded):
     """旧 workflow 的 widget_values 是位置数组；新字段只能追加，不能插队。"""
     module, _, _ = loaded
