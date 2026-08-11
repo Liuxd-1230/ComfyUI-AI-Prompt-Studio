@@ -21,7 +21,7 @@ def test_every_creative_gateway_call_has_an_inventory_owner() -> None:
         "nodes/reference_analyzer.py": ("reference.text", 1),
         "nodes/storyboard_builder.py": ("storyboard.create", 1),
         "nodes/prompt_composer.py": ("composer.render", 1),
-        "services/prompt_session.py": ("session.changeset", 3),
+        "services/prompt_session.py": ("session.changeset", 2),
         "domain/gateway_critic.py": ("semantic.critic", 1),
         "nodes/minimax_h3_director.py": ("h3.create", 3),
     }

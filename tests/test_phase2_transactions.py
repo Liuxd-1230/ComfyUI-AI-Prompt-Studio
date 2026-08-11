@@ -12,6 +12,7 @@ from aps.schemas.image_semantic_plan import ImageSemanticPlan
 from aps.schemas.h3 import H3PromptPlan, H3Shot
 from aps.schemas.changeset import (ChangeSet, ConstraintConflict,
                                    SemanticChange)
+from aps.schemas.semantic_paths import path_within, paths_overlap
 
 
 def _plan() -> AnimaPromptPlan:
@@ -24,6 +25,13 @@ def _plan() -> AnimaPromptPlan:
 
 def _change(path: str, value, reason: str = "用户明确要求") -> SemanticChange:
     return SemanticChange(path=path, value=value, reason=reason)
+
+
+def test_semantic_path_comparisons_share_one_canonical_contract() -> None:
+    assert paths_overlap("characters/0", "characters/0/action") is True
+    assert paths_overlap("characters/0", "characters/1") is False
+    assert path_within("shots/2/camera", ["shots"]) is True
+    assert path_within("soundscape", ["shots"]) is False
 
 
 def test_transaction_applies_to_clone_and_commits_atomically() -> None:

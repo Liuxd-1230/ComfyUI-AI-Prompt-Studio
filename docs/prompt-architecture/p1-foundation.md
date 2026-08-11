@@ -11,7 +11,7 @@ P1 establishes executable boundaries without changing public node widgets or wor
 - v1 JSON and workflow sessions migrate through `ANIMA_NORMAL_FORM_MIGRATIONS`. Legacy `natural_body` alone becomes a global `creative_notes` item, and a standalone character `description` becomes a character-bound creative note—neither is guessed to be scene, action, or stable appearance. If legacy prose coexists with any other semantic owner, migration raises `AnimaMigrationConflict` before any revision changes. The user must start a new session or remove the conflicting legacy prose; the stable v1 session remains intact. Malformed character entries fail at the schema boundary with `SchemaError`. Successfully refined non-conflicting sessions persist v2.
 - `AnimaPromptPlan.normalized()` provides deterministic trimming and de-duplication. ANIMA Skill output contracts emit v2 directly, and Prompt Composer exposes ownership violations through its normal validation and repair path.
 - ANIMA and H3 plans expose compact `to_llm_context()` data. P2's `request_changeset()` uses the selected session adapter and sends only editable semantic state, so final prompts, validation, generation profiles, provider output, warnings, generated IDs, and timestamps stay out of REFINE requests.
-- `domain/plan_adapters.py` supplies real ANIMA and H3 adapters for loading, cloning, normalizing, and `to_llm_context()`. The former `llm_context()` spelling remains a compatibility alias.
+- `domain/plan_adapters.py` supplies real ANIMA and H3 adapters for loading, cloning, normalizing, and `to_llm_context()`; the unused pre-release alias has been removed.
 
 ## Prompt Assembly Foundation
 

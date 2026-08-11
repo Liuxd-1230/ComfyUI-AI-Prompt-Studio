@@ -28,6 +28,8 @@ Before changing any LLM call, prompt assembly, semantic plan, session/revision b
 
 Start at the contract's applicable audit/phase and define its testable acceptance criteria before editing. A feature is incomplete when it uses placeholders, no-op branches, mock-only proof, disconnected UI, swallowed errors, or documentation claims without an executable end-to-end path. Before declaring each work unit complete, audit the diff against both contracts, run all required targeted and full checks, update affected documentation and CHANGELOG, commit the coherent unit, and push it to the configured GitHub remote. Report any unmet criterion as unfinished work instead of weakening or relabeling it.
 
+Contract completion is phase-specific: an unstarted later phase must keep its stated interfaces and migration direction open, but is not reported as implemented. Track partial and missing acceptance cases in `docs/重构约束/implementation-status.md` instead of weakening future requirements or adding placeholder behavior.
+
 ## Coding Style & Naming Conventions
 
 Follow existing files: four-space indentation and type hints for Python; two-space indentation, semicolons, and camelCase for JavaScript. Use `snake_case` for modules/functions, `PascalCase` for schema classes, and the `APS_` prefix for ComfyUI node classes. Keep renderers and validators deterministic and side-effect free where possible. Internal Python imports must remain package-relative because ComfyUI loads the extension via `spec_from_file_location`. No formatter or linter is configured, so match nearby code and keep changes focused.

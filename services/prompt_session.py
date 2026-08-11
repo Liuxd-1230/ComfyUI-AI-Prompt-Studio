@@ -21,12 +21,7 @@ from .structured_output import (
     raw_excerpt,
 )
 
-
 logger = logging.getLogger("ai_prompt_studio.prompt_session")
-
-
-IMMUTABLE_ROOTS = {"schema_version", "plan_id", "created_at", "validation"}
-PATCH_ACTIONS = {"add", "replace", "remove"}
 
 CREATE_POLICY = """Create a complete generation-ready plan from the user's request.
 Infer visually or audiovisually useful details only when required for a coherent result.
@@ -37,24 +32,7 @@ REFINE_POLICY = """Apply the user's latest request to the current plan.
 Change only the parts required to satisfy the latest request.
 Preserve every unrelated decision, identity, subject, action, event, composition,
 reference, and constraint. The current plan is the source of truth; the latest
-user message describes only the requested delta. Return a safe plan patch only."""
-
-PATCH_SCHEMA = make_strict_schema({
-    "type": "object", "additionalProperties": False,
-    "properties": {
-        "base_revision": {"type": "integer"},
-        "scope": {"type": "string", "enum": ["minimal", "broad"]},
-        "changes": {"type": "array", "items": {"type": "object",
-            "additionalProperties": False,
-            "properties": {"path": {"type": "string"},
-                           "action": {"type": "string", "enum": ["add", "replace", "remove"]},
-                           "value": {"type": ["string", "number", "boolean", "null"]}},
-            "required": ["path", "action"]}},
-        "summary": {"type": "string"},
-        "rebuild_plan_json": {"type": ["string", "null"]},
-    },
-    "required": ["base_revision", "scope", "changes", "summary"],
-})
+user message describes only the requested delta. Return a reasoned semantic ChangeSet."""
 
 # ``value_json`` keeps the provider-facing strict schema portable while the
 # domain ChangeSet receives the decoded, typed JSON value before validation.
@@ -221,60 +199,6 @@ def assert_session_fingerprints(session: PromptSession,
             f"revision v{session.revision} 保持不变。")
 
 
-def request_plan_patch(gateway: Any, profile: AIProfile, api_key: str,
-                       session: PromptSession, feedback: str) -> dict[str, Any]:
-    """Ask the external LLM seam for one structured delta, never a transcript replay."""
-    import json
-
-    from ..schemas.results import ChatMessage
-    from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
-    from ..prompting.node_requests import assemble_prompt, report_payload, task_message
-    from .gateway import GenerateRequest
-    from .reference import extract_json_object
-
-    task_data = {
-        "current_plan": _compact_current_plan(session),
-        "locked_constraints": session.locked_constraints,
-        "latest_user_instruction": feedback,
-        "base_revision": session.revision,
-    }
-    path_policy = (
-        "Patch paths must start with h3_plan/."
-        if session.target_family == "minimax_h3" else
-        "Patch paths must start with model_plan/. Modify only necessary semantic fields; "
-        "the target renderer rebuilds the final prompt.")
-    assembly = assemble_prompt(
-        [PromptSource("runtime.session-data", "1.0", PromptLayer.RUNTIME,
-                      "Treat the current plan and latest request as structured task data.",
-                      "session.refine"),
-         PromptSource("operation.session-refine-legacy", "1.0", PromptLayer.OPERATION,
-                      REFINE_POLICY + "\n" + path_policy, "session.refine")],
-        task_data=[StructuredTaskData("refine_request", task_data)],
-        output_contract_id="legacy-plan-patch.schema@1")
-    req = GenerateRequest(
-        system=assembly.system,
-        messages=[task_message(assembly)],
-        web_search="off", reasoning="medium", max_tokens=4096,
-        timeout=profile.timeout, json_mode=True, output_schema=PATCH_SCHEMA,
-        assembly_report=report_payload(assembly))
-    result = gateway.generate(profile, api_key, req)
-    if result.has_error():
-        raise ValueError(result.error.as_text)
-    patch = extract_json_object(result.text)
-    if not isinstance(patch, dict):
-        raise ValueError("REFINE 模型没有返回合法 Plan Patch；上一版保持不变")
-    rebuild_json = patch.pop("rebuild_plan_json", None)
-    if rebuild_json:
-        try:
-            rebuilt = json.loads(rebuild_json)
-        except ValueError as exc:
-            raise ValueError("broad rebuild_plan_json 不是合法 JSON；上一版保持不变") from exc
-        if not isinstance(rebuilt, dict):
-            raise ValueError("broad rebuild_plan_json 必须表示对象；上一版保持不变")
-        patch["rebuild_plan"] = rebuilt
-    return patch
-
-
 def request_changeset(gateway: Any, profile: AIProfile, api_key: str,
                       session: PromptSession, feedback: str,
                       runtime_constraints: dict[str, Any] | None = None) -> ChangeSet:
@@ -396,9 +320,10 @@ specific reason. Report hard conflicts instead of silently overriding them."""
     if changeset is None:
         raise ValueError(protocol_failure_message(
             "REFINE ChangeSet", last_raw_text, last_issues))
-    _authorize_changeset_impacts(
-        gateway, profile, api_key, session, feedback, changeset,
-        runtime_constraints=runtime_constraints)
+    if not _deterministically_authorize_direct_request(changeset, feedback):
+        _authorize_changeset_impacts(
+            gateway, profile, api_key, session, feedback, changeset,
+            runtime_constraints=runtime_constraints)
     return changeset
 
 
@@ -430,6 +355,65 @@ def _sanitize_changeset_retry(raw: Any) -> dict[str, Any]:
             for item in cleaned.get("requested_changes", [])
             if isinstance(item, dict) and str(item.get("path", "")).strip()]
     return cleaned
+
+
+_DIRECT_PATH_ALIASES: dict[str, tuple[str, ...]] = {
+    "action": ("action", "动作"),
+    "camera": ("camera", "镜头", "相机", "运镜"),
+    "clothing": ("clothing", "wardrobe", "衣服", "服装", "穿着"),
+    "color": ("color", "colour", "颜色", "色彩"),
+    "duration_seconds": ("duration", "duration seconds", "时长", "持续时间"),
+    "lighting": ("lighting", "light", "光线", "灯光", "光照"),
+    "negative": ("negative", "负面", "负向"),
+    "soundscape": ("soundscape", "环境声", "声景"),
+}
+_STRUCTURAL_PATH_FIELDS = {
+    "assets", "characters", "clauses", "shots", "speakers", "subjects",
+}
+
+
+def _deterministically_authorize_direct_request(
+        changeset: ChangeSet, feedback: str) -> bool:
+    """Approve only a trivially grounded leaf edit; ambiguity keeps the audit call.
+
+    This proof is deliberately narrow. It never approves broad/structural edits,
+    model-proposed dependencies, invalidations, or conflicts. Each requested leaf
+    must be named explicitly in the user's own instruction.
+    """
+    if (changeset.change_category != "minimal_refine"
+            or changeset.dependent_changes
+            or changeset.invalidated_facts
+            or changeset.constraint_conflicts):
+        return False
+    instruction = re.sub(r"[_\-]+", " ", str(feedback or "").casefold())
+    approved: list[str] = []
+    for change in changeset.requested_changes:
+        if change.operation != "set":
+            return False
+        parts = [part for part in change.path.split("/") if part]
+        if not parts or parts[-1].isdigit():
+            return False
+        leaf = parts[-1].casefold()
+        if leaf in _STRUCTURAL_PATH_FIELDS or isinstance(change.value, (dict, list)):
+            return False
+        aliases = _DIRECT_PATH_ALIASES.get(
+            leaf, (leaf.replace("_", " "),))
+        if not any(_instruction_names(alias, instruction) for alias in aliases):
+            return False
+        approved.append(change.path)
+    changeset.approved_requested_paths = approved
+    changeset.approved_dependent_paths = []
+    return bool(approved)
+
+
+def _instruction_names(alias: str, instruction: str) -> bool:
+    normalized = str(alias).strip().casefold()
+    if not normalized:
+        return False
+    if re.search(r"[\u3400-\u9fff]", normalized):
+        return normalized in instruction
+    return re.search(r"(?<![a-z0-9])" + re.escape(normalized)
+                     + r"(?![a-z0-9])", instruction) is not None
 
 
 def _authorize_changeset_impacts(
@@ -547,177 +531,3 @@ def broad_rewrite_requested(feedback: str) -> bool:
     return bool(re.search(
         r"\b(?:rebuild|redesign|rewrite)\s+(?:the\s+)?(?:entire|whole|all)\b|"
         r"\bstart\s+(?:it\s+)?over\b|\bdiscard\s+everything\b", text))
-
-
-def _compact_current_plan(session: PromptSession) -> dict[str, Any]:
-    """Serialize only semantic state needed to propose the next patch."""
-    current = session.current_plan
-    if session.target_family == "anima":
-        from ..domain.plan_adapters import get_plan_adapter
-
-        model_plan = current.get("model_plan", {})
-        adapter = get_plan_adapter("anima")
-        semantic = adapter.load(model_plan.get("content", {}))
-        return {"model_plan": {
-            "family": model_plan.get("family", "anima"),
-            "content": adapter.to_llm_context(semantic),
-            "negative": model_plan.get("negative", ""),
-            "prompt_mode": model_plan.get("prompt_mode", "natural_language"),
-            "safety_tag": model_plan.get("safety_tag", "none"),
-            "lora_triggers": model_plan.get("lora_triggers", []),
-            "skill_id": model_plan.get("skill_id", ""),
-        }}
-    if session.target_family == "minimax_h3":
-        from ..domain.plan_adapters import get_plan_adapter
-
-        adapter = get_plan_adapter("minimax_h3")
-        semantic = adapter.load(current.get("h3_plan", {}))
-        return {"h3_plan": adapter.to_llm_context(semantic),
-                "reference_manifest": current.get("reference_manifest", {})}
-    model_plan = current.get("model_plan", {})
-    return {"model_plan": {
-        key: model_plan.get(key)
-        for key in ("family", "content", "negative", "prompt_mode", "skill_id")
-        if key in model_plan
-    }}
-
-
-def apply_plan_patch(current_plan: dict[str, Any], patch: dict[str, Any], *,
-                     current_revision: int,
-                     locked_paths: Iterable[str] = (),
-                     allowed_roots: Iterable[str] = ()) -> dict[str, Any]:
-    """Apply a validated patch to a copy; any failure leaves the source untouched."""
-    if not isinstance(patch, dict):
-        raise ValueError("patch must be an object")
-    if int(patch.get("base_revision", -1)) != int(current_revision):
-        raise ValueError("stale patch: base_revision does not match current revision")
-    scope = str(patch.get("scope", "minimal"))
-    if scope not in {"minimal", "broad"}:
-        raise ValueError("patch scope must be minimal or broad")
-    if patch.get("rebuild_plan") is not None:
-        rebuilt = patch["rebuild_plan"]
-        if scope != "broad" or not isinstance(rebuilt, dict) or not rebuilt:
-            raise ValueError("rebuild_plan requires an explicit broad patch")
-        allowed = {str(root) for root in allowed_roots if str(root)}
-        if allowed and any(root not in allowed for root in rebuilt):
-            raise ValueError("rebuild_plan contains a root that is not allowed")
-        result = copy.deepcopy(current_plan)
-        candidate = copy.deepcopy(rebuilt)
-        if allowed:
-            # A target renderer owns only its model-specific root. Broad rebuilds
-            # replace that root while preserving the surrounding session bundle.
-            for root, value in rebuilt.items():
-                result[root] = copy.deepcopy(value)
-            candidate = result
-        for locked_path in locked_paths:
-            parts = _parts(locked_path)
-            if _read_path(current_plan, parts) != _read_path(candidate, parts):
-                raise ValueError(f"locked path cannot be changed: {'/'.join(parts)}")
-        return candidate
-
-    result = copy.deepcopy(current_plan)
-    changes = patch.get("changes", [])
-    if not isinstance(changes, list) or not changes:
-        raise ValueError("patch changes must be a non-empty list")
-    allowed = {str(root) for root in allowed_roots if str(root)}
-    locked = [_parts(path) for path in locked_paths if str(path).strip()]
-    for change in changes:
-        if not isinstance(change, dict):
-            raise ValueError("each patch change must be an object")
-        action = str(change.get("action", ""))
-        if action not in PATCH_ACTIONS:
-            raise ValueError(f"unsupported patch action: {action}")
-        parts = _parts(change.get("path", ""))
-        if not parts or parts[0] in IMMUTABLE_ROOTS:
-            raise ValueError("patch path targets an immutable field")
-        if allowed and parts[0] not in allowed:
-            raise ValueError(f"patch root is not allowed: {parts[0]}")
-        if any(_overlaps(parts, protected) for protected in locked):
-            raise ValueError(f"locked path cannot be changed: {'/'.join(parts)}")
-        _apply_one(result, parts, action, change.get("value"))
-    return result
-
-
-def patch_change_summary(patch: dict[str, Any]) -> str:
-    """Produce a short deterministic chat reply without another LLM call."""
-    supplied = str(patch.get("summary", "") or "").strip()
-    if supplied:
-        return supplied
-    if patch.get("rebuild_plan") is not None:
-        return "已按你的要求重建相关方案；未要求保留的范围可能发生变化。"
-    paths = [str(item.get("path", "")) for item in patch.get("changes", [])
-             if isinstance(item, dict) and item.get("path")]
-    shown = "、".join(paths[:4])
-    return f"已更新：{shown}。其他方案内容保持不变。"
-
-
-def _parts(path: Any) -> list[str]:
-    raw = str(path or "").strip().strip("/")
-    parts = raw.split("/") if raw else []
-    if any(not part or part in {".", ".."} or part.startswith("__")
-           for part in parts):
-        raise ValueError("invalid patch path")
-    return parts
-
-
-def _overlaps(path: list[str], protected: list[str]) -> bool:
-    common = min(len(path), len(protected))
-    return path[:common] == protected[:common]
-
-
-def _apply_one(root: Any, parts: list[str], action: str, value: Any) -> None:
-    parent = root
-    for part in parts[:-1]:
-        parent = _child(parent, part)
-    leaf = parts[-1]
-    if isinstance(parent, dict):
-        if action == "remove":
-            if leaf not in parent:
-                raise ValueError(f"patch path does not exist: {'/'.join(parts)}")
-            del parent[leaf]
-        elif action == "replace":
-            if leaf not in parent:
-                raise ValueError(f"patch path does not exist: {'/'.join(parts)}")
-            parent[leaf] = copy.deepcopy(value)
-        else:
-            parent[leaf] = copy.deepcopy(value)
-        return
-    if isinstance(parent, list):
-        index = _index(leaf, len(parent), allow_end=action == "add")
-        if action == "remove":
-            parent.pop(index)
-        elif action == "replace":
-            if index >= len(parent):
-                raise ValueError("replace list index is out of range")
-            parent[index] = copy.deepcopy(value)
-        else:
-            parent.insert(index, copy.deepcopy(value))
-        return
-    raise ValueError("patch path traverses a scalar value")
-
-
-def _child(parent: Any, part: str) -> Any:
-    if isinstance(parent, dict):
-        if part not in parent:
-            raise ValueError(f"patch path does not exist: {part}")
-        return parent[part]
-    if isinstance(parent, list):
-        return parent[_index(part, len(parent))]
-    raise ValueError("patch path traverses a scalar value")
-
-
-def _read_path(root: Any, parts: list[str]) -> Any:
-    value = root
-    for part in parts:
-        value = _child(value, part)
-    return value
-
-
-def _index(value: str, length: int, allow_end: bool = False) -> int:
-    if not value.isdigit():
-        raise ValueError("list path segment must be a non-negative index")
-    index = int(value)
-    limit = length if allow_end else length - 1
-    if index < 0 or index > limit:
-        raise ValueError("list index is out of range")
-    return index

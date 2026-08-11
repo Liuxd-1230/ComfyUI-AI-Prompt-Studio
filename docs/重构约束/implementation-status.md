@@ -40,3 +40,13 @@ surface is not complete; it must not be described as finished functionality.
 The Recovery Journal currently defines and proves the clean interface only.
 Durable workflow writeback, crash recovery, and copied-node branch UX remain P5
 work and are intentionally reported as unfinished.
+
+## Known Phase Gaps Outside §108
+
+- `PlanAdapter` currently owns typed load/normalize/context/clone/dump only. The
+  complete §13/§109 propose/validate/apply/render/protocol/repair façade and dedicated
+  Studio nodes are not implemented; Composer/H3 remain compatibility facades.
+- Recovery Journal has a tested clean interface but is not connected to durable
+  backend storage or frontend recovery prompts.
+- Automatic fingerprint Rebase/target migration is not implemented; mismatches
+  preserve the stable revision and require New Session or an existing restore.

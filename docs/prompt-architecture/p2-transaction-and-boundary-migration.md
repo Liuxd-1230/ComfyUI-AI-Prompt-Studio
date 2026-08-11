@@ -8,7 +8,10 @@ facts, constraint conflicts, and summary. Each mutation has an operation, semant
 path, typed JSON value, and reason. `services/prompt_session.request_changeset()`
 is the only REFINE proposal path used by Prompt Composer and H3 Director.
 
-The proposal does not authorize itself. A second compact structured call receives
+The proposal does not authorize itself. A narrow deterministic gate approves only
+minimal `set` operations whose semantic leaf is explicitly named in the user's own
+instruction and which contain no proposed dependency, invalidation, or conflict.
+All other proposals use a second compact structured call that receives
 the stable plan, latest instruction, runtime constraints, and proposed ChangeSet,
 then returns exact approved requested/dependent paths. The transaction rejects every
 path missing from that independent intent/impact approval. Deterministic dependencies
@@ -40,8 +43,8 @@ validation, revision snapshot, conversation, and timestamps all succeed. Commit 
 performs a final expected-revision CAS check. Every
 failure therefore preserves Current Plan, Current Prompt, and revision.
 
-The pre-P2 `request_plan_patch()` / `apply_plan_patch()` functions remain importable
-for direct compatibility tests, but no production node calls them.
+The disconnected pre-P2 Plan Patch schema/request/apply helpers were removed after
+all production and tests migrated to the canonical ChangeSet transaction.
 
 ## Live Prompt Boundary Migration
 

@@ -3,6 +3,7 @@ import dataclasses
 from typing import Any
 
 from .base import Schema
+from .semantic_paths import paths_overlap
 
 
 CHANGE_OPERATIONS = {"set", "delete", "insert"}
@@ -86,7 +87,7 @@ class ChangeSet(Schema):
                 issues.append(f"同一路径不能声明多个变更: {change.path}")
             seen_paths.add(change.path)
         for change in self.requested_changes:
-            if not any(_paths_overlap(change.path, scope)
+            if not any(paths_overlap(change.path, scope)
                        for scope in self.intent_scope):
                 issues.append(
                     f"请求变更 {change.path} 不在 intent_scope 授权范围内")
@@ -98,7 +99,3 @@ class ChangeSet(Schema):
                     or not conflict.reason.strip()):
                 issues.append("constraint_conflicts 的 path/constraint/reason 不能为空")
         return issues
-
-
-def _paths_overlap(left: str, right: str) -> bool:
-    return left == right or left.startswith(right + "/") or right.startswith(left + "/")

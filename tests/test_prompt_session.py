@@ -10,11 +10,7 @@ from aps.schemas.prompt_session import (
     SessionFingerprints,
 )
 from aps.schemas.base import SchemaError
-from aps.services.prompt_session import (
-    apply_plan_patch,
-    broad_rewrite_requested,
-    content_fingerprint,
-)
+from aps.services.prompt_session import broad_rewrite_requested, content_fingerprint
 
 
 VALID = {"valid": True, "issues": [], "checks": ["non_empty"]}
@@ -204,70 +200,3 @@ def test_future_or_malformed_session_is_rejected_instead_of_silently_downgraded(
     with pytest.raises(SchemaError, match=r"revisions\[0\]"):
         PromptSession.from_json({
             "schema_version": "2.0", "revisions": ["not a revision"]})
-
-
-def test_minimal_patch_changes_only_requested_path():
-    current = {
-        "characters": [{"identity": "Alice", "clothing": "red dress"}],
-        "environment": "Tokyo rain", "camera": "medium shot",
-    }
-    patch = {"base_revision": 1, "scope": "minimal", "changes": [{
-        "path": "characters/0/clothing", "action": "replace",
-        "value": "white trench coat",
-    }]}
-    updated = apply_plan_patch(current, patch, current_revision=1,
-                               locked_paths=["characters/0/identity"])
-    assert updated == {
-        "characters": [{"identity": "Alice", "clothing": "white trench coat"}],
-        "environment": "Tokyo rain", "camera": "medium shot",
-    }
-    assert current["characters"][0]["clothing"] == "red dress"
-
-
-def test_invalid_or_stale_patch_cannot_mutate_current_plan():
-    current = {"identity": "Alice", "camera": "medium"}
-    with pytest.raises(ValueError, match="stale"):
-        apply_plan_patch(current, {"base_revision": 1, "changes": []},
-                         current_revision=2)
-    with pytest.raises(ValueError, match="locked"):
-        apply_plan_patch(current, {"base_revision": 2, "changes": [{
-            "path": "identity", "action": "replace", "value": "Bob"}]},
-            current_revision=2, locked_paths=["identity"])
-    assert current == {"identity": "Alice", "camera": "medium"}
-
-
-def test_explicit_broad_rebuild_is_allowed_but_minimal_rebuild_is_rejected():
-    current = {"character": "Alice", "environment": "Tokyo"}
-    rebuilt = {"character": "Alice", "environment": "Mars", "camera": "wide"}
-    updated = apply_plan_patch(current, {
-        "base_revision": 3, "scope": "broad", "changes": [],
-        "rebuild_plan": rebuilt}, current_revision=3)
-    assert updated == rebuilt
-    with pytest.raises(ValueError, match="broad"):
-        apply_plan_patch(current, {
-            "base_revision": 3, "scope": "minimal", "changes": [],
-            "rebuild_plan": rebuilt}, current_revision=3)
-
-
-def test_scoped_broad_rebuild_preserves_bundle_and_locked_fields():
-    current = {
-        "prompt_plan": {"positive": "old"},
-        "model_plan": {"family": "anima", "content": {"scene": "Tokyo"}},
-        "generation_profile": {"steps": 28},
-    }
-    rebuilt = {"model_plan": {
-        "family": "anima", "content": {"scene": "Mars", "camera": "wide"}}}
-    updated = apply_plan_patch(
-        current, {"base_revision": 2, "scope": "broad", "changes": [],
-                  "rebuild_plan": rebuilt}, current_revision=2,
-        allowed_roots=["model_plan"], locked_paths=["model_plan/family"])
-    assert updated["model_plan"]["content"]["scene"] == "Mars"
-    assert updated["prompt_plan"] == current["prompt_plan"]
-    assert updated["generation_profile"] == current["generation_profile"]
-
-    rebuilt["model_plan"]["family"] = "generic"
-    with pytest.raises(ValueError, match="locked"):
-        apply_plan_patch(
-            current, {"base_revision": 2, "scope": "broad", "changes": [],
-                      "rebuild_plan": rebuilt}, current_revision=2,
-            allowed_roots=["model_plan"], locked_paths=["model_plan/family"])

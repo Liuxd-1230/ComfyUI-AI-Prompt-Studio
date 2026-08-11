@@ -9,7 +9,7 @@ The repository has working one-shot generation, reference analysis, storyboard, 
 | Component | P0 disposition | Reason |
 |---|---|---|
 | `services/prompt_session.py` session envelope | reuse through adapter | preserves saved workflows while formal execution state is introduced later |
-| `request_plan_patch` and `PATCH_SCHEMA` | deprecate from canonical path | root replacement is not a semantic `ChangeSet` or dependency-aware transaction |
+| `request_plan_patch` and `PATCH_SCHEMA` | removed in P4.1 | root replacement was not a semantic `ChangeSet` or dependency-aware transaction |
 | Composer/H3 hidden session widgets | retain for compatibility | removing or reordering them would corrupt serialized workflows |
 | Composer/H3 create/refine branches | refactor behind PlanAdapters | one-shot nodes remain facades; future Studio nodes own stateful interaction |
 | `revert_previous()` destructive rollback | contain as debt | immutable revision/revert semantics belong to a later phase |

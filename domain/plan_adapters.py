@@ -32,10 +32,6 @@ class PlanAdapter(ABC, Generic[PlanT]):
     def to_llm_context(self, plan: PlanT) -> dict[str, Any]:
         raise NotImplementedError
 
-    def llm_context(self, plan: PlanT) -> dict[str, Any]:
-        """Compatibility alias for the short-lived P1 pre-release API."""
-        return self.to_llm_context(plan)
-
     def clone(self, plan: PlanT) -> PlanT:
         return deepcopy(plan)
 

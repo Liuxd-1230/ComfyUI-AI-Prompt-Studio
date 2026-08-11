@@ -7,6 +7,7 @@ from ..schemas.anima import AnimaPromptPlan
 from ..schemas.changeset import ChangeSet, SemanticChange
 from ..schemas.h3 import H3PromptPlan
 from ..schemas.semantic import ConsistencyResult, RiskAssessment, SemanticIssue
+from ..schemas.semantic_paths import paths_overlap
 from .plan_adapters import PlanAdapter
 from .impact_analysis import analyze_anima_impacts
 
@@ -298,7 +299,7 @@ def assert_repair_scope(changeset: ChangeSet,
     """Reject model-proposed repair edits unrelated to concrete issue paths."""
     normalized = [_repair_root(path) for path in allowed_paths if path.strip()]
     unrelated = [change.path for change in changeset.all_changes()
-                 if not any(_paths_overlap(change.path, allowed)
+                 if not any(paths_overlap(change.path, allowed)
                             for allowed in normalized)]
     if unrelated:
         raise ValueError("Repair ChangeSet 包含与具体 issue 无关的路径：" +
@@ -337,8 +338,3 @@ def _repair_root(path: str) -> str:
     if "*" in parts:
         return ""
     return "/".join(parts)
-
-
-def _paths_overlap(left: str, right: str) -> bool:
-    return (left == right or left.startswith(right + "/")
-            or right.startswith(left + "/"))

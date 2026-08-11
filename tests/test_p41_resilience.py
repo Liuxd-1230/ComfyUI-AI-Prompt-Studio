@@ -84,6 +84,43 @@ def test_changeset_retry_failure_logs_and_reports_bounded_raw(
     assert raw[:120] in caplog.text
 
 
+def test_directly_named_simple_path_skips_the_second_authorization_call() -> None:
+    class Gateway:
+        calls = 0
+
+        def generate(self, profile, api_key, req):
+            del profile, api_key, req
+            type(self).calls += 1
+            return LLMResult(text=json.dumps(_valid_changeset()))
+
+    result = request_changeset(
+        Gateway(), AIProfile(timeout=30), "test-key", _session(),
+        "Change the lighting to blue hour.")
+    assert result.approved_requested_paths == ["lighting"]
+    assert Gateway.calls == 1
+
+
+def test_ambiguous_instruction_keeps_independent_authorization_call() -> None:
+    class Gateway:
+        calls = 0
+
+        def generate(self, profile, api_key, req):
+            del profile, api_key
+            type(self).calls += 1
+            if "approved_requested_paths" in req.output_schema["properties"]:
+                return LLMResult(text=json.dumps({
+                    "approved_requested_paths": ["lighting"],
+                    "approved_dependent_paths": [], "rejected_reasons": [],
+                    "summary": "approved"}))
+            return LLMResult(text=json.dumps(_valid_changeset()))
+
+    result = request_changeset(
+        Gateway(), AIProfile(timeout=30), "test-key", _session(),
+        "Make it more atmospheric.")
+    assert result.approved_requested_paths == ["lighting"]
+    assert Gateway.calls == 2
+
+
 def test_fingerprint_error_names_only_currently_available_recovery_actions() -> None:
     session = _session()
     session.fingerprint_state = "bound"

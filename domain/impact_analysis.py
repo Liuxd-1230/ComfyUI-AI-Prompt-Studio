@@ -90,12 +90,6 @@ def validate_image_candidate(plan: ImageSemanticPlan) -> list[str]:
     return [f"正向内容与负向约束仍冲突: {token}" for token in conflicts]
 
 
-def passthrough_impacts(plan: PlanT, changeset: ChangeSet) -> ChangeSet:
-    """Typed no-op for plans without deterministic cross-field dependencies."""
-    del plan
-    return changeset
-
-
 def _add_invalidation(changeset: ChangeSet, path: str, reason: str) -> None:
     if not any(item.path == path for item in changeset.invalidated_facts):
         changeset.invalidated_facts.append(InvalidatedFact(path=path, reason=reason))

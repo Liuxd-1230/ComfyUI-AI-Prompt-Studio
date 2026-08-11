@@ -6,6 +6,11 @@ import pytest
 import aps.schemas as S
 
 
+def test_semantic_plan_types_are_exported_from_schema_package() -> None:
+    assert S.ImageSemanticPlan.__name__ == "ImageSemanticPlan"
+    assert S.TextPromptPlan.__name__ == "TextPromptPlan"
+
+
 def test_llm_result_roundtrip():
     r = S.LLMResult(text="hello", reasoning="think", profile_id="p1")
     r.citations.append(S.Citation(index=0, url="https://a.b", title="A"))

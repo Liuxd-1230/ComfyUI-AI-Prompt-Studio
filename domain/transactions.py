@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any, Callable, Generic, TypeVar
 
 from ..schemas.changeset import ChangeSet, SemanticChange
+from ..schemas.semantic_paths import path_within, paths_overlap
 from .plan_adapters import PlanAdapter
 
 
@@ -51,7 +52,7 @@ class SemanticTransaction(Generic[PlanT]):
                 "broad_rewrite 未获得用户明确的大范围重建授权")
         unapproved_requested = [
             change.path for change in effective.requested_changes
-            if not _within_allowed(change.path, tuple(effective.approved_requested_paths))]
+            if not path_within(change.path, effective.approved_requested_paths)]
         if unapproved_requested:
             raise TransactionRejected(
                 "Intent Grounding 未授权请求变更：" +
@@ -63,7 +64,7 @@ class SemanticTransaction(Generic[PlanT]):
             [*effective.approved_dependent_paths, *deterministic_dependencies])
         unapproved_dependencies = [
             change.path for change in effective.dependent_changes
-            if not _within_allowed(change.path, approved_dependencies)]
+            if not path_within(change.path, approved_dependencies)]
         if unapproved_dependencies:
             raise TransactionRejected(
                 "Impact Analysis 未批准依赖变更：" +
@@ -105,7 +106,7 @@ class SemanticTransaction(Generic[PlanT]):
         normalization_changed = tuple(sorted(_diff_paths(
             self.adapter.dump(applied), self.adapter.dump(candidate))))
         locked_normalization = [path for path in normalization_changed
-                                if any(_paths_overlap(path, locked)
+                                if any(paths_overlap(path, locked)
                                        for locked in locked_paths)]
         if locked_normalization:
             raise TransactionRejected(
@@ -153,9 +154,9 @@ def _authorize_change(change: SemanticChange, payload: dict[str, Any],
     if (not parts or any(part in _IMMUTABLE_ROOTS for part in parts)
             or any(part.startswith("__") for part in parts)):
         raise TransactionRejected(f"禁止修改不可变或魔术路径: {change.path}")
-    if allowed_roots and not _within_allowed(change.path, allowed_roots):
+    if allowed_roots and not path_within(change.path, allowed_roots):
         raise TransactionRejected(f"allowed root 拒绝变更: {change.path}")
-    if any(_paths_overlap(change.path, locked) for locked in locked_paths):
+    if any(paths_overlap(change.path, locked) for locked in locked_paths):
         raise TransactionRejected(f"locked path 拒绝变更: {change.path}")
     if change.operation == "insert":
         if "/" not in change.path:
@@ -190,14 +191,6 @@ def _compatible_value(current: Any, proposed: Any) -> bool:
     if isinstance(current, bool):
         return isinstance(proposed, bool)
     return type(current) is type(proposed)
-
-
-def _paths_overlap(left: str, right: str) -> bool:
-    return left == right or left.startswith(right + "/") or right.startswith(left + "/")
-
-
-def _within_allowed(path: str, roots: tuple[str, ...]) -> bool:
-    return any(path == root or path.startswith(root + "/") for root in roots)
 
 
 def _apply(root: dict[str, Any], change: SemanticChange) -> None:

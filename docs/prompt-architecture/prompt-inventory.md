@@ -13,9 +13,8 @@ This inventory is the P0 baseline for every path that can send instructions or t
 | `storyboard.create` | `nodes/storyboard_builder.py` | Build model-neutral storyboard | storyboard role | split/style constraints, CharacterBook/Bible, manifest, story | `STORYBOARD_SCHEMA` | `Gateway.generate` |
 | `composer.render` | `nodes/prompt_composer.py` | Generate/expand/rewrite/translate/repair image prompts | selected Skill; transitional create policy | prompt, book, references, repair issues | family-specific JSON | `Gateway.generate` |
 | `session.changeset` | `services/prompt_session.py` | Canonical semantic REFINE proposal | minimum-consistent-change policy | editable semantic plan, locked paths, latest request, revision | `CHANGESET_SCHEMA` | injected `Gateway.generate` |
-| `session.impact` | `services/prompt_session.py` | Independently approve requested/dependent paths | intent grounding + impact approval policy | current semantic plan, latest request, runtime constraints, proposed ChangeSet | `CHANGE_AUTHORIZATION_SCHEMA` | same Gateway transport, separate structured call |
+| `session.impact` | `services/prompt_session.py` | Approve ambiguous requested/dependent paths | intent grounding + impact approval policy | current semantic plan, latest request, runtime constraints, proposed ChangeSet | `CHANGE_AUTHORIZATION_SCHEMA` | conditional second Gateway call; directly named simple leaf edits are proven in Python |
 | `semantic.critic` | `domain/gateway_critic.py` | Audit only high-risk transaction candidates | semantic consistency policy; anti-realism-policing boundary | affected before/after slice, adjacent shots, proposed ChangeSet, locked values | `CRITIC_SCHEMA` | injected `Gateway.generate`; never mutates Plan |
-| `session.patch-compat` | `services/prompt_session.py` | Deprecated direct-call compatibility for pre-P2 callers | legacy `REFINE_POLICY` | legacy persisted bundle | `PATCH_SCHEMA` | injected `Gateway.generate`; not used by nodes |
 | `h3.create` | `nodes/minimax_h3_director.py` | Build H3 audiovisual plan; one bounded retry on protocol-invalid output | H3 protocol + editable planning strategy + transitional policy | mode, duration, storyboard, books, manifest, user text; retry receives bounded errors/raw excerpt as untrusted data | `H3_SCHEMA` | `Gateway.generate` |
 | `h3.repair` | `nodes/minimax_h3_director.py` | Repair reported H3 violations once | H3 protocol + repair policy | current plan and validation issues | `H3_SCHEMA` | `Gateway.generate` |
 
@@ -27,7 +26,6 @@ This inventory is the P0 baseline for every path that can send instructions or t
 
 ## Remaining Compatibility Boundaries
 
-- `request_plan_patch()` remains importable for pre-P2 direct callers, but no production node invokes it; new work must use `request_changeset()`.
 - `services/h3_plan.py` and `skills/minimax_h3/director.yaml` still state overlapping H3 protocol guidance; the Model Core migration must leave one immutable owner.
 - ANIMA model rules and operation behavior are mixed across `skills/anima_*.yaml`, `renderers/anima.py`, and validators.
 - Some legacy Skill files still combine Model Core and operation policy in one `system_prompt`.

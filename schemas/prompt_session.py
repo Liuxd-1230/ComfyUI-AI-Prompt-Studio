@@ -4,11 +4,14 @@ import dataclasses
 import hashlib
 import time
 import uuid
-from typing import Any, ClassVar, Dict, List
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, List
 
 from .base import Schema, SchemaError
 from .prompt_plan import ValidationReport
 from .results import ChatMessage
+
+if TYPE_CHECKING:
+    from ..domain.recovery_journal import RecoveryJournal
 
 MAX_REVISIONS = 10
 MAX_CONVERSATION_MESSAGES = 40
@@ -255,7 +258,7 @@ class PromptSession(Schema):
                invalidated_paths: List[str] | None = None,
                renderer_signature: str = "", repair_count: int = 0,
                transaction_id: str = "", node_instance_id: str = "",
-               recovery_journal: Any = None) -> None:
+               recovery_journal: "RecoveryJournal | None" = None) -> None:
         """Atomically commit a valid plan+prompt pair; invalid input changes nothing."""
         if expected_revision is not None and self.revision != expected_revision:
             raise ValueError(
