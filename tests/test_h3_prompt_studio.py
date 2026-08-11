@@ -8,7 +8,9 @@ import pytest
 import aps.nodes.h3_prompt_studio as studio_mod
 from aps.schemas.character import CharacterBible, CharacterTrait
 from aps.schemas.prompt_session import PromptSession
+from aps.schemas.references import ReferenceManifest
 from aps.schemas.results import LLMResult
+from aps.services.h3_studio_runtime import normalize_plan
 
 
 def _profile(store):
@@ -50,6 +52,17 @@ def _valid_prompt(soundscape: str = "Rain falls on the roof.") -> str:
         "Synchronized audio: distant train wheels approach.\n"
         f"overall_soundscape: {soundscape}\n"
         "non_diegetic_music: N/A")
+
+
+def test_h3_normalizer_removes_first_shot_zero_timestamp() -> None:
+    payload = json.loads(json.dumps(PLAN))
+    payload["shots"][0]["start_time"] = 0.0
+    plan = studio_mod.parse_plan_json(json.dumps(payload), "T2VA", 8.0)
+
+    normalized = normalize_plan(
+        plan, ReferenceManifest(), image_count=0, mode="T2VA", duration=8.0)
+
+    assert normalized.shots[0].start_time is None
 
 
 def test_h3_studio_public_interface_removes_operation_and_plan_port() -> None:

@@ -48,6 +48,8 @@ def prepare_manifest(reference_manifest: Any, images: Any,
 def normalize_plan(plan: H3PromptPlan, manifest: ReferenceManifest,
                    image_count: int, mode: str, duration: float) -> H3PromptPlan:
     plan.duration_seconds = float(duration)
+    if plan.shots:
+        plan.shots[0].start_time = None
     sync_manifest_assets(plan, manifest)
     plan.warnings = list(dict.fromkeys(
         [*plan.warnings, *map_image_assets(plan, image_count, mode)]))
