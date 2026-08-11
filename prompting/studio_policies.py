@@ -23,9 +23,9 @@ unmentioned identity, subject, action, composition, relationship, and reference.
 
 FORMAT_REPAIR_POLICY = """Reformat the supplied rejected model output into the
 required PROMPT/SUMMARY envelope. Preserve its usable prompt content and meaning.
-Do not add new creative details. When an ANIMA language issue is listed, translate
-only visual prose into English while retaining names, proper nouns, reference labels,
-and quoted on-screen text."""
+Do not add new creative details. When a target-language issue is listed, translate
+only the required visual/audiovisual prose into English while retaining names, proper
+nouns, reference labels, dialogue, lyrics, and quoted on-screen text."""
 
 
 def image_target_policy(family: str, variant: str) -> str:
@@ -47,4 +47,26 @@ def image_target_policy(family: str, variant: str) -> str:
     }
     if family not in policies:
         raise ValueError(f"不支持的 Prompt Studio target family: {family}")
-    return policies[family]
+    from ..services.skills import get_skill
+
+    skill = get_skill({
+        "anima": "prompt_studio_anima",
+        "z_image": "prompt_studio_z_image",
+        "qwen_image_edit": "prompt_studio_qwen_image_edit",
+        "generic_image": "prompt_studio_generic_image",
+    }[family])
+    supplement = (skill.system_prompt.strip()
+                  if skill is not None and skill.system_prompt.strip() else "")
+    return policies[family] + ("\n\n[Editable target strategy]\n" + supplement
+                               if supplement else "")
+
+
+def h3_target_policy(mode: str, duration: float) -> str:
+    return (
+        "Write one complete MiniMax H3 target prompt in the official rendered text "
+        f"format. Mode: {mode}. Duration: {float(duration):.2f} seconds. Preserve "
+        "dialogue, lyrics, and visible text verbatim in their source language; write "
+        "all other visual and audiovisual description in English. Use only connected "
+        "Picture/Video/Audio labels. Include synchronized shot audio, a non-empty "
+        "overall soundscape unless explicit silence was requested, and a concrete "
+        "non-diegetic music decision. Do not return an internal JSON Plan.")

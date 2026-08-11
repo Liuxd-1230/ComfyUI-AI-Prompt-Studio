@@ -42,7 +42,7 @@ else:
     from .nodes import (  # noqa: E402
         APS_CharacterBible,
         APS_LLMGenerate,
-        APS_MiniMaxH3Director,
+        APS_H3PromptStudio,
         APS_ModelProfile,
         APS_PromptStudio,
         APS_ReferenceAnalyzer,
@@ -62,7 +62,7 @@ else:
         "APS_StoryboardBuilder": APS_StoryboardBuilder,
         "APS_StoryboardSelect": APS_StoryboardSelect,
         "APS_PromptStudio": APS_PromptStudio,
-        "APS_MiniMaxH3Director": APS_MiniMaxH3Director,
+        "APS_H3PromptStudio": APS_H3PromptStudio,
         "APS_RuntimeControl": APS_RuntimeControl,
         "APS_UnloadModel": APS_UnloadModel,
     }
@@ -76,7 +76,7 @@ else:
         "APS_StoryboardBuilder": "分镜构建器",
         "APS_StoryboardSelect": "分镜选择 / 批处理",
         "APS_PromptStudio": "图像提示词工作台（宽松 / 严格）",
-        "APS_MiniMaxH3Director": "MiniMax H3 提示词导演",
+        "APS_H3PromptStudio": "MiniMax H3 提示词工作台（宽松 / 严格）",
         "APS_RuntimeControl": "本地模型运行控制",
         "APS_UnloadModel": "LLM 后卸载 LM Studio（提示词透传）",
     }

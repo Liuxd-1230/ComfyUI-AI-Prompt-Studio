@@ -1,5 +1,6 @@
 # Changelog
 
+- ADR 0007 H3 工作台落地并完成旧节点清理：注册 `APS_H3PromptStudio`，默认宽松模式直接维护完整官方 H3 文本，严格模式维护 `H3PromptPlan`/ChangeSet；两条通道共用 4–15 秒、媒体数量/总时长、引用、时间戳、说话人、声音与 Ref2VA 英语硬校验。协议错误最多保真修复一次，validator 失败不再触发创意改写。Revision 与对应 locks 原子提交/恢复；旧 operation Skills 合并为四个图像目标策略 Skill 和一个 H3 规划 Skill。删除旧 `APS_PromptComposer`、`APS_MiniMaxH3Director` 源码、旧导演工作台和对应过时节点测试，公开节点仍为 11 个。
 - ADR 0007 图像工作台落地：注册 `APS_PromptStudio` 并移除旧 `APS_PromptComposer` 的公开注册。默认宽松模式使用 `<PROMPT>/<SUMMARY>`、允许合格无标签提示词并警告、协议垃圾只做一次保真格式修复；严格模式使用 `ImageSemanticPlan`、ChangeSet、确定性依赖闭包、Diff Guard、renderer/validator 和原子 revision，正常 CREATE/REFINE 各一次模型调用，不再运行独立 LLM 授权、Semantic Critic 或创意自动修复。ANIMA 两条通道都强制视觉正文为英语，模式切换只在新 CREATE 成功后替换旧 lineage。
 - PromptSession v3 与宽松协议基础：Session 新增 `execution_mode`、freeform/structured payload kind、revision context changes，并允许无 Plan 的提示词原子提交与恢复；旧 v1/v2 状态按 ADR 0007 明确重置，不再隐式绑定。新增轻量 `<PROMPT>/<SUMMARY>` 解析器，能够接受合格的无标签普通提示词并警告，同时把半截 JSON、半截标签和 schema 说明判为不可提交的 protocol garbage。
 - 架构决策 ADR 0007：Prompt Studio 改为默认宽松/可选严格双通道。宽松通道使用轻量 `<PROMPT>/<SUMMARY>` 协议、确定性垃圾分类与硬规则验证；严格通道保留 Plan/ChangeSet/Diff Guard/原子 Revision，但移除常态化独立审批、LLM Critic 与创意自动修复。新 `APS_PromptStudio`/`APS_H3PromptStudio` 将替换旧 Composer/Director，统一使用 PromptSession v3；本条先建立绑定实现与验收边界，运行代码在后续工作单元迁移。

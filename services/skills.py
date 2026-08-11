@@ -1,6 +1,6 @@
 """Prompt Skill 系统：内置只读 YAML 技能 + 用户自定义技能（可增删改、启用/停用）。
 
-技能用于 Composer 的 LLM 操作（expand/rewrite/translate/repair/custom_skill）。
+技能用于 Prompt Studio 的目标策略与 H3 规划策略。
 - 内置技能：仓库 skills/ 下，只读（source=builtin）；
 - 自定义技能：用户配置目录 skills/ 下（source=custom），支持创建/复制/编辑/删除/启停；
 - 同名时自定义技能覆盖内置（优先级：custom > builtin）；

@@ -10,7 +10,7 @@ from aps.schemas.prompt_session import (
     SessionFingerprints,
 )
 from aps.schemas.base import SchemaError
-from aps.services.prompt_session import broad_rewrite_requested, content_fingerprint
+from aps.services.prompt_session import content_fingerprint
 
 
 VALID = {"valid": True, "issues": [], "checks": ["non_empty"]}
@@ -57,10 +57,20 @@ def test_freeform_commit_and_restore_share_atomic_revision_interface() -> None:
     assert session.revision == 3
 
 
-def test_broad_rewrite_authority_requires_explicit_user_wording():
-    assert broad_rewrite_requested("整个重新设计，不用保留旧方案") is True
-    assert broad_rewrite_requested("rebuild the entire plan") is True
-    assert broad_rewrite_requested("把外套改成蓝色") is False
+def test_restore_recovers_revision_locked_constraints_atomically() -> None:
+    session = PromptSession(target_family="minimax_h3", execution_mode="strict")
+    session.commit(
+        {"h3_plan": {"version": 1}}, "prompt one", VALID, "create", "one",
+        expected_revision=0, execution_mode="strict", payload_kind="structured",
+        locked_constraints=["fact:speaker-one"])
+    session.commit(
+        {"h3_plan": {"version": 2}}, "prompt two", VALID, "change", "two",
+        expected_revision=1, execution_mode="strict", payload_kind="structured",
+        locked_constraints=["fact:speaker-two"])
+    assert session.revert_previous() is True
+    assert session.current_prompt == "prompt one"
+    assert session.locked_constraints == ["fact:speaker-one"]
+    assert session.revisions[-1].locked_constraints == ["fact:speaker-one"]
 
 
 def test_session_commits_and_survives_workflow_roundtrip():

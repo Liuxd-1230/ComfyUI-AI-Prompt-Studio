@@ -12,6 +12,6 @@
 
 ## 输出
 
-`AI_PROFILE` 可同时连接 LLM、参考分析、分镜、Composer 和 H3；只含稳定档案 ID 与运行参数。
+`AI_PROFILE` 可同时连接 LLM、参考分析、分镜、Image Prompt Studio 和 H3 Prompt Studio；只含稳定档案 ID 与运行参数。
 
 设置页“重新探测”会发送最小文本、JSON、工具、图片和文件请求，消耗少量 token，并把每项收敛为 true/false。

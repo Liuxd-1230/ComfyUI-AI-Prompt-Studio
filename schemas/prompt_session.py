@@ -108,6 +108,7 @@ class PromptRevision(Schema):
     source_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
     skill_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
     context_changes: List[str] = dataclasses.field(default_factory=list)
+    locked_constraints: List[str] = dataclasses.field(default_factory=list)
     timestamp: str = ""
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -130,7 +131,7 @@ class PromptRevision(Schema):
             raise SchemaError("PromptRevision.payload_kind 非法")
         for name in ("plan", "validation", "requested_paths", "dependent_paths",
                      "invalidated_paths", "source_hashes", "skill_hashes",
-                     "context_changes"):
+                     "context_changes", "locked_constraints"):
             object.__setattr__(
                 self, name, _freeze_revision_value(getattr(self, name)))
         object.__setattr__(self, "_sealed", True)
@@ -257,7 +258,8 @@ class PromptSession(Schema):
                transaction_id: str = "", node_instance_id: str = "",
                recovery_journal: "RecoveryJournal | None" = None,
                execution_mode: str = "", payload_kind: str = "",
-               context_changes: List[str] | None = None) -> None:
+               context_changes: List[str] | None = None,
+               locked_constraints: List[str] | None = None) -> None:
         """Atomically commit a valid plan+prompt pair; invalid input changes nothing."""
         if expected_revision is not None and self.revision != expected_revision:
             raise ValueError(
@@ -277,6 +279,8 @@ class PromptSession(Schema):
                 or (next_payload == "structured" and not plan)):
             raise ValueError("structured 需要非空 plan；所有提交都需要非空 prompt")
         staged = copy.deepcopy(self)
+        next_locks = (list(staged.locked_constraints)
+                      if locked_constraints is None else list(locked_constraints))
         next_fingerprints = (SessionFingerprints.from_json(fingerprints)
                              if fingerprints is not None
                              else copy.deepcopy(staged.fingerprints))
@@ -300,7 +304,8 @@ class PromptSession(Schema):
             model_core_hash=next_fingerprints.model_core_hash,
             source_hashes=copy.deepcopy(next_fingerprints.source_hashes),
             skill_hashes=copy.deepcopy(next_fingerprints.skill_hashes),
-            context_changes=list(context_changes or []))
+            context_changes=list(context_changes or []),
+            locked_constraints=next_locks)
         staged.current_plan = copy.deepcopy(snapshot.plan)
         staged.current_prompt = snapshot.prompt
         staged.validation = copy.deepcopy(report)
@@ -317,6 +322,7 @@ class PromptSession(Schema):
         staged.last_processed_message_id = message_id or staged.last_processed_message_id
         staged.fingerprints = next_fingerprints
         staged.fingerprint_state = "bound"
+        staged.locked_constraints = next_locks
         staged.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
         if recovery_journal is not None:
             from ..domain.recovery_journal import RecoveryJournalEntry
@@ -345,7 +351,8 @@ class PromptSession(Schema):
             renderer_signature=source.renderer_signature,
             execution_mode=source.execution_mode,
             payload_kind=source.payload_kind,
-            context_changes=list(source.context_changes))
+            context_changes=list(source.context_changes),
+            locked_constraints=list(source.locked_constraints))
         return True
 
     def revert_previous(self) -> bool:

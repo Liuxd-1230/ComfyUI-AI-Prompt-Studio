@@ -42,7 +42,7 @@
 ## 6. 结构化输出 / 解析
 
 - LLM 输出解析是**容错但不保证 100%**：`extract_json_object` 支持裸 JSON / ```json 围栏 / 花括号块；失败即报可读错误，不静默返回空结果伪装成功。
-- H3 渲染为确定性 Python（三字段/六段、时间戳、媒体编号、R2V 英文）；校验发现问题 → 一次 LLM 修复（auto_repair 默认开）；仍失败记 validation error。**不做假装翻译**（R2V 非英语正文不翻译，只报错）。
+- Prompt Studio 默认宽松协议；损坏 JSON/标签/Schema 说明最多做一次内容保真的协议修复。严格模式的 Plan/ChangeSet 同样只修协议一次。renderer/validator 或语义硬检查失败时不做创意改写，直接保留上一 revision 并报错。
 
 ## 7. 前端 / 设置
 
@@ -60,4 +60,4 @@
 - DeepSeek 思考/推理关闭（reasoning=off 不做——DeepSeek 无官方禁用 thinking 的稳定接口）。
 - 对第三方 GPL/受限项目（Prompt Assistant / TE_MAN / DaSiWa）代码的直接复制；只参考结构与产品语义，实现全部原创。
 - 附件本地解析 PPTX / XLSX（见 §4）；H3 R2V 之外的「自动翻译」不做（不假装翻译）。
-- 静态 Reference Analyzer 不做镜头运动推断（camera motion 由 H3 Director 生成阶段决定）。
+- 静态 Reference Analyzer 不做镜头运动推断（camera motion 由 H3 Prompt Studio 生成阶段决定）。

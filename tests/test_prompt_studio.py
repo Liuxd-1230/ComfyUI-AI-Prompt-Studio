@@ -233,6 +233,57 @@ def test_failed_mode_switch_keeps_previous_serialized_lineage(
     assert unchanged.revision == stable.revision == 1
 
 
+def test_successful_mode_switch_starts_new_strict_lineage(
+        monkeypatch, store) -> None:
+    SequenceGateway.responses = [
+        "<PROMPT>A complete English image prompt.</PROMPT><SUMMARY>Done.</SUMMARY>",
+        json.dumps({
+            "content": {"scene_description": "A complete English image prompt.",
+                        "characters": [], "environment": [], "style": []},
+            "negative": "watermark",
+        }),
+    ]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+    node = studio_mod.APS_PromptStudio()
+    lenient = node.run(
+        AI_PROFILE=_profile(store), text="make a prompt", target="anima_base",
+        execution_mode="lenient", message_nonce="l1")
+    old = PromptSession.from_json(lenient["result"][2])
+    strict = node.run(
+        AI_PROFILE=store.get_profile("studio").node_payload(),
+        text="rebuild this in strict mode", target="anima_base",
+        execution_mode="strict", prompt_session=lenient["result"][2],
+        message_nonce="s1")
+    new = PromptSession.from_json(strict["result"][2])
+    assert new.id != old.id
+    assert new.execution_mode == "strict" and new.revision == 1
+
+
+def test_previous_restores_prompt_without_gateway_call(monkeypatch, store) -> None:
+    SequenceGateway.responses = [
+        "<PROMPT>First complete English prompt.</PROMPT><SUMMARY>First.</SUMMARY>",
+        "<PROMPT>Second complete English prompt.</PROMPT><SUMMARY>Second.</SUMMARY>",
+    ]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+    node = studio_mod.APS_PromptStudio()
+    first = node.run(AI_PROFILE=_profile(store), text="first", target="anima_base",
+                     execution_mode="lenient", message_nonce="p1")
+    second = node.run(
+        AI_PROFILE=store.get_profile("studio").node_payload(), text="second",
+        target="anima_base", execution_mode="lenient",
+        prompt_session=first["result"][2], message_nonce="p2")
+    restored = node.run(
+        AI_PROFILE=store.get_profile("studio").node_payload(), text="",
+        target="anima_base", execution_mode="lenient", session_action="previous",
+        prompt_session=second["result"][2], message_nonce="restore")
+    session = PromptSession.from_json(restored["result"][2])
+    assert restored["result"][0] == "First complete English prompt."
+    assert session.revision == 3
+    assert len(SequenceGateway.requests) == 2
+
+
 def test_strict_semantic_failure_does_not_request_creative_repair(
         monkeypatch, store) -> None:
     SequenceGateway.responses = [json.dumps({

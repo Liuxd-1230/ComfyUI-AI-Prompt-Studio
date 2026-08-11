@@ -65,10 +65,8 @@ ANIMA 最终视觉提示词使用英文。中文可以作为 `text` 输入；两
 
 原始构想：`红发少女在雨夜车站回头，看见远处驶来的列车。`
 
-- `tags` 期待短、可枚举概念，输出类似：`masterpiece, best quality, score_7, 1girl, red short hair, wet station platform, looking back, night, rain`。
-- `natural_language` 期待完整镜头意图，输出自然段：`A red-haired young woman turns back on a rain-soaked station platform as an approaching train casts warm light through the blue night.`
-- `hybrid` 输出少量质量/人数控制标签加自然描述。
-- `anima_aesthetic` 不使用 `score_*`；`anima_turbo` 返回 CFG 1、8–12 步建议。`safety_tag=none` 不添加内容标签。
+Studio 当前统一期待完整 `natural_language` 成品，例如：`A red-haired young woman turns back on a rain-soaked station platform as an approaching train casts warm light through the blue night.`
+`anima_aesthetic` 不使用 `score_*`；`anima_turbo` 可在摘要里说明 CFG 1、8–12 步建议。节点不固定注入 `safe`，也没有旧 tags/hybrid 或 safety operation。
 
 ### Z-Image Turbo
 
@@ -96,7 +94,7 @@ ANIMA 最终视觉提示词使用英文。中文可以作为 `text` 输入；两
 
 ## MiniMax H3 mode
 
-H3 输入是“导演任务”，最终输出由计划和渲染器生成，不应手写一半 JSON、一半六段文本。总时长只能 4–15 秒。
+H3 输入是“导演任务”。宽松模式直接维护完整官方文本，严格模式由 Plan 和渲染器生成；两者都不接受一半 JSON、一半六段文本。总时长只能 4–15 秒。
 
 ### T2VA · 纯文本
 
@@ -128,9 +126,11 @@ H3 输入是“导演任务”，最终输出由计划和渲染器生成，不�
 
 旧工作流兼容别名，进入节点后迁移到 `Ref2VA`。新工作流请选择 Ref2VA。
 
-## H3 operation
+## H3 继续修改
 
-`generate` 从导演任务生成；`rewrite` 保留剧情重写计划；`convert_storyboard` 接 `STORYBOARD` 转换；`audit` 输入完整 H3 成品并只返回校验；`repair` 输入失败成品并按 validation 局部修复。`validation` 有 error 时不要接生成节点。
+不再选择 operation。Session 为空时按 `text` 创建；已有成功 Session 时，`text` 只写本轮修改。
+`session_action=previous` 恢复上一成功版本，`new` 在新 CREATE 成功后建立新 lineage。
+`validation` 有 error 时节点不会提交该版本，也不应继续接生成节点。
 
 ## Runtime 模式
 

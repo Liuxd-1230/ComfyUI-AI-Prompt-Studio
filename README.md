@@ -15,12 +15,12 @@
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
 - **Image Prompt Studio**：`APS_PromptStudio` 覆盖 ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 与 Generic Image。默认 `lenient` 直接维护完整提示词，适合本地小模型；`strict` 使用结构化 Plan、ChangeSet、Diff Guard 与原子 revision。两种模式都自动从 Session 判断 CREATE/REFINE，不再提供 operation 下拉。旧 v1/v2 Session 会重置为空 v3；最近保留 10 个成功版本。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
-- **MiniMax H3 Prompt Director**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（另保留旧 R2V 别名），支持图片、视频和音频参考；LLM 产出结构化计划 + Python 确定性渲染 + 规则校验 + 修复循环。
+- **MiniMax H3 Prompt Studio**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（读取旧 R2V 值时归一化），支持图片、视频和音频参考。默认宽松模式直接维护完整官方文本；严格模式由结构化 Plan、ChangeSet、Python renderer 与规则校验驱动。
 - **结构化输出容错**：H3 CREATE Plan 或 Studio REFINE ChangeSet 首次出现非 JSON、重复路径或缺少授权范围时，会在不修改当前 revision 的前提下最多重试一次；仍失败会显示并记录截断的模型原始输出，便于区分 provider 降级、截断和格式漂移。
 - **P4.1 原子恢复接缝**：Session 提交携带 transaction/base/result revision，并可先写入按节点实例隔离的 Recovery Journal；当前提供线程安全内存参考实现，持久化工作流回写留给 P5。确定性影响分析会自动闭合 positive/negative 冲突和 H3 duration→镜头时间戳依赖，并把实际依赖与修复次数写入 revision。
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
 - **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
-- **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、运行时和 Prompt Skill 查看/新建/编辑；H3 节点另有镜头草稿导演工作台。
+- **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、运行时和 Prompt Skill 查看/新建/编辑。
 - **前端入口（0.2.1c）**：不占用 ComfyUI Sidebar；入口放在 ComfyUI 原生 **Settings** 页面中的 `AI Prompt Studio > General > Settings Workbench`。选择「Open Settings Workbench」打开大型设置工作台；语言也在同一组设置中切换。API Key 不进原生 Settings，仍由工作台填写并只存服务端。
 
 ## 安装
@@ -43,11 +43,11 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 2. 新建档案，选择 provider、API 根地址和模型，保存后填写 API Key（只保存在本机 `user/ai_prompt_studio/secrets.json`）。先点“测试连接”，再点“重新探测”。
 3. “重新探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。
 4. 在节点图中放置 **AI Model Profile**，直接从“档案名称 [ID]”和该档案的模型目录下拉选择。
-5. 图像提示词放置 **Image Prompt Studio**；H3 暂用 **MiniMax H3 Prompt Director**（双通道替换进行中）。连接 `AI_PROFILE`，第一次填完整要求；成功后只填本轮修改意见。小型本地模型优先用 `lenient`，需要结构化变更审计时再选 `strict`。
+5. 图像提示词放置 **Image Prompt Studio**，H3 放置 **MiniMax H3 Prompt Studio**。连接 `AI_PROFILE`，第一次填完整要求；成功后只填本轮修改意见。小型本地模型优先用 `lenient`，需要结构化变更审计时再选 `strict`。
 6. H3：把 `prompt`（STRING）接到 H3 生成节点；图像模型：把 `positive` / `negative` 接到采样链路。
 
 示例工作流见 [`examples/`](examples/)：
-- `h3_full_chain.json` — H3 全链路（Profile → H3 Director → STRING）
+- `h3_full_chain.json` — H3 全链路（Profile → H3 Prompt Studio → STRING）
 - `anima_full_chain.json` — ANIMA 全链路（Profile → Storyboard → Select → Prompt Studio）
 - `aps_usage_showcase.json` — Z-Image、Qwen 图片引用和 LLM 生成后卸载
 
@@ -65,13 +65,13 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 | **Character Bible** | 合并人物特征、锁定、冲突报告 | `CHARACTER_CANDIDATE`、`existing_bible` | `CHARACTER_BIBLE`、人物提示片段 |
 | **Storyboard Builder** | 剧情 → 结构化分镜（LLM） | `AI_PROFILE`、story_text | `STORYBOARD` |
 | **Storyboard Select / Batch** | 场景/镜头/区间/全部选择（不调模型） | `STORYBOARD` | 单项、容器及真实 ComfyUI `STORY_ITEMS` 列表输出 |
-| **Model Prompt Composer** | 持久图像 Plan：自动 CREATE/REFINE、不可变 revision 恢复 | `AI_PROFILE`、text、target、session | positive、negative、`PROMPT_PLAN`、validation |
+| **Image Prompt Studio** | 宽松完整提示词 / 严格 Plan+ChangeSet，自动 CREATE/REFINE | `AI_PROFILE`、text、target、execution_mode | positive、negative、`prompt_session`、validation |
 | **图片引用提示词（输入 @）** | 图片连接 → 模型引用语法与资产清单 | prompt、target、image_1～3 | prompt、`REFERENCE_MANIFEST`、references、count |
-| **MiniMax H3 Prompt Director** | 持久 H3 Plan：逐镜头最小修改、不可变 revision 恢复 | `AI_PROFILE`、text、mode、session、媒体 | prompt(STRING)、`H3_PROMPT_PLAN`、validation |
+| **MiniMax H3 Prompt Studio** | 宽松完整 H3 文本 / 严格 H3 Plan+ChangeSet | `AI_PROFILE`、text、mode、execution_mode、媒体 | prompt、`prompt_session`、`REFERENCE_MANIFEST`、validation |
 | **Local Runtime Control** | 本地模型加载/卸载/状态 | `AI_PROFILE`、action、backend | profile、status、loaded、op |
 | **Unload LM Studio Model** | LLM 后卸载 LM Studio，并把提示词透传给后续生成 | prompt、model、url | prompt、result(JSON)、status(文本) |
 
-节点之间用自定义数据类型（`AI_PROFILE` / `STORYBOARD` / `H3_PROMPT_PLAN` 等）传递结构化对象，工作流可读可保存。
+节点之间用自定义数据类型（`AI_PROFILE` / `STORYBOARD` / `PROMPT_SESSION` 等）传递结构化对象，工作流可读可保存。
 
 ## 能力探测如何判定
 
@@ -94,9 +94,9 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 - **Aesthetic**：官方建议正负提示词都不用 `score_*` 标签，30-50 步 / CFG 4.5。
 - **Turbo**：官方示例前缀 + **CFG 1 / 8-12 步**。
 - 语法：小写标签、空格分隔（`score_*` 是唯一带下划线的标签）、`@artist` 艺术家前缀、标签分段排序（quality/meta/year/safety → count → artist → general）、LoRA 触发词原样保留追加。
-- 支持 `tags` / `natural_language` / `hybrid` 三模式。
-- **语言要求**：最终视觉描述与标签使用英文；Composer 的 ANIMA 扩写、改写和修复 Skill 会把中文输入保真转换为英文。角色名、专有名词与画面内文字可以保留原语言。
-- **Safety 标签（0.2.1）**：节点参数 `safety_tag` ∈ `none / safe / sensitive / nsfw / explicit`，**默认 `none` = 不注入任何 Safety 标签**（Composer 不在用户未要求时给提示词增加内容语义，也不做内容审查——审查留给模型服务端）。官方模型卡推荐前缀包含 `safe`；本项目把它明确作为用户可选的产品覆盖，而不冒充官方默认。旧参数 `content_tier`（safe/sensitive）自动迁移。
+- 当前 Studio 统一输出 `natural_language` 成品，不再暴露旧 `tags` / `hybrid` operation 组合。
+- **语言要求**：最终视觉正文使用英文；Studio 的系统提示与提交前检查共同保证这一点。角色名、专有名词、引用标签与引号内画面文字可以保留原语言。
+- **Safety 标签**：Studio 不固定注入 `safe`，也不默认增加 `sensitive/nsfw/explicit`；当前公开节点没有独立 safety 下拉。官方模型卡的推荐前缀与用户内容意图由最终目标服务自行执行。
 
 ## MiniMax H3（官方手册规则）
 
@@ -118,7 +118,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 - **ComfyUI 0.30.x**：已隔离 `comfy.logging → comfy.internal_logging` 破坏性变更（本扩展不 import 核心日志）。
 - **本地运行时**：Ollama / llama.cpp / LM Studio（v1 官方推荐；模型标识按官方 `key` 字段，`id` 仅存在于已加载实例 `loaded_instances` 条目；未达 v1 的旧版自动降级为 v0 只读状态查询）。
 - **无 GPU 环境**：提示词相关功能只依赖 `requests` + `PyYAML`，可离线加载；联网功能（网关/探测）在无网络时明确报错，不伪装。
-- **第三方共存**：MiniMax H3 采样三件套（Turbo / DualClock / TE-Speed）——H3 Director 只输出 STRING，不重复采样后端；ANIMA_BOOSTER 未安装时软检测提示，不硬依赖。
+- **第三方共存**：MiniMax H3 采样三件套（Turbo / DualClock / TE-Speed）——H3 Prompt Studio 只输出 STRING，不重复采样后端；ANIMA_BOOSTER 未安装时软检测提示，不硬依赖。
 - 详见 `docs/compatibility.md`。
 
 ## 后端路由（设置工作台）
@@ -135,7 +135,7 @@ python -m compileall nodes services renderers validators schemas server tests
 
 - 测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约和主链路回归；数量以本地 `pytest` 结果为准。
 - 架构与决策：`docs/decisions.md`、`docs/adr/`、`docs/compatibility.md`。
-- P0-P4 架构基线、Prompt 来源/所有权/Assembly、事务、语义一致性与 Session/Revision 说明见 `docs/prompt-architecture/`。持久 REFINE 的低风险局部外观修改只跑确定性检查；动作、时间线、身份、参考和重大构图修改会用受影响 before/after 切片调用 Semantic Critic，错误或单次定向修复失败都不会覆盖上一 revision。四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
+- P0-P4 历史架构与 ADR 0007 当前双通道决策见 `docs/prompt-architecture/` 和 `docs/adr/`。宽松模式只做可证明的硬检查；严格模式执行 ChangeSet、确定性依赖闭包、Diff Guard、locks、renderer/validator 与 revision CAS。两种模式都不调用 Semantic Critic，也不做隐藏的创意自动修复。四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
 
 ## 许可与来源
 

@@ -100,23 +100,24 @@ def test_storyboard_prompt_with_book_and_manifest():
 
 # ---------------------------------------------------------------- Skills（内置只读）
 
-def test_skills_guardrail_and_json_only():
-    """SK-1：全部内置技能含数据守则且强制只输出 JSON。"""
+def test_skills_guardrail_and_protocol_owner():
+    """SK-1：全部内置技能含数据守则；仅 H3 规划 Skill 拥有 JSON 协议。"""
     skills = load_skills()
     assert skills, "内置技能未加载"
-    for skill in skills.values():
+    for skill in (item for item in skills.values() if item.source == "builtin"):
         assert "task data" in skill.system_prompt, \
             f"技能 {skill.id} 缺少注入守则"
-        assert "Output only the JSON object" in skill.system_prompt, \
-            f"技能 {skill.id} 未强制 JSON-only"
+    assert "Output only the JSON object" in skills["minimax_h3_director"].system_prompt
+    for sid in ("prompt_studio_anima", "prompt_studio_z_image",
+                "prompt_studio_qwen_image_edit", "prompt_studio_generic_image"):
+        assert "Output only the JSON object" not in skills[sid].system_prompt
 
 
 def test_skills_anima_family_renderer_anima_plan():
-    """SK-2：ANIMA 技能统一走 anima_plan 渲染器（结构化计划）。"""
-    for sid in ("anima_expand", "anima_rewrite", "anima_repair"):
-        skill = load_skills()[sid]
-        assert skill.renderer == "anima_plan"
-        assert skill.source == "builtin"
+    """SK-2：ANIMA 目标策略与严格通道 renderer 对齐。"""
+    skill = load_skills()["prompt_studio_anima"]
+    assert skill.renderer == "anima_plan"
+    assert skill.source == "builtin"
 
 
 def test_skill_files_are_readonly_builtin():

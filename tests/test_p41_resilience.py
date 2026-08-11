@@ -10,9 +10,7 @@ from aps.schemas.anima import AnimaPromptPlan
 from aps.schemas.profile import AIProfile
 from aps.schemas.prompt_session import PromptSession, SessionFingerprints
 from aps.schemas.results import LLMResult
-from aps.schemas.semantic import SemanticIssue
 from aps.services.prompt_session import assert_session_fingerprints, request_changeset
-from aps.services.semantic_errors import semantic_error_text
 
 
 def _session() -> PromptSession:
@@ -35,7 +33,7 @@ def _valid_changeset() -> dict[str, object]:
     }
 
 
-def test_malformed_changeset_is_retried_once_then_authorized() -> None:
+def test_malformed_changeset_is_retried_once_then_declared_paths_are_authorized() -> None:
     malformed = _valid_changeset()
     malformed["intent_scope"] = []
     malformed["requested_changes"] = [
@@ -47,18 +45,14 @@ def test_malformed_changeset_is_retried_once_then_authorized() -> None:
         def generate(self, profile, api_key, req):
             del profile, api_key
             type(self).calls += 1
-            if "approved_requested_paths" in req.output_schema["properties"]:
-                return LLMResult(text=json.dumps({
-                    "approved_requested_paths": ["lighting"],
-                    "approved_dependent_paths": [], "rejected_reasons": [],
-                    "summary": "approved"}))
             payload = malformed if type(self).calls == 1 else _valid_changeset()
             return LLMResult(text=json.dumps(payload))
 
     result = request_changeset(
         Gateway(), AIProfile(timeout=30), "test-key", _session(), "make it blue")
     assert result.requested_changes[0].path == "lighting"
-    assert Gateway.calls == 3
+    assert result.approved_requested_paths == ["lighting"]
+    assert Gateway.calls == 2
 
 
 def test_changeset_retry_failure_logs_and_reports_bounded_raw(
@@ -84,7 +78,7 @@ def test_changeset_retry_failure_logs_and_reports_bounded_raw(
     assert raw[:120] in caplog.text
 
 
-def test_directly_named_simple_path_skips_the_second_authorization_call() -> None:
+def test_strict_changeset_uses_one_declared_proposal_call() -> None:
     class Gateway:
         calls = 0
 
@@ -100,27 +94,6 @@ def test_directly_named_simple_path_skips_the_second_authorization_call() -> Non
     assert Gateway.calls == 1
 
 
-def test_ambiguous_instruction_keeps_independent_authorization_call() -> None:
-    class Gateway:
-        calls = 0
-
-        def generate(self, profile, api_key, req):
-            del profile, api_key
-            type(self).calls += 1
-            if "approved_requested_paths" in req.output_schema["properties"]:
-                return LLMResult(text=json.dumps({
-                    "approved_requested_paths": ["lighting"],
-                    "approved_dependent_paths": [], "rejected_reasons": [],
-                    "summary": "approved"}))
-            return LLMResult(text=json.dumps(_valid_changeset()))
-
-    result = request_changeset(
-        Gateway(), AIProfile(timeout=30), "test-key", _session(),
-        "Make it more atmospheric.")
-    assert result.approved_requested_paths == ["lighting"]
-    assert Gateway.calls == 2
-
-
 def test_fingerprint_error_names_only_currently_available_recovery_actions() -> None:
     session = _session()
     session.fingerprint_state = "bound"
@@ -133,12 +106,3 @@ def test_fingerprint_error_names_only_currently_available_recovery_actions() -> 
     assert "新会话" in message and "恢复上一版" in message
     assert "自动 Rebase 尚未实现" in message
     assert "后续 Rebase/Migration 必须显式处理" not in message
-
-
-def test_semantic_error_text_deduplicates_repeated_provider_findings() -> None:
-    issue = SemanticIssue(
-        severity="error", code="h3_speaker_not_visible",
-        path="shots/0/dialogues/0/speaker_ids",
-        message="S1 未列入镜头 characters", reason="deterministic invariant")
-    rendered = semantic_error_text([issue, issue])
-    assert rendered.count("h3_speaker_not_visible") == 1

@@ -1,5 +1,8 @@
 # 最终报告（P0/P1 集成修复轮 + Prompt Audit）
 
+> 历史验收记录（2026-08-07），不是当前功能清单。当前运行时与节点契约以
+> ADR 0007、README 和 `docs/重构约束/implementation-status.md` 为准。
+
 日期：2026-08-07 · 仓库：Liuxd-1230/ComfyUI-AI-Prompt-Studio（master）
 范围：规范 §一-六十五 中锁定的 P0/P1 项与 Prompt Audit（§三十七-六十五）。
 执行：Batch A（正确性）→ A2（Prompt Audit）→ B（API/UX）→ C（集成）→ D（数据链）→ E（验收），每批提交。
@@ -85,7 +88,7 @@ D16 ANIMA 默认自然语言 · D17 CharacterBook/Speaker ID · D18 H3 编号/R2
 
 - services/: gateway.py, search.py, tools.py, attachments.py, capability_probe.py, reference.py, skills.py, vision.py, runtime/{control,custom,ollama,llamacpp,lmstudio}.py, adapters/{responses,chat}_adapter.py
 - schemas/: profile.py, character.py, references.py, attachments.py, results.py
-- nodes/: llm_chat.py, reference_analyzer.py, character_bible.py, storyboard_builder.py, runtime_control.py, minimax_h3_director.py
+- nodes/: llm_chat.py, reference_analyzer.py, character_bible.py, storyboard_builder.py, prompt_studio.py, h3_prompt_studio.py, runtime_control.py
 - server/: routes.py, config_store.py
 - web/: settings.js, profile_widgets.js, styles.css
 - docs/: decisions.md, research.md, prompt-audit.md, prompt-comparison.md, known-limitations.md, licenses-and-sources.md

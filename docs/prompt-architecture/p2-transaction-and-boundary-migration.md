@@ -1,5 +1,10 @@
 # P2 Transaction and Data-Boundary Migration
 
+> Historical implementation record. ADR 0007 keeps ChangeSet, deterministic impact
+> closure, Diff Guard, locks, and CAS in strict mode, but removes the independent LLM
+> approval call described below. Declared requested paths are the strict transaction's
+> authority; model-proposed dependencies remain unauthorized.
+
 ## Production Transaction Path
 
 `schemas/changeset.py` defines the reasoned mutation contract: base revision, plan

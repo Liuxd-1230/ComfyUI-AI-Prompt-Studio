@@ -6,7 +6,7 @@
 
 输入：`profile` 选择“名称 [ID]”；`model_override` 从实测模型目录选择覆盖模型；`custom_model_override` 手填不在目录中的模型并优先于下拉；`protocol` 控制 auto/Responses/Chat；`reasoning` 是推理强度；`web_search` 是联网策略；`unload_policy` 是本地 LLM 请求后的卸载时机。输出 `AI_PROFILE`，只含档案引用和运行覆盖，不含 API Key。
 
-推荐连接：`AI_PROFILE → LLM Generate / Reference Analyzer / Storyboard Builder / Prompt Composer / H3 Director`。
+推荐连接：`AI_PROFILE → LLM Generate / Reference Analyzer / Storyboard Builder / Prompt Studio / H3 Prompt Studio`。
 
 ## APS_LLMGenerate · LLM 生成/对话
 
@@ -22,7 +22,7 @@
 
 ## APS_ReferencePrompt · 图片引用提示词
 
-输入：`prompt` 中键入 `@` 选择已连接图片；`target` 决定引用语法；`image_1..3` 按实际连接顺序编号。输出 `prompt`（Qwen 为 `Figure N`，H3 为 `<Picture N>`）；`REFERENCE_MANIFEST` 接 Composer/H3；`references` 是引用对照文本；`count` 是有效图片数。
+输入：`prompt` 中键入 `@` 选择已连接图片；`target` 决定引用语法；`image_1..3` 按实际连接顺序编号。输出 `prompt`（Qwen 为 `Figure N`，H3 为 `<Picture N>`）；`REFERENCE_MANIFEST` 接 Image/H3 Prompt Studio；`references` 是引用对照文本；`count` 是有效图片数。
 
 ## APS_CharacterBible · 人物档案
 
@@ -46,11 +46,11 @@
 
 输出：`positive` / `negative` 直接接下游；`prompt_session` 保存最近 10 个成功 revision；`validation` 显示硬检查和警告；`change_summary` 说明本轮结果。内部 Plan 不再作为公开端口。
 
-## APS_MiniMaxH3Director · H3 导演
+## APS_H3PromptStudio · H3 提示词工作台
 
-输入：`AI_PROFILE`；`text` 第一次是剧情任务、之后是最新导演反馈；`mode` 是 T2VA/I2VA/FL2VA/L2VA/Ref2VA；`duration` 必须 4–15 秒；`auto_repair` 最多一次。`prompt_session`、`session_action` 保存并控制持续方案；恢复旧版会创建新 revision，不删除历史。`continue_previous` 只保留旧端口位置，新工作台不显示或依赖它，重新开始必须显式选择新会话。`message_nonce` 由前端自动生成，用来阻止重复 Queue 再处理同一消息。`operation` 仅兼容旧工作流。可选接 `storyboard`、`character_bible`、`character_book`、`reference_manifest`、`images`、`video_1`/`video_2`/`video_3`、`audio_1`/`audio_2`/`audio_3`。
+输入：`AI_PROFILE`；`text` 第一次写完整导演任务、之后只写本轮修改；`mode` 是 T2VA/I2VA/FL2VA/L2VA/Ref2VA；`duration` 必须 4–15 秒；`execution_mode` 默认 `lenient`，也可选 `strict`；`session_action` 控制继续、恢复和新会话。可选接 `storyboard`、`character_bible`、`character_book`、`reference_manifest`、`images`、`video_1`/`video_2`/`video_3`、`audio_1`/`audio_2`/`audio_3`；`prompt_session`、`message_nonce` 由前端维护。
 
-输出：`prompt` 是可接 MiniMax H3 生成节点的最终 STRING；`H3_PROMPT_PLAN` 是可编辑结构；`REFERENCE_MANIFEST` 是同步后的媒体清单；`validation` 是规则报告；`warnings` 是回退/修复说明。
+输出：`prompt` 是可接 MiniMax H3 生成节点的最终 STRING；`prompt_session` 保存会话；`REFERENCE_MANIFEST` 是同步后的媒体清单；`validation` 是规则报告；`change_summary` 是本轮摘要。内部 H3 Plan 不作为公开端口。
 
 ## APS_RuntimeControl · 本地运行时
 
@@ -62,7 +62,7 @@
 
 卸载具有幂等语义：模型仍在 LM Studio 目录中但已没有加载实例时，节点会显示“已处于卸载状态”并继续传递 prompt；模型 key 不存在、服务不可达或真实卸载请求失败时仍会阻断下游，避免显存未释放便继续加载生成模型。
 
-输入：`model` 填 LM Studio 模型 key，留空表示卸载全部已加载实例；`prompt` 接 LLM/Composer 文本；`url` 留空使用 `http://127.0.0.1:1234`。输出 `prompt` 仅在卸载成功后透传；`result` 是 JSON；`status` 是中文结果。推荐串法：`LLM text → prompt → 本节点 prompt → 图像/视频 prompt`。
+输入：`model` 填 LM Studio 模型 key，留空表示卸载全部已加载实例；`prompt` 接 LLM/Studio 文本；`url` 留空使用 `http://127.0.0.1:1234`。输出 `prompt` 仅在卸载成功后透传；`result` 是 JSON；`status` 是中文结果。推荐串法：`LLM/Studio prompt → 本节点 prompt → 图像/视频 prompt`。
 
 ## 最小连接示例
 

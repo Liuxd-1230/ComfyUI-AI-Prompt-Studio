@@ -1,5 +1,9 @@
 # P3 Semantic Consistency and Official Research
 
+> Superseded at runtime by ADR 0007 (2026-08-11). The LLM Semantic Critic and
+> creative repair pipeline described below were removed. Current Studios use
+> target validators, hard deterministic checks, and no hidden creative repair.
+
 ## Consistency Pipeline
 
 `schemas/semantic.py` defines path-addressed issues and risk assessments. The

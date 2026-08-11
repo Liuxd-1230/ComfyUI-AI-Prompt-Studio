@@ -1,5 +1,8 @@
 # P0 Current-State Audit
 
+> Historical baseline. ADR 0007 subsequently replaced the Composer/Director and
+> removed the independent authorization/Critic paths identified here.
+
 ## Baseline
 
 The repository has working one-shot generation, reference analysis, storyboard, image prompt composition, H3 planning, capability probing, runtime unload, and transitional persisted sessions. The public node contracts and existing workflow JSON files are compatibility boundaries.

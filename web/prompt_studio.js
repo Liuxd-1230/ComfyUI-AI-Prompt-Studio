@@ -3,7 +3,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const TARGETS = new Set(["APS_PromptStudio", "APS_MiniMaxH3Director"]);
+const TARGETS = new Set(["APS_PromptStudio", "APS_H3PromptStudio"]);
 const byName = (node, name) => (node.widgets || []).find((widget) => widget.name === name);
 const newMessageNonce = () => globalThis.crypto?.randomUUID?.()
   || `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;

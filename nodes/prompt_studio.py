@@ -334,8 +334,7 @@ class APS_PromptStudio:
             changeset = None
         else:
             changeset = request_changeset(
-                Gateway(), profile, api_key, session, instruction,
-                independent_authorization=False)
+                Gateway(), profile, api_key, session, instruction)
             adapter = get_session_plan_adapter(family)
             current = adapter.load(session.current_plan.get("model_plan", {}))
             tx = SemanticTransaction(adapter).execute(

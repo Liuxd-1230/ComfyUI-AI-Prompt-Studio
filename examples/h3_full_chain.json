@@ -19,7 +19,7 @@
     },
     {
       "id": 2,
-      "type": "APS_MiniMaxH3Director",
+      "type": "APS_H3PromptStudio",
       "pos": [440, 120],
       "size": [440, 320],
       "flags": {},
@@ -27,24 +27,34 @@
       "mode": 0,
       "inputs": [
         { "name": "AI_PROFILE", "type": "AI_PROFILE", "link": 1 },
+        { "name": "text", "type": "STRING", "link": null },
+        { "name": "mode", "type": "STRING", "link": null },
+        { "name": "duration", "type": "FLOAT", "link": null },
+        { "name": "execution_mode", "type": "STRING", "link": null },
+        { "name": "session_action", "type": "STRING", "link": null },
         { "name": "storyboard", "type": "STORYBOARD", "link": null },
         { "name": "character_bible", "type": "CHARACTER_BIBLE", "link": null },
         { "name": "reference_manifest", "type": "REFERENCE_MANIFEST", "link": null },
-        { "name": "images", "type": "IMAGE", "link": null }
+        { "name": "images", "type": "IMAGE", "link": null },
+        { "name": "prompt_session", "type": "STRING", "link": null },
+        { "name": "message_nonce", "type": "STRING", "link": null }
       ],
       "outputs": [
         { "name": "prompt", "type": "STRING", "links": null, "slot_index": 0 },
-        { "name": "H3_PROMPT_PLAN", "type": "H3_PROMPT_PLAN", "links": null, "slot_index": 1 },
+        { "name": "prompt_session", "type": "PROMPT_SESSION", "links": null, "slot_index": 1 },
         { "name": "REFERENCE_MANIFEST", "type": "REFERENCE_MANIFEST", "links": null, "slot_index": 2 },
         { "name": "validation", "type": "STRING", "links": null, "slot_index": 3 },
-        { "name": "warnings", "type": "STRING", "links": null, "slot_index": 4 }
+        { "name": "change_summary", "type": "STRING", "links": null, "slot_index": 4 }
       ],
-      "properties": { "Node name for S&R": "APS_MiniMaxH3Director" },
+      "properties": { "Node name for S&R": "APS_H3PromptStudio" },
       "widgets_values": [
         "一个女孩在雨夜走进一家老咖啡馆，点了一杯拿铁，靠窗坐下，望着雨滴滑落。她轻轻说了一句：今天雨真大。",
         "T2VA",
-        "generate",
-        10.0
+        10.0,
+        "lenient",
+        "continue",
+        "",
+        ""
       ]
     },
     {
@@ -57,7 +67,7 @@
       "mode": 0,
       "inputs": [],
       "outputs": [],
-      "properties": { "text": "把 prompt（STRING 输出）连接到 ComfyUI 核心 H3 节点的 prompt 输入即可出视频。\n- I2VA/FL2VA/L2VA 模式下可连接 images（首/尾帧参考图）。\n- 需要分镜/人物档案时，可连接 STORYBOARD / CHARACTER_BIBLE / REFERENCE_MANIFEST。\n- operation=audit 只校验不调用模型；repair 会把校验问题回灌 LLM 修复一次。" },
+      "properties": { "text": "把 prompt（STRING 输出）连接到 ComfyUI 核心 H3 节点的 prompt 输入即可出视频。\n- I2VA/FL2VA/L2VA 模式下可连接 images（首/尾帧参考图）。\n- 需要分镜/人物档案时，可连接 STORYBOARD / CHARACTER_BIBLE / REFERENCE_MANIFEST。\n- 默认 lenient 适合本地模型；strict 使用结构化 Plan/ChangeSet。后续修改直接写进同一工作台文本框。" },
       "widgets_values": [""]
     }
   ],

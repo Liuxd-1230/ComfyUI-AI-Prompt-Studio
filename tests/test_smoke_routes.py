@@ -144,20 +144,20 @@ async def _http_roundtrip(table, store):
             async with client.get(f"{base}/ai_prompt_studio/skills") as resp:
                 assert resp.status == 200
                 skills = (await resp.json())["skills"]
-                assert any(s["id"] == "anima_expand" and s["source"] == "builtin"
+                assert any(s["id"] == "prompt_studio_anima" and s["source"] == "builtin"
                            for s in skills)
 
             async with client.post(
                 f"{base}/ai_prompt_studio/skills",
-                json={"copy_from": "anima_expand"},
+                json={"copy_from": "prompt_studio_anima"},
             ) as resp:
                 assert resp.status == 200
                 rec = await resp.json()
-                assert rec["id"] == "anima_expand" and rec["source"] == "custom"
+                assert rec["id"] == "prompt_studio_anima" and rec["source"] == "custom"
 
             async with client.put(
-                f"{base}/ai_prompt_studio/skills/anima_expand",
-                json={"id": "anima_expand", "version": "9.9",
+                f"{base}/ai_prompt_studio/skills/prompt_studio_anima",
+                json={"id": "prompt_studio_anima", "version": "9.9",
                       "target_family": "anima", "renderer": "anima_plan",
                       "system_prompt": "modified"},
             ) as resp:
@@ -165,7 +165,7 @@ async def _http_roundtrip(table, store):
                 assert (await resp.json())["version"] == "9.9"
 
             async with client.post(
-                f"{base}/ai_prompt_studio/skills/anima_expand/enabled",
+                f"{base}/ai_prompt_studio/skills/prompt_studio_anima/enabled",
                 json={"enabled": False},
             ) as resp:
                 assert resp.status == 200
@@ -176,7 +176,7 @@ async def _http_roundtrip(table, store):
                 assert resp.status == 404
 
             async with client.delete(
-                f"{base}/ai_prompt_studio/skills/anima_expand") as resp:
+                f"{base}/ai_prompt_studio/skills/prompt_studio_anima") as resp:
                 assert resp.status == 200
 
             async with client.get(

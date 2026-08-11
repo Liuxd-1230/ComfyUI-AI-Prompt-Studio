@@ -16,7 +16,6 @@ python -m compileall nodes services renderers validators schemas server tests
 node --check web/settings.js
 node --check web/profile_widgets.js
 node --check web/reference_mentions.js
-node --check web/director_workbench.js
 node --check web/prompt_studio.js
 ```
 

@@ -21,11 +21,11 @@
 
 ## 第三方节点共存
 
-- **MiniMax H3 三件套**（ComfyUI-MiniMax-H3-Turbo / DualClockSampler / TE-Speed-MiniMaxH3）已安装：H3 Director 输出 **STRING** 提示词，与核心 H3 节点 prompt 输入衔接，不重复采样后端。
+- **MiniMax H3 三件套**（ComfyUI-MiniMax-H3-Turbo / DualClockSampler / TE-Speed-MiniMaxH3）已安装：H3 Prompt Studio 输出 **STRING** 提示词，与核心 H3 节点 prompt 输入衔接，不重复采样后端。
 - **ANIMA_BOOSTER 未安装**：只做存在性软检测（模块探测），无硬依赖；缺失时插件照常加载。
 - 节点命名加 `APS_` 类名前缀、分类统一 `AI Prompt Studio`，避免与既有节点冲突。
 
 ## 无 GPU / 无 CUDA 环境
 
-- 提示词相关功能（Gateway、Profile、Composer、H3 Director、Storyboard）只依赖 `requests`，**不依赖 torch/CUDA**，可在 CPU 环境加载与运行。
+- 提示词相关功能（Gateway、Profile、两类 Prompt Studio、Storyboard）只依赖 `requests`，**不依赖 torch/CUDA**，可在 CPU 环境加载与运行。
 - 只有涉及图片输入（Reference Analyzer 的 IMAGE 输入）才需要 torch；图片编码路径在 torch 缺失时给出明确错误而非崩溃。

@@ -23,19 +23,18 @@ Prompt content has one authoritative owner per semantic layer. Rendered request 
 
 ADR 0007 intentionally breaks the former frozen facade rule for the only current
 user. `APS_PromptStudio` is now the public image owner and does not call the obsolete
-Composer internally. `APS_MiniMaxH3Director` remains transitional until the matching
-H3 Studio work unit lands.
+Composer internally. `APS_H3PromptStudio` likewise owns the H3 public lifecycle;
+the former Composer and Director source files are removed.
 
-Composer and H3 Director now delegate persistent REFINE to the canonical semantic
-transaction. The old root-oriented patch helpers remain callable only for pre-P2
-Python consumers and are not allowed in node execution paths.
+Both strict Studio lanes delegate REFINE to the canonical semantic transaction.
+The former root patch, independent approval, Critic, and creative repair helpers
+have been removed rather than retained as compatibility APIs.
 
 ## Mutation Authority
 
-Only a validated transaction may commit a semantic plan. A requested change authorizes its dependency closure, not arbitrary regeneration. Each requested, dependent, invalidated, or conflicting fact carries a reason. Diff Guard, semantic validation, protocol validation, and bounded repair are independent stages.
-
-The semantic Critic owns no facts and has no mutation authority. For high-risk
-transactions it receives an affected before/after slice plus relevant locked
-values and returns `SemanticIssue` records. A repair proposal is a separate
-ChangeSet and must pass the same authorization, Diff Guard, semantic, and protocol
-boundaries before the Session can commit.
+Only a validated transaction may commit a strict semantic plan. Declared requested
+paths are mutation authority; model-proposed dependent paths are rejected unless a
+trusted deterministic impact analyzer introduces them. Diff Guard, locks, target
+renderer/validator, and revision CAS constrain the actual committed candidate.
+Protocol repair is format-preserving and runs at most once; creative repair is not
+an automatic stage.

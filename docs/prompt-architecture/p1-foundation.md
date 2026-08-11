@@ -1,5 +1,9 @@
 # Persistent P1 Semantic Domain Foundation
 
+> Historical implementation record. ADR 0007 replaces the former Prompt Composer
+> runtime and its creative repair behavior; the strict image Studio still reuses the
+> PNF schema, renderer, validator, and migration-safe ownership rules documented here.
+
 P1 establishes executable boundaries without changing public node widgets or workflow serialization.
 
 ## Semantic Foundation

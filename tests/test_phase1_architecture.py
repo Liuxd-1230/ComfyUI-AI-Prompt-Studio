@@ -200,16 +200,14 @@ def test_anima_v1_description_conflicts_with_existing_creative_notes() -> None:
         })
 
 
-@pytest.mark.parametrize("skill_id", [
-    "anima_expand", "anima_rewrite", "anima_repair", "translate_en",
-])
-def test_anima_skill_contract_emits_only_normal_form_v2(skill_id: str) -> None:
-    skill = get_skill(skill_id)
+def test_anima_target_skill_is_operation_neutral() -> None:
+    skill = get_skill("prompt_studio_anima")
 
     assert skill is not None
-    assert '"scene_description"' in skill.system_prompt
-    assert '"natural_description"' not in skill.system_prompt
-    assert '"description"' not in skill.system_prompt
+    assert "Preserve every explicit identity" in skill.system_prompt
+    assert "repair" not in skill.system_prompt.lower()
+    assert "rewrite" not in skill.system_prompt.lower()
+    assert "translate" not in skill.system_prompt.lower()
 
 
 def test_h3_llm_context_excludes_execution_metadata() -> None:

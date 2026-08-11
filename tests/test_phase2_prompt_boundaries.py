@@ -34,9 +34,9 @@ def test_all_creative_call_sites_attach_assembly_report() -> None:
         "nodes/llm_chat.py": 1,
         "nodes/reference_analyzer.py": 3,
         "nodes/storyboard_builder.py": 1,
-        "nodes/prompt_composer.py": 1,
-        "nodes/minimax_h3_director.py": 2,
-        "services/prompt_session.py": 2,
+        "nodes/prompt_studio.py": 3,
+        "nodes/h3_prompt_studio.py": 3,
+        "services/prompt_session.py": 1,
     }
     for relative, expected in files_and_counts.items():
         text = (ROOT / relative).read_text(encoding="utf-8")

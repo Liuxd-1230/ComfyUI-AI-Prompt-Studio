@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_NODES = [
     "APS_ModelProfile", "APS_LLMGenerate", "APS_ReferenceAnalyzer",
     "APS_CharacterBible", "APS_StoryboardBuilder", "APS_StoryboardSelect",
-    "APS_PromptStudio", "APS_ReferencePrompt", "APS_MiniMaxH3Director", "APS_RuntimeControl",
+    "APS_PromptStudio", "APS_ReferencePrompt", "APS_H3PromptStudio", "APS_RuntimeControl",
     "APS_UnloadModel",
 ]
 
@@ -151,6 +151,7 @@ def test_studio_session_widgets_follow_public_inputs(loaded):
         "execution_mode", "session_action"]
     assert list(composer_inputs["optional"])[-2:] == [
         "prompt_session", "message_nonce"]
-    h3 = list(module.NODE_CLASS_MAPPINGS["APS_MiniMaxH3Director"].INPUT_TYPES()["optional"])
-    assert h3[-4:] == ["continue_previous", "prompt_session", "session_action",
-                       "message_nonce"]
+    h3_inputs = module.NODE_CLASS_MAPPINGS["APS_H3PromptStudio"].INPUT_TYPES()
+    assert "operation" not in h3_inputs["required"] | h3_inputs["optional"]
+    assert list(h3_inputs["required"])[-2:] == ["execution_mode", "session_action"]
+    assert list(h3_inputs["optional"])[-2:] == ["prompt_session", "message_nonce"]

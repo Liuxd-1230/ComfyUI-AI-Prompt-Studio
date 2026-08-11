@@ -1,5 +1,8 @@
 # 决策记录 decisions.md
 
+> 本文件按时间保留历史决策。涉及 Prompt Composer、H3 Director、operation、
+> 独立审批、Semantic Critic 或创意自动修复的旧条目均由 ADR 0007 取代。
+
 本文件记录所有自行选定的默认值与假设（规范 §3：不得因小问题停止开发；把假设记录在这里）。
 
 ## D1. 仓库与版本控制

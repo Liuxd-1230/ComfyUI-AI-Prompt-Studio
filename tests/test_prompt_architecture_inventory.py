@@ -20,11 +20,9 @@ def test_every_creative_gateway_call_has_an_inventory_owner() -> None:
         "nodes/llm_chat.py": ("llm.generate", 1),
         "nodes/reference_analyzer.py": ("reference.text", 1),
         "nodes/storyboard_builder.py": ("storyboard.create", 1),
-            "nodes/prompt_composer.py": ("composer.render", 1),
-            "nodes/prompt_studio.py": ("studio.image", 3),
-        "services/prompt_session.py": ("session.changeset", 2),
-        "domain/gateway_critic.py": ("semantic.critic", 1),
-        "nodes/minimax_h3_director.py": ("h3.create", 3),
+        "nodes/prompt_studio.py": ("studio.image", 3),
+        "nodes/h3_prompt_studio.py": ("studio.h3", 3),
+        "services/prompt_session.py": ("session.changeset", 1),
     }
     inventory = INVENTORY.read_text(encoding="utf-8")
     discovered = {
@@ -41,7 +39,6 @@ def test_every_creative_gateway_call_has_an_inventory_owner() -> None:
         lines = _call_lines(relative, r"(?:Gateway\(\)|gateway)\.generate\(")
         assert len(lines) == count, f"Update inventory for {relative}: {lines}"
         assert f"`{owner}`" in inventory
-    assert "`session.impact`" in inventory
 
 
 def test_every_direct_vision_call_has_an_inventory_owner() -> None:
