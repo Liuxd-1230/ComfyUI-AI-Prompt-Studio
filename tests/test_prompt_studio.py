@@ -195,6 +195,9 @@ def test_strict_create_and_refine_use_structured_plan_and_one_call_each(
     assert "cool moonlight" in refined["result"][0]
     assert refined["result"][4] == "Changed the lighting."
     assert len(SequenceGateway.requests) == 2
+    create_system = SequenceGateway.requests[0].system
+    assert "scene_description owns only residual scene prose" in create_system
+    assert "Usually leave creative_notes and all tag arrays empty" in create_system
 
 
 def test_strict_protocol_failure_repairs_format_once_without_commit(
@@ -202,7 +205,7 @@ def test_strict_protocol_failure_repairs_format_once_without_commit(
     SequenceGateway.responses = ["{broken", "still not json"]
     SequenceGateway.requests = []
     monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
-    with pytest.raises(ValueError, match="严格模式.*协议"):
+    with pytest.raises(ValueError, match="still not json"):
         studio_mod.APS_PromptStudio().run(
             AI_PROFILE=_profile(store), text="Alice by a river",
             target="anima_base", execution_mode="strict", message_nonce="bad")

@@ -1,5 +1,6 @@
 # Changelog
 
+- 强化 ANIMA strict CREATE 的 PNF owner 指令：明确 traits/action/position/environment/lighting/composition/style 的唯一职责，scene 只放残余事实，notes/tags 默认留空且不得复述；一次协议修复失败会附带有界 raw。
 - 收紧严格 REFINE ChangeSet 协议：明确使用相对 current Plan 的斜线叶子路径、禁止 `current_plan.`/点号/方括号路径，`intent_scope` 必须使用真实路径；模型不再伪造 dependent changes，确定性依赖只由 Python Impact Analysis 追加。
 - 修复严格图像候选的正负冲突误报：`content.negative_constraints` 不再被当作正向画面正文；真正出现在 scene/character/style 等正向字段中的冲突词仍会阻断提交。
 - 修复 H3 双通道策略漂移：可编辑 H3 Skill 不再拥有 JSON 传输协议，并由宽松/严格 Studio 共同加载；运镜术语（pan/truck、zoom/push、tilt/pedestal）、声音、对白与引用策略在两种模式一致生效。

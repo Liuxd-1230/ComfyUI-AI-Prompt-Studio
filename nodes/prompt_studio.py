@@ -39,6 +39,7 @@ from ..services.prompt_session import (
     node_execution_result,
     request_changeset,
 )
+from ..services.structured_output import raw_excerpt
 from ..services.reference import extract_json_object
 from ..validators.anima import anima_english_issue, validate_anima
 from ._helpers import require_api_key, resolve_profile_input
@@ -387,7 +388,15 @@ class APS_PromptStudio:
         for attempt in range(2):
             operation = (
                 "Create a normalized semantic image plan. Put each fact in exactly "
-                "one field. Return only the schema object; never return rendered prose."
+                "one field. For ANIMA: characters[].required_traits owns stable visible "
+                "appearance; action owns behavior; position owns frame placement; "
+                "environment owns location/weather/physical setting; lighting owns light; "
+                "composition owns framing/camera/layout; style owns rendering style. "
+                "scene_description owns only residual scene prose that belongs to none of "
+                "those fields. Usually leave creative_notes and all tag arrays empty; use "
+                "them only for a unique fact absent from every other field. Never repeat a "
+                "word, phrase, or paraphrased fact across prose, traits, tags, or notes. "
+                "Return only the schema object; never return rendered prose."
                 if attempt == 0 else
                 "Correct only the listed JSON/schema protocol defects. Preserve all "
                 "usable facts from the rejected output; do not redesign the request.")
@@ -424,7 +433,7 @@ class APS_PromptStudio:
                 issues = [str(exc)]
         raise ValueError(
             "严格模式结构化协议在一次修复后仍不可用；上一版保持不变：" +
-            "；".join(issues))
+            "；".join(issues) + "。模型原始输出（截断）：" + raw_excerpt(raw))
 
     @staticmethod
     def _strict_result(session: PromptSession, summary: str) -> Any:
