@@ -98,6 +98,10 @@ def test_strict_changeset_uses_one_declared_proposal_call() -> None:
     assert "content/characters/0/required_traits/3" in system
     assert "Never prefix a path with current_plan" in system
     assert "dependent_changes must be []" in system
+    task_data = Gateway.requests[0].messages[0].content
+    assert '"available_existing_paths"' in task_data
+    assert '"content/lighting"' in task_data
+    assert '"content/characters/0/required_traits/0"' not in task_data
 
 
 def test_changeset_unknown_current_plan_prefix_is_retried() -> None:

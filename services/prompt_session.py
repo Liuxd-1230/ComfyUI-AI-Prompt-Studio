@@ -198,8 +198,12 @@ def request_changeset(gateway: Any, profile: AIProfile, api_key: str,
     from .reference import extract_json_object
 
     plan_type = session.target_family
+    current_plan = _compact_semantic_plan(session)
+    path_catalog = _mutation_path_catalog(current_plan)
     task_data = {
-        "current_plan": _compact_semantic_plan(session),
+        "current_plan": current_plan,
+        "available_existing_paths": path_catalog["existing"],
+        "available_insert_paths": path_catalog["insert"],
         "locked_paths": _semantic_locked_paths(session),
         "latest_user_instruction": feedback,
         "base_revision": session.revision,
@@ -212,6 +216,9 @@ facts invalidated by the request. Preserve every unrelated field. Paths use slas
 segments relative to the supplied current_plan object. Never prefix a path with current_plan,
 model_plan, or h3_plan; never use dots or bracket notation. For example, use
 content/characters/0/required_traits/3, not current_plan.content.characters[0].required_traits.
+For set/delete, copy an exact path from available_existing_paths. For insert, copy an
+exact path from available_insert_paths. Never invent a field or move a top-level field
+under a shot/character merely because it is conceptually related.
 Use the smallest changed leaf or list item; do not replace a whole object or list merely
 to edit one value. intent_scope must contain the exact requested paths or their real
 slash-delimited parent paths, never conceptual labels such as color_adjustment.
@@ -384,6 +391,29 @@ def _compact_semantic_plan(session: PromptSession) -> dict[str, Any]:
                "negative": model_plan.get("negative", "")}
     data = adapter.dump(adapter.load(raw))
     return _drop_semantic_metadata(data)
+
+
+def _mutation_path_catalog(root: dict[str, Any]) -> dict[str, list[str]]:
+    """Enumerate concrete Plan addresses so protocol repair never guesses paths."""
+    existing: list[str] = []
+    insert: list[str] = []
+
+    def visit(value: Any, prefix: str) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                path = f"{prefix}/{key}" if prefix else str(key)
+                existing.append(path)
+                visit(child, path)
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                path = f"{prefix}/{index}"
+                existing.append(path)
+                visit(child, path)
+            for index in range(len(value) + 1):
+                insert.append(f"{prefix}/{index}")
+
+    visit(root, "")
+    return {"existing": existing, "insert": insert}
 
 
 def _proposal_path_issue(root: dict[str, Any], path: str,

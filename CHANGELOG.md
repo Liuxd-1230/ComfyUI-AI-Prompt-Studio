@@ -1,5 +1,6 @@
 # Changelog
 
+- Strict REFINE 的结构化任务现在附带从当前 Plan 确定性枚举的 set/delete 与 insert 路径目录；本地模型在协议重试时可复制真实地址，不再连续猜测 `shots/0/soundscape`、`shots/0/subjects/...` 等不存在路径。
 - ChangeSet 协议校验继续前移：set/delete 必须指向当前 Plan 的真实叶子，insert 必须指向现有列表的合法索引；模型把顶层字段误放进 `shots/0/...` 时会得到一次定向格式修复，而非直接在事务层失败。
 - H3 deterministic normalizer 现在把 Shot 1 的 `start_time=0` 归一为无时间戳 `None`；二者语义同为视频起点，但官方成品禁止 `[Shot 1] At 00:00.000`。
 - ChangeSet 解码现在按当前 Plan 的真实根键校验 requested/scope/dependent/invalidation/conflict 路径；`current_plan/...` 等包装前缀会在事务前触发一次协议修复，而不是直接落到 allowed-root 异常。
