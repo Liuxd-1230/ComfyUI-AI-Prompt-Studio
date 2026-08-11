@@ -23,10 +23,11 @@ operations are rejected. A model-labelled `broad_rewrite` is accepted only when 
 conservative parser also finds explicit whole-plan redesign wording in the user's
 message. Normalizer changes pass through a separate Diff Guard authorization set.
 
-Image sessions transact `{content, negative}` together, so a new positive phrase that
-contains a negative token cannot be committed without resolving the
-negative field. H3 impact analysis similarly blocks a shortened duration while an
-old shot cut remains outside the new timeline. Semantic paraphrase and narrative
+Image sessions transact `{content, negative}` together. Impact Analysis removes a
+matching negative token when the requested positive fact proves the conflict, while
+preserving unrelated negative tokens and recording the dependent path. H3 duration
+changes scale unchanged shot timestamps by the duration ratio, preserving their
+relative timing and recording each dependent path. Semantic paraphrase and narrative
 causality are intentionally deferred to the risk-triggered P3 critic.
 
 H3 duration widgets, connected manifests, media-label normalization, and session

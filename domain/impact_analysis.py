@@ -5,7 +5,7 @@ import re
 from typing import Protocol, TypeVar
 
 from ..schemas.anima import AnimaPromptPlan
-from ..schemas.changeset import ChangeSet, InvalidatedFact
+from ..schemas.changeset import ChangeSet, InvalidatedFact, SemanticChange
 from ..schemas.h3 import H3PromptPlan
 from ..schemas.image_semantic_plan import ImageSemanticPlan
 
@@ -37,10 +37,17 @@ def analyze_h3_impacts(plan: H3PromptPlan, changeset: ChangeSet) -> ChangeSet:
         changed = {item.path for item in changeset.all_changes()}
         for index, shot in enumerate(plan.shots):
             path = f"shots/{index}/start_time"
-            if shot.start_time is not None and shot.start_time >= new_duration and path not in changed:
+            if shot.start_time is not None and path not in changed and plan.duration_seconds > 0:
+                scaled = round(
+                    float(shot.start_time) / float(plan.duration_seconds)
+                    * new_duration, 3)
+                _add_dependency(
+                    changeset, path, scaled,
+                    "deterministic: 总时长变化；按原相对时间位置缩放镜头切点")
                 _add_invalidation(
                     changeset, path,
-                    f"镜头切点 {shot.start_time:.3f}s 不小于新总时长 {new_duration:.3f}s")
+                    f"deterministic: 旧镜头切点 {shot.start_time:.3f}s 属于原总时长 "
+                    f"{plan.duration_seconds:.3f}s，已按比例更新")
     return changeset
 
 
@@ -56,17 +63,22 @@ def analyze_image_impacts(plan: ImageSemanticPlan, changeset: ChangeSet) -> Chan
             "环境变化可能使原光线来源或时间条件失效；必须同步更新或明确保留")
     negative_tokens = _negative_tokens(plan.negative)
     if "negative" not in changed:
+        conflicts: set[str] = set()
         for change in changeset.all_changes():
             if not change.path.startswith("content/"):
                 continue
             values = _string_leaves(change.value)
-            conflict = next((value for value in values
-                             if _first_conflict(value, negative_tokens)), "")
-            if conflict:
-                _add_invalidation(
-                    changeset, "negative",
-                    f"新增正向事实 {conflict!r} 与现有负向约束冲突")
-                break
+            conflicts.update(token for value in values for token in negative_tokens
+                             if _contains_semantic_token(value, token))
+        if conflicts:
+            remaining = [item.strip() for item in str(plan.negative or "").split(",")
+                         if item.strip() and _normalized_negative(item) not in conflicts]
+            _add_dependency(
+                changeset, "negative", ", ".join(remaining),
+                "deterministic: 新增正向事实与旧负向约束冲突；移除冲突项")
+            _add_invalidation(
+                changeset, "negative",
+                "deterministic: 新增正向事实与现有负向约束冲突，冲突项必须移除")
     return changeset
 
 
@@ -89,6 +101,13 @@ def _add_invalidation(changeset: ChangeSet, path: str, reason: str) -> None:
         changeset.invalidated_facts.append(InvalidatedFact(path=path, reason=reason))
 
 
+def _add_dependency(changeset: ChangeSet, path: str, value: object,
+                    reason: str) -> None:
+    if not any(item.path == path for item in changeset.all_changes()):
+        changeset.dependent_changes.append(SemanticChange(
+            path=path, operation="set", value=value, reason=reason))
+
+
 def _string_leaves(value: object) -> list[str]:
     if isinstance(value, str):
         return [value.strip()] if value.strip() else []
@@ -107,6 +126,10 @@ def _negative_tokens(value: str) -> set[str]:
         if len(clean) >= 2:
             tokens.add(clean)
     return tokens
+
+
+def _normalized_negative(value: str) -> str:
+    return re.sub(r"^(?:no|without)\s+", "", value.strip().casefold())
 
 
 def _first_conflict(value: str, tokens: set[str]) -> str:

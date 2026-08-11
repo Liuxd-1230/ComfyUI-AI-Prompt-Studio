@@ -370,7 +370,8 @@ def test_composer_stale_changeset_preserves_serialized_session(monkeypatch, stor
     assert commit_calls == []
 
 
-def test_composer_unresolved_positive_negative_impact_never_commits(monkeypatch, store):
+def test_composer_closes_positive_negative_impact_deterministically(
+        monkeypatch, store):
     payload = setup_profile(store)
     node = pc_mod.APS_PromptComposer()
     created = node.compose(
@@ -404,12 +405,14 @@ def test_composer_unresolved_positive_negative_impact_never_commits(monkeypatch,
                 "constraint_conflicts": [], "summary": "add hat"}))
 
     monkeypatch.setattr(pc_mod, "Gateway", ConflictGateway)
-    with pytest.raises(ValueError, match="失效事实"):
-        node.compose(
-            AI_PROFILE=payload, text="add a black wide-brim hat",
-            target="anima_base", operation="generate", prompt_mode="tags",
-            negative="hat", safety_tag="none", prompt_session=stable_json)
-    assert commit_calls == []
+    refined = node.compose(
+        AI_PROFILE=payload, text="add a black wide-brim hat",
+        target="anima_base", operation="generate", prompt_mode="tags",
+        negative="hat", safety_tag="none", prompt_session=stable_json)
+    session = json.loads(refined["ui"]["prompt_session"][0])
+    assert session["current_plan"]["model_plan"]["negative"] == ""
+    assert session["revisions"][-1]["dependent_paths"] == ["negative"]
+    assert commit_calls == [1]
 
 
 def test_composer_high_risk_critic_error_prevents_commit(monkeypatch, store):

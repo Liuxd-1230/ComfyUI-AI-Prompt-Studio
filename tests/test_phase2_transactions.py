@@ -195,7 +195,7 @@ def test_normalizer_cannot_override_a_locked_path() -> None:
             locked_paths=["style"], normalization_paths=["style"])
 
 
-def test_positive_change_must_resolve_matching_negative_constraint() -> None:
+def test_positive_change_deterministically_removes_matching_negative_constraint() -> None:
     content = _plan().to_json()
     state = ImageSemanticPlan(content=content, negative="hat, watermark")
     changeset = ChangeSet(
@@ -204,25 +204,29 @@ def test_positive_change_must_resolve_matching_negative_constraint() -> None:
         requested_changes=[_change("content/supplemental_tags",
                                    ["black wide-brim hat"])],
         summary="add hat")
-    with pytest.raises(TransactionRejected, match="失效事实"):
-        SemanticTransaction(get_session_plan_adapter("anima")).execute(
-            state, changeset, current_revision=1,
-            impact_analyzer=analyze_image_impacts,
-            allowed_roots=["content", "negative"])
+    result = SemanticTransaction(get_session_plan_adapter("anima")).execute(
+        state, changeset, current_revision=1,
+        impact_analyzer=analyze_image_impacts,
+        semantic_check=validate_image_candidate,
+        allowed_roots=["content", "negative"])
+    assert result.plan.negative == "watermark"
+    assert result.changeset.dependent_changes[0].path == "negative"
 
 
-def test_h3_duration_change_must_close_timeline_invalidation() -> None:
+def test_h3_duration_change_deterministically_scales_timeline_cutpoints() -> None:
     plan = H3PromptPlan(duration_seconds=10.0, soundscape="room tone",
                         shots=[H3Shot(index=1), H3Shot(index=2, start_time=8.0)])
     changeset = ChangeSet(
         base_revision=1, plan_type="minimax_h3", intent_scope=["duration_seconds"],
         approved_requested_paths=["duration_seconds"],
         requested_changes=[_change("duration_seconds", 6.0)], summary="shorten")
-    with pytest.raises(TransactionRejected, match="失效事实"):
-        SemanticTransaction(H3PlanAdapter()).execute(
-            plan, changeset, current_revision=1,
-            impact_analyzer=analyze_h3_impacts,
-            allowed_roots=["duration_seconds", "shots"])
+    result = SemanticTransaction(H3PlanAdapter()).execute(
+        plan, changeset, current_revision=1,
+        impact_analyzer=analyze_h3_impacts,
+        allowed_roots=["duration_seconds", "shots"])
+    assert result.plan.duration_seconds == 6.0
+    assert result.plan.shots[1].start_time == pytest.approx(4.8)
+    assert result.changeset.dependent_changes[0].path == "shots/1/start_time"
 
 
 def test_minimal_category_cannot_replace_a_broad_structural_root() -> None:

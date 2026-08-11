@@ -92,7 +92,10 @@ class PromptRevision(Schema):
     user_instruction: str = ""
     change_summary: str = ""
     message_id: str = ""
+    transaction_id: str = ""
     event_source: str = "user"
+    repair_attempted: bool = False
+    repair_count: int = 0
     requested_paths: List[str] = dataclasses.field(default_factory=list)
     dependent_paths: List[str] = dataclasses.field(default_factory=list)
     invalidated_paths: List[str] = dataclasses.field(default_factory=list)
@@ -114,6 +117,8 @@ class PromptRevision(Schema):
         if not self.timestamp:
             object.__setattr__(
                 self, "timestamp", time.strftime("%Y-%m-%dT%H:%M:%S"))
+        object.__setattr__(self, "repair_count", max(0, int(self.repair_count)))
+        object.__setattr__(self, "repair_attempted", self.repair_count > 0)
         for name in ("plan", "validation", "requested_paths", "dependent_paths",
                      "invalidated_paths", "source_hashes", "skill_hashes"):
             object.__setattr__(
@@ -248,7 +253,9 @@ class PromptSession(Schema):
                requested_paths: List[str] | None = None,
                dependent_paths: List[str] | None = None,
                invalidated_paths: List[str] | None = None,
-               renderer_signature: str = "") -> None:
+               renderer_signature: str = "", repair_count: int = 0,
+               transaction_id: str = "", node_instance_id: str = "",
+               recovery_journal: Any = None) -> None:
         """Atomically commit a valid plan+prompt pair; invalid input changes nothing."""
         if expected_revision is not None and self.revision != expected_revision:
             raise ValueError(
@@ -265,6 +272,7 @@ class PromptSession(Schema):
                              if fingerprints is not None
                              else copy.deepcopy(staged.fingerprints))
         new_revision = staged.revision + 1
+        transaction_id = transaction_id or "tx_" + uuid.uuid4().hex[:16]
         snapshot = PromptRevision(
             revision=new_revision,
             parent_revision=(staged.revision if parent_revision is None
@@ -273,7 +281,8 @@ class PromptSession(Schema):
             plan=copy.deepcopy(plan), prompt=str(prompt),
             validation=copy.deepcopy(report), user_instruction=user_instruction,
             change_summary=change_summary, message_id=message_id,
-            event_source=event_source,
+            transaction_id=transaction_id, event_source=event_source,
+            repair_count=repair_count,
             requested_paths=list(requested_paths or []),
             dependent_paths=list(dependent_paths or []),
             invalidated_paths=list(invalidated_paths or []),
@@ -296,6 +305,14 @@ class PromptSession(Schema):
         staged.fingerprints = next_fingerprints
         staged.fingerprint_state = "bound"
         staged.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        if recovery_journal is not None:
+            from ..domain.recovery_journal import RecoveryJournalEntry
+
+            recovery_journal.record_success(RecoveryJournalEntry(
+                session_id=staged.id, node_instance_id=str(node_instance_id),
+                transaction_id=transaction_id, base_revision=self.revision,
+                result_revision=staged.revision,
+                session_snapshot=staged.to_json()))
         # The stable object is swapped only after the complete next state exists.
         self.__dict__ = staged.__dict__
 

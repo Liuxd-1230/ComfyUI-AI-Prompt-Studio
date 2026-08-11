@@ -82,10 +82,12 @@ def assess_risk(changeset: ChangeSet) -> RiskAssessment:
                                   for part in parts):
             score += 1
             reasons.append(f"关联语义路径: {change.path}")
-    if changeset.dependent_changes:
+    if any(not change.reason.startswith("deterministic:")
+           for change in changeset.dependent_changes):
         score += 1
         reasons.append("包含依赖闭包变更")
-    if changeset.invalidated_facts:
+    if any(not fact.reason.startswith("deterministic:")
+           for fact in changeset.invalidated_facts):
         score += 2
         reasons.append("存在失效事实")
     if changeset.constraint_conflicts:
@@ -105,7 +107,8 @@ class SemanticConsistencyPipeline(Generic[PlanT]):
 
     def run(self, plan: PlanT, changeset: ChangeSet, *,
             critic: SemanticCritic[PlanT] | None = None,
-            force_critic: bool = False) -> ConsistencyResult:
+            force_critic: bool = False,
+            repair_count: int = 0) -> ConsistencyResult:
         candidate = self.adapter.normalize(self.adapter.clone(plan))
         risk = assess_risk(changeset)
         issues = self.validator(candidate)
@@ -122,7 +125,8 @@ class SemanticConsistencyPipeline(Generic[PlanT]):
         return ConsistencyResult(
             plan=candidate.to_json(),  # type: ignore[attr-defined]
             issues=issues, risk=risk, critic_invoked=critic_invoked,
-            repair_attempted=False, repair_count=0)
+            repair_attempted=repair_count > 0,
+            repair_count=max(0, int(repair_count)))
 
 
 def validate_anima_semantics(plan: AnimaPromptPlan) -> list[SemanticIssue]:

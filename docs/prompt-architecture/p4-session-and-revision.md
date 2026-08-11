@@ -21,7 +21,8 @@ bound to whichever inputs happen to be connected at migration time.
 Every successful commit creates a fresh `PromptRevision` containing `revision_id`,
 `parent_revision`, `base_revision`, Plan/prompt snapshots, validation, user message,
 requested/dependent/invalidated paths, renderer signature, and Model Core, Skill and
-source hashes. Its fields and nested mapping/list snapshots are frozen after
+source hashes. P4.1 also records `transaction_id` and the actual bounded
+`repair_count`/`repair_attempted`. Its fields and nested mapping/list snapshots are frozen after
 construction; Plan and validation inputs are deep-copied before the atomic swap.
 History is bounded to 10 revisions and chat display to 40 messages.
 
@@ -49,3 +50,12 @@ the explicit `session_action=new`. The workbench does not clear the serialized o
 Session when this button is clicked; only a successful backend CREATE replaces it.
 Rebase and target migration remain explicit
 later-phase operations rather than being disguised as chat refinement.
+
+## Recovery Journal Seam
+
+`PromptSession.commit()` may publish its fully staged next state through a
+`RecoveryJournal` before swapping the stable in-memory Session. Journal entries are
+keyed by Session and node instance and carry transaction/base/result revision IDs;
+stale branches are rejected. A journal write failure leaves the stable Session
+byte-for-byte unchanged. `MemoryRecoveryJournal` proves this contract but is not a
+durable workflow backend. Durable crash recovery and frontend writeback remain P5.

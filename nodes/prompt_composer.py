@@ -352,7 +352,9 @@ class APS_PromptComposer:
             raise ValueError(
                 "本轮 CREATE 存在不可自动修复的语义错误；未写入会话：\n" +
                 _semantic_error_text(nonrepairable))
+        repair_count = 0
         if not validation.valid:
+            repair_count = 1
             repair_error = ""
             try:
                 repair_paths = _composer_create_repair_paths(validation)
@@ -391,7 +393,7 @@ class APS_PromptComposer:
                     _evaluate_image_semantics(
                         prof, candidate, repair_changeset, family,
                         _session_locked_image_paths(repair_session), bundle,
-                        reference_manifest))
+                        reference_manifest, repair_count=1))
                 if validation.valid:
                     plan.validation = validation
                     bundle = candidate
@@ -414,7 +416,8 @@ class APS_PromptComposer:
         session.commit(bundle, positive, validation, base_text, summary,
                        expected_revision=0, message_id=current_message_id,
                        fingerprints=fingerprints,
-                       renderer_signature=fingerprints.model_core_hash)
+                       renderer_signature=fingerprints.model_core_hash,
+                       repair_count=repair_count)
         return node_execution_result(result_tuple, session.to_json_string(),
                                      positive, summary, session.revision)
 
@@ -440,6 +443,7 @@ class APS_PromptComposer:
         from ..domain.semantic_consistency import assess_risk
 
         original_critic_required = assess_risk(changeset).critic_required
+        repair_count = 0
         _append_semantic_issues(report, semantic_issues)
         semantic_errors = [issue for issue in semantic_issues
                            if issue.severity == "error"]
@@ -448,6 +452,7 @@ class APS_PromptComposer:
                 "本轮 REFINE 语义一致性检查未通过；上一版保持不变：\n" +
                 _semantic_error_text(semantic_errors))
         if not report.valid:
+            repair_count = 1
             original_changeset = changeset
             repair_paths = _composer_repair_paths(
                 original_changeset, semantic_issues, report)
@@ -475,7 +480,8 @@ class APS_PromptComposer:
                 revalidation_changeset(original_changeset, repair_changeset),
                 session.target_family,
                 _session_locked_image_paths(session), working_session.current_plan,
-                reference_manifest, force_critic=original_critic_required)
+                reference_manifest, force_critic=original_critic_required,
+                repair_count=1)
             _append_semantic_issues(report, semantic_issues)
             revision_changeset = revalidation_changeset(
                 original_changeset, repair_changeset)
@@ -496,7 +502,8 @@ class APS_PromptComposer:
                        invalidated_paths=[item.path for item in
                                           revision_changeset.invalidated_facts],
                        renderer_signature=(fingerprints.model_core_hash
-                                           if fingerprints is not None else ""))
+                                           if fingerprints is not None else ""),
+                       repair_count=repair_count)
         result_tuple = (plan.positive, plan.negative, plan.to_json(),
                         gprofile.to_json(), report.as_text())
         return node_execution_result(result_tuple, session.to_json_string(),
@@ -1013,6 +1020,10 @@ def _apply_semantic_changeset(session: PromptSession,
             *_image_semantic_issues(plan, family),
             *_stable_fact_lock_issues(plan, session.locked_constraints),
         ])
+    changeset.dependent_changes = copy.deepcopy(result.changeset.dependent_changes)
+    changeset.invalidated_facts = copy.deepcopy(result.changeset.invalidated_facts)
+    changeset.approved_dependent_paths = list(
+        result.changeset.approved_dependent_paths)
     rendered_state = adapter.dump(result.plan)
     model_plan["content"] = rendered_state["content"]
     model_plan["negative"] = rendered_state["negative"]
@@ -1090,7 +1101,8 @@ def _evaluate_image_semantics(prof: AIProfile, candidate: dict[str, Any],
                               hard_constraints: list[str],
                               previous_bundle: dict[str, Any],
                               reference_manifest: Any = None, *,
-                              force_critic: bool = False) -> list[SemanticIssue]:
+                              force_critic: bool = False,
+                              repair_count: int = 0) -> list[SemanticIssue]:
     from ..domain.gateway_critic import GatewaySemanticCritic, constraint_snapshot
     from ..domain.plan_adapters import get_session_plan_adapter
     from ..domain.semantic_consistency import (
@@ -1144,7 +1156,8 @@ def _evaluate_image_semantics(prof: AIProfile, candidate: dict[str, Any],
             previous_plan=previous_semantic)
     result = SemanticConsistencyPipeline(
         get_session_plan_adapter(family), validator).run(
-            semantic, changeset, critic=critic, force_critic=force_critic)
+            semantic, changeset, critic=critic, force_critic=force_critic,
+            repair_count=repair_count)
     return result.issues
 
 

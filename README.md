@@ -19,6 +19,7 @@
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
 - **MiniMax H3 Prompt Director**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（另保留旧 R2V 别名），支持图片、视频和音频参考；LLM 产出结构化计划 + Python 确定性渲染 + 规则校验 + 修复循环。
 - **结构化输出容错**：H3 CREATE Plan 或 Studio REFINE ChangeSet 首次出现非 JSON、重复路径或缺少授权范围时，会在不修改当前 revision 的前提下最多重试一次；仍失败会显示并记录截断的模型原始输出，便于区分 provider 降级、截断和格式漂移。
+- **P4.1 原子恢复接缝**：Session 提交携带 transaction/base/result revision，并可先写入按节点实例隔离的 Recovery Journal；当前提供线程安全内存参考实现，持久化工作流回写留给 P5。确定性影响分析会自动闭合 positive/negative 冲突和 H3 duration→镜头时间戳依赖，并把实际依赖与修复次数写入 revision。
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
 - **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
 - **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、运行时和 Prompt Skill 查看/新建/编辑；H3 节点另有镜头草稿导演工作台。

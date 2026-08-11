@@ -66,6 +66,15 @@ def test_low_risk_skips_critic_and_high_risk_invokes_it_once() -> None:
     assert calls == [1]
 
 
+def test_consistency_result_reports_the_actual_repair_attempt() -> None:
+    result = SemanticConsistencyPipeline(
+        AnimaPlanAdapter(), validate_anima_semantics).run(
+            AnimaPromptPlan(scene_description="street"),
+            _changeset("lighting"), repair_count=1)
+    assert result.repair_attempted is True
+    assert result.repair_count == 1
+
+
 def test_high_risk_pipeline_never_silently_skips_missing_critic() -> None:
     pipeline = SemanticConsistencyPipeline(
         H3PlanAdapter(), validate_h3_semantics)

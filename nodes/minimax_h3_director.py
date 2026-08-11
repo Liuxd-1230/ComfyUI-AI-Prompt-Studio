@@ -72,7 +72,8 @@ def _evaluate_h3_semantics(prof: AIProfile, api_key: str, plan: H3PromptPlan,
                            changeset: ChangeSet,
                            hard_constraints: list[str],
                            previous_plan: H3PromptPlan, *,
-                           force_critic: bool = False) -> list[SemanticIssue]:
+                           force_critic: bool = False,
+                           repair_count: int = 0) -> list[SemanticIssue]:
     """Evaluate the actual transaction candidate; high-risk edits use a real critic."""
     from ..domain.gateway_critic import GatewaySemanticCritic
     from ..domain.plan_adapters import get_plan_adapter
@@ -87,7 +88,8 @@ def _evaluate_h3_semantics(prof: AIProfile, api_key: str, plan: H3PromptPlan,
             previous_plan=previous_plan)
     result = SemanticConsistencyPipeline(
         get_plan_adapter("minimax_h3"), validate_h3_semantics).run(
-            plan, changeset, critic=critic, force_critic=force_critic)
+            plan, changeset, critic=critic, force_critic=force_critic,
+            repair_count=repair_count)
     return result.issues
 
 
@@ -141,6 +143,10 @@ def _apply_h3_changeset(session: PromptSession, changeset: ChangeSet,
         normalizer=normalize_runtime, allow_broad=allow_broad,
         semantic_check=lambda plan: _h3_stable_lock_issues(
             plan, session.locked_constraints))
+    changeset.dependent_changes = copy.deepcopy(result.changeset.dependent_changes)
+    changeset.invalidated_facts = copy.deepcopy(result.changeset.invalidated_facts)
+    changeset.approved_dependent_paths = list(
+        result.changeset.approved_dependent_paths)
     bundle["h3_plan"] = adapter.dump(result.plan)
     return bundle
 
@@ -458,9 +464,11 @@ class APS_MiniMaxH3Director:
         # ------------------------------------------------------------ 一次自动修复
         # 无 API（确定性转换路径）不尝试 LLM 修复：确定性格式修正已由
         # normalize_media_labels/render 完成，语义问题保留在报告里（不伪造）。
+        repair_count = 0
         if (needs_llm and auto_repair and not report.valid) or (
                 needs_llm and auto_repair and mode in {"R2V", "Ref2VA"}
                 and r2v_english_issue(rendered)):
+            repair_count = 1
             if persistent_lifecycle:
                 fixed, repair_error = self._repair_create_session_once(
                     prof, api_key, plan, rendered, report, mode, duration,
@@ -500,7 +508,8 @@ class APS_MiniMaxH3Director:
         session.commit(bundle, rendered, report, text or "", summary,
                        expected_revision=0, message_id=current_message_id,
                        fingerprints=fingerprints,
-                       renderer_signature=fingerprints.model_core_hash)
+                       renderer_signature=fingerprints.model_core_hash,
+                       repair_count=repair_count)
         return node_execution_result(result_tuple, session.to_json_string(),
                                      rendered, summary, session.revision)
 
@@ -607,7 +616,7 @@ class APS_MiniMaxH3Director:
                 fixed_report,
                 _evaluate_h3_semantics(
                     prof, api_key, fixed_plan, changeset, locked, plan,
-                    force_critic=force_critic))
+                    force_critic=force_critic, repair_count=1))
             _append_semantic_issues(
                 fixed_report, _h3_source_identity_issues(
                     fixed_plan, source_bibles))
@@ -660,6 +669,7 @@ class APS_MiniMaxH3Director:
         from ..domain.semantic_consistency import assess_risk
 
         original_critic_required = assess_risk(changeset).critic_required
+        repair_count = 0
         _append_semantic_issues(report, semantic_issues)
         semantic_errors = [issue for issue in semantic_issues
                            if issue.severity == "error"]
@@ -668,6 +678,7 @@ class APS_MiniMaxH3Director:
                 "本轮 H3 REFINE 语义一致性检查未通过；上一版保持不变：\n" +
                 _semantic_error_text(semantic_errors))
         if not report.valid:
+            repair_count = 1
             original_changeset = changeset
             repair_paths = _h3_repair_paths(
                 original_changeset, semantic_issues, report)
@@ -694,7 +705,7 @@ class APS_MiniMaxH3Director:
                 original_changeset, repair_changeset)
             semantic_issues = _evaluate_h3_semantics(
                 prof, api_key, plan, review_changeset, locked, previous_semantic,
-                force_critic=original_critic_required)
+                force_critic=original_critic_required, repair_count=1)
             _append_semantic_issues(report, semantic_issues)
             revision_changeset = review_changeset
             changeset = repair_changeset
@@ -714,7 +725,8 @@ class APS_MiniMaxH3Director:
                        invalidated_paths=[item.path for item in
                                           revision_changeset.invalidated_facts],
                        renderer_signature=(fingerprints.model_core_hash
-                                           if fingerprints is not None else ""))
+                                           if fingerprints is not None else ""),
+                       repair_count=repair_count)
         result_tuple = (rendered, plan.to_json(), manifest.to_json(),
                         report.as_text(), "\n".join(plan.warnings))
         return node_execution_result(result_tuple, session.to_json_string(),

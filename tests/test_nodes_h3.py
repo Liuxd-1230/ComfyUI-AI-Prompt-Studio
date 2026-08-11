@@ -338,6 +338,33 @@ def test_h3_persistent_refine_changes_shot2_without_touching_shot1(monkeypatch, 
     assert "The camera remains static." in session_v2["current_prompt"]
 
 
+def test_h3_duration_widget_change_scales_cutpoints_and_records_dependency(
+        monkeypatch, store):
+    payload = setup_profile(store)
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
+    node = h3_mod.APS_MiniMaxH3Director()
+    created = node.direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA", duration=10.0))
+    patch = {
+        "base_revision": 1, "plan_type": "minimax_h3",
+        "change_category": "minimal_refine", "intent_scope": ["shots/1/camera"],
+        "requested_changes": [{"path": "shots/1/camera", "operation": "set",
+                               "value_json": '"The camera remains static."',
+                               "reason": "user request"}],
+        "dependent_changes": [], "invalidated_facts": [],
+        "constraint_conflicts": [], "summary": "shorten and hold camera"}
+    monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(patch)))
+    refined = node.direct(**node_payload(
+        AI_PROFILE=payload, text="缩短为六秒并固定第二镜头",
+        mode="T2VA", duration=6.0,
+        prompt_session=created["ui"]["prompt_session"][0]))
+    session = json.loads(refined["ui"]["prompt_session"][0])
+    plan = session["current_plan"]["h3_plan"]
+    assert plan["duration_seconds"] == 6.0
+    assert plan["shots"][1]["start_time"] == 3.0
+    assert "shots/1/start_time" in session["revisions"][-1]["dependent_paths"]
+
+
 def test_h3_refine_enforces_session_lock_and_preserves_input_session(monkeypatch, store):
     payload = setup_profile(store)
     monkeypatch.setattr(h3_mod, "Gateway", lambda: FakeGateway(json.dumps(PLAN_JSON)))
@@ -804,12 +831,16 @@ def test_auto_repair_fixes_r2v_english(monkeypatch, store):
     gw = R2VCreateRepairGateway(True)
     monkeypatch.setattr(h3_mod, "Gateway", lambda: gw)
     node = h3_mod.APS_MiniMaxH3Director()
-    prompt, _, _, validation, warnings = node.direct(
+    result = node.direct(
         **node_payload(AI_PROFILE=payload, text="少女走进咖啡馆", mode="R2V",
                        operation="generate", duration=10.0))
+    prompt, _, _, validation, warnings = result
     assert "A girl enters a cafe." in prompt     # 修复后为英文
     assert "自动修复" in warnings
     assert "通过" in validation
+    session = json.loads(result["ui"]["prompt_session"][0])
+    assert session["revisions"][-1]["repair_count"] == 1
+    assert session["revisions"][-1]["repair_attempted"] is True
 
 
 def test_r2v_english_marks_error_when_repair_fails(monkeypatch, store):
