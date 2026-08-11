@@ -303,6 +303,11 @@ Report hard conflicts instead of silently overriding them."""
                     last_issues.append(
                         f"语义路径 {path!r} 的根 {root!r} 不属于 current_plan；"
                         f"可用根：{', '.join(sorted(valid_roots))}")
+            for change in candidate.all_changes():
+                path_issue = _proposal_path_issue(
+                    task_data["current_plan"], change.path, change.operation)
+                if path_issue:
+                    last_issues.append(path_issue)
             last_issues = bounded_issues(last_issues)
             if last_issues:
                 raise ValueError("；".join(last_issues))
@@ -379,6 +384,27 @@ def _compact_semantic_plan(session: PromptSession) -> dict[str, Any]:
                "negative": model_plan.get("negative", "")}
     data = adapter.dump(adapter.load(raw))
     return _drop_semantic_metadata(data)
+
+
+def _proposal_path_issue(root: dict[str, Any], path: str,
+                         operation: str) -> str:
+    """Return a protocol issue when a proposed mutation cannot address current Plan."""
+    parts = [part for part in str(path).strip().strip("/").split("/") if part]
+    if not parts:
+        return f"语义路径 {path!r} 为空"
+    target_parts = parts[:-1] if operation == "insert" else parts
+    current: Any = root
+    try:
+        for part in target_parts:
+            current = current[int(part)] if isinstance(current, list) else current[part]
+    except (KeyError, IndexError, TypeError, ValueError):
+        return f"语义路径 {path!r} 在 current_plan 中不存在"
+    if operation == "insert":
+        leaf = parts[-1]
+        if (not isinstance(current, list) or not leaf.isdigit()
+                or int(leaf) > len(current)):
+            return f"insert 路径 {path!r} 不是 current_plan 中的有效列表索引"
+    return ""
 
 
 def _drop_semantic_metadata(value: Any) -> Any:

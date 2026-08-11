@@ -122,6 +122,28 @@ def test_changeset_unknown_current_plan_prefix_is_retried() -> None:
     assert Gateway.calls == 2
 
 
+def test_changeset_nonexistent_leaf_is_retried_before_transaction() -> None:
+    bad = _valid_changeset()
+    bad["intent_scope"] = ["content/characters/0/lighting"]
+    bad["requested_changes"] = [{
+        "path": "content/characters/0/lighting", "operation": "set",
+        "value_json": '"blue hour"', "reason": "field is at the wrong depth"}]
+
+    class Gateway:
+        calls = 0
+
+        def generate(self, profile, api_key, req):
+            del profile, api_key, req
+            type(self).calls += 1
+            payload = bad if type(self).calls == 1 else _valid_changeset()
+            return LLMResult(text=json.dumps(payload))
+
+    result = request_changeset(
+        Gateway(), AIProfile(timeout=30), "test-key", _session(), "make it blue")
+    assert result.requested_changes[0].path == "content/lighting"
+    assert Gateway.calls == 2
+
+
 def test_fingerprint_error_names_only_currently_available_recovery_actions() -> None:
     session = _session()
     session.fingerprint_state = "bound"
