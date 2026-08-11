@@ -221,6 +221,24 @@ def test_positive_change_deterministically_removes_matching_negative_constraint(
     assert result.changeset.dependent_changes[0].path == "negative"
 
 
+def test_candidate_check_does_not_treat_negative_constraints_as_positive() -> None:
+    content = _plan().to_json()
+    content["negative_constraints"] = ["blurry", "low quality", "text"]
+    state = ImageSemanticPlan(
+        content=content, negative="blurry, low quality, text")
+
+    assert validate_image_candidate(state) == []
+
+
+def test_candidate_check_still_rejects_real_positive_negative_conflict() -> None:
+    content = _plan().to_json()
+    content["scene_description"] = "A deliberately blurry portrait"
+    state = ImageSemanticPlan(content=content, negative="blurry, watermark")
+
+    assert validate_image_candidate(state) == [
+        "正向内容与负向约束仍冲突: blurry"]
+
+
 def test_h3_duration_change_deterministically_scales_timeline_cutpoints() -> None:
     plan = H3PromptPlan(duration_seconds=10.0, soundscape="room tone",
                         shots=[H3Shot(index=1), H3Shot(index=2, start_time=8.0)])

@@ -67,6 +67,8 @@ def analyze_image_impacts(plan: ImageSemanticPlan, changeset: ChangeSet) -> Chan
         for change in changeset.all_changes():
             if not change.path.startswith("content/"):
                 continue
+            if change.path == "content/negative_constraints":
+                continue
             values = _string_leaves(change.value)
             conflicts.update(token for value in values for token in negative_tokens
                              if _contains_semantic_token(value, token))
@@ -84,7 +86,11 @@ def analyze_image_impacts(plan: ImageSemanticPlan, changeset: ChangeSet) -> Chan
 
 def validate_image_candidate(plan: ImageSemanticPlan) -> list[str]:
     """Reject positive/negative contradictions in the actual post-change candidate."""
-    positive = " ".join(_string_leaves(plan.content))
+    positive_content = {
+        key: value for key, value in plan.content.items()
+        if key != "negative_constraints"
+    }
+    positive = " ".join(_string_leaves(positive_content))
     conflicts = sorted({token for token in _negative_tokens(plan.negative)
                         if _contains_semantic_token(positive, token)})
     return [f"正向内容与负向约束仍冲突: {token}" for token in conflicts]

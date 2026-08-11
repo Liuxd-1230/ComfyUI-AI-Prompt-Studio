@@ -1,5 +1,6 @@
 # Changelog
 
+- 修复严格图像候选的正负冲突误报：`content.negative_constraints` 不再被当作正向画面正文；真正出现在 scene/character/style 等正向字段中的冲突词仍会阻断提交。
 - 修复 H3 双通道策略漂移：可编辑 H3 Skill 不再拥有 JSON 传输协议，并由宽松/严格 Studio 共同加载；运镜术语（pan/truck、zoom/push、tilt/pedestal）、声音、对白与引用策略在两种模式一致生效。
 - 强化 H3 宽松协议：系统提示按模式逐字列出三字段/六段标题、首行对齐和 `[Shot N]` 骨架，并禁止把具体地点、交通工具、对象类型、数量、动作或关系泛化替换；一次保真修复仍失败时，错误附带有界模型原文，便于诊断本地模型格式漂移。
 - 修复双 Studio 的 ComfyUI 执行契约：`APS_PromptStudio` 与 `APS_H3PromptStudio` 标记为输出节点，现在无需连接图像/视频生成节点即可单独 Queue、查看提示词与 validation。
