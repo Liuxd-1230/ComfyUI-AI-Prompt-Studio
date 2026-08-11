@@ -55,10 +55,16 @@ _STRING_ARRAY = {"type": "array", "items": {"type": "string"}}
 _ANIMA_CHARACTER_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
-        "character_id": {"type": "string"}, "name": {"type": "string"},
-        "required_traits": _STRING_ARRAY, "variable_traits": _STRING_ARRAY,
-        "action": {"type": "string"}, "position": {"type": "string"},
-        "creative_notes": _STRING_ARRAY,
+        "character_id": {"type": "string", "description": "Stable unique identifier."},
+        "name": {"type": "string", "description": "Display name only."},
+        "required_traits": {**_STRING_ARRAY, "description":
+            "Stable visible appearance facts owned only here; no style, action, or position."},
+        "variable_traits": {**_STRING_ARRAY, "description":
+            "Optional changeable visible appearance facts owned only here."},
+        "action": {"type": "string", "description": "Observable behavior owned only here."},
+        "position": {"type": "string", "description": "Frame placement owned only here."},
+        "creative_notes": {**_STRING_ARRAY, "description":
+            "Return [] unless a character fact cannot fit traits, action, or position; never repeat."},
     },
     "required": ["character_id", "name", "required_traits", "variable_traits",
                  "action", "position", "creative_notes"],
@@ -66,14 +72,29 @@ _ANIMA_CHARACTER_SCHEMA = {
 _ANIMA_CONTENT_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "properties": {
-        "scene_description": {"type": "string"},
-        "creative_notes": _STRING_ARRAY,
+        "scene_description": {"type": "string", "description":
+            "Only residual drawable scene prose not owned by characters, environment, composition, lighting, or style. Usually return an empty string."},
+        "creative_notes": {**_STRING_ARRAY, "description":
+            "Return [] unless a unique drawable fact fits no structured field; never repeat."},
         "characters": {"type": "array", "items": _ANIMA_CHARACTER_SCHEMA},
-        "control_tags": _STRING_ARRAY, "series_tags": _STRING_ARRAY,
-        "artist_tags": _STRING_ARRAY, "supplemental_tags": _STRING_ARRAY,
-        "style": _STRING_ARRAY, "environment": _STRING_ARRAY,
-        "composition": {"type": "string"}, "lighting": {"type": "string"},
-        "negative_constraints": _STRING_ARRAY,
+        "control_tags": {**_STRING_ARRAY, "description":
+            "Return [] for natural-language Studio; never duplicate prose or structured facts."},
+        "series_tags": {**_STRING_ARRAY, "description":
+            "Return [] for natural-language Studio unless an explicit unique series token is required."},
+        "artist_tags": {**_STRING_ARRAY, "description":
+            "Return [] for natural-language Studio unless an explicit unique artist token is required."},
+        "supplemental_tags": {**_STRING_ARRAY, "description":
+            "Return [] for natural-language Studio; never duplicate another field."},
+        "style": {**_STRING_ARRAY, "description":
+            "Rendering and aesthetic style facts owned only here."},
+        "environment": {**_STRING_ARRAY, "description":
+            "Location, weather, physical setting, and background facts owned only here."},
+        "composition": {"type": "string", "description":
+            "Framing, camera viewpoint, layout, and spatial composition owned only here."},
+        "lighting": {"type": "string", "description":
+            "Light sources, color, direction, contrast, and exposure owned only here."},
+        "negative_constraints": {**_STRING_ARRAY, "description":
+            "Negative-only constraints. These are not positive scene facts."},
     },
     "required": ["scene_description", "creative_notes", "characters",
                  "control_tags", "series_tags", "artist_tags",

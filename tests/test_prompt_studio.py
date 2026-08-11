@@ -198,6 +198,9 @@ def test_strict_create_and_refine_use_structured_plan_and_one_call_each(
     create_system = SequenceGateway.requests[0].system
     assert "scene_description owns only residual scene prose" in create_system
     assert "Usually leave creative_notes and all tag arrays empty" in create_system
+    properties = SequenceGateway.requests[0].output_schema["properties"]["content"]["properties"]
+    assert "Usually return an empty string" in properties["scene_description"]["description"]
+    assert "Return []" in properties["control_tags"]["description"]
 
 
 def test_strict_protocol_failure_repairs_format_once_without_commit(
