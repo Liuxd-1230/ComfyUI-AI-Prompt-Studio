@@ -1,6 +1,6 @@
 # Changelog
 
-- 强化 H3 宽松协议：系统提示按模式逐字列出三字段/六段标题、首行对齐和 `[Shot N]` 骨架；一次保真修复仍失败时，错误附带有界模型原文，便于诊断本地模型格式漂移。
+- 强化 H3 宽松协议：系统提示按模式逐字列出三字段/六段标题、首行对齐和 `[Shot N]` 骨架，并禁止把具体地点、交通工具、对象类型、数量、动作或关系泛化替换；一次保真修复仍失败时，错误附带有界模型原文，便于诊断本地模型格式漂移。
 - 修复双 Studio 的 ComfyUI 执行契约：`APS_PromptStudio` 与 `APS_H3PromptStudio` 标记为输出节点，现在无需连接图像/视频生成节点即可单独 Queue、查看提示词与 validation。
 - ADR 0007 H3 工作台落地并完成旧节点清理：注册 `APS_H3PromptStudio`，默认宽松模式直接维护完整官方 H3 文本，严格模式维护 `H3PromptPlan`/ChangeSet；两条通道共用 4–15 秒、媒体数量/总时长、引用、时间戳、说话人、声音与 Ref2VA 英语硬校验。协议错误最多保真修复一次，validator 失败不再触发创意改写。Revision 与对应 locks 原子提交/恢复；旧 operation Skills 合并为四个图像目标策略 Skill 和一个 H3 规划 Skill。删除旧 `APS_PromptComposer`、`APS_MiniMaxH3Director` 源码、旧导演工作台和对应过时节点测试，公开节点仍为 11 个。
 - ADR 0007 图像工作台落地：注册 `APS_PromptStudio` 并移除旧 `APS_PromptComposer` 的公开注册。默认宽松模式使用 `<PROMPT>/<SUMMARY>`、允许合格无标签提示词并警告、协议垃圾只做一次保真格式修复；严格模式使用 `ImageSemanticPlan`、ChangeSet、确定性依赖闭包、Diff Guard、renderer/validator 和原子 revision，正常 CREATE/REFINE 各一次模型调用，不再运行独立 LLM 授权、Semantic Critic 或创意自动修复。ANIMA 两条通道都强制视觉正文为英语，模式切换只在新 CREATE 成功后替换旧 lineage。

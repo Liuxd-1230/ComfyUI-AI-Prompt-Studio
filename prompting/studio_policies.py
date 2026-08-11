@@ -97,5 +97,8 @@ Do not rename, omit, translate, number, or wrap these field names. Every shot be
         "all other visual and audiovisual description in English. Use only connected "
         "Picture/Video/Audio labels. Include synchronized shot audio, a non-empty "
         "overall soundscape unless explicit silence was requested, and a concrete "
-        "non-diegetic music decision. Do not return an internal JSON Plan.\n\n" +
+        "non-diegetic music decision. Translate concrete source facts faithfully. "
+        "Never generalize or substitute a concrete location, vehicle, object type, "
+        "character count, action, or relationship with an adjacent alternative. "
+        "Do not return an internal JSON Plan.\n\n" +
         format_contract)
