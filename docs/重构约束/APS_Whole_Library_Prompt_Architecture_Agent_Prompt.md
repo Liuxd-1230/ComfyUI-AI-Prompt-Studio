@@ -6,6 +6,31 @@
 > **与其他重构文档的关系**：本文件不替代 Persistent Semantic Plan / Session / Transaction 架构文档；它专门规定“整个节点库里所有 LLM 提示词应该怎么写、怎么组织、怎么验证、怎么引用官方资料、怎么加载补充 Markdown 文件”。
 > **执行性质**：这是架构契约，不是建议清单。除非当前代码或 ComfyUI API 明确证明某个实现细节不可行，否则不得自行改写核心边界。
 
+## 2026-08-11 Binding Amendment — Studio Output Contracts
+
+This amendment takes precedence over conflicting one-shot/operation compatibility
+requirements below. `APS_PromptStudio` and `APS_H3PromptStudio` replace the legacy
+Composer/Director and infer CREATE/REFINE from `PromptSession v3`; they expose no
+operation dropdown.
+
+Prompt assembly retains the permission layers defined by this contract, but output
+contracts vary by execution lane:
+
+- default **lenient** mode requests a complete target prompt inside
+  `<PROMPT>` plus an optional `<SUMMARY>`. Untagged output is accepted only when a
+  deterministic classifier proves it is ordinary prompt prose rather than JSON-like
+  or explanatory protocol garbage;
+- **strict** mode requests the target's typed Plan for CREATE or a reasoned ChangeSet
+  for REFINE, but does not perform a routine second authorization or Semantic Critic
+  call;
+- both modes permit at most one content-preserving protocol repair and never promote
+  Storyboard, Character, Reference, Skill, or previous model output into trusted
+  system instructions.
+
+ANIMA instructions require English visual prose. Python enforces that rule while
+allowing non-English names, proper nouns, reference labels, and quoted on-screen
+text. Other targets have no language gate. See ADR 0007 for complete semantics.
+
 ---
 
 # 0. 任务目标

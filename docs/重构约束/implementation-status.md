@@ -1,5 +1,10 @@
 # Persistent Contract Implementation Status
 
+> **ADR 0007 transition:** the 2026-08-11 dual-lane amendments are binding, but the
+> runtime is not migrated until the corresponding work units land. At this checkpoint
+> the repository still registers the legacy Composer/Director and PromptSession v2;
+> do not describe the new Studios or v3 as available yet.
+
 This table tracks the binding Persistent contract §108 at the current HEAD.
 “Partial” means the invariant has an executable base but the named end-to-end
 surface is not complete; it must not be described as finished functionality.

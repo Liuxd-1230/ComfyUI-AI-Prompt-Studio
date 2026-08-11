@@ -3,6 +3,11 @@
 - Status: Accepted
 - Date: 2026-08-09
 
+> **2026-08-11 amendment:** ADR 0007 makes the semantic transaction pipeline the
+> strict Studio lane rather than the universal path. New Studios use a lightweight
+> tagged prompt contract by default. Routine independent intent approval and LLM
+> Semantic Critic are removed; deterministic target checks remain mandatory.
+
 ## Context
 
 Prompt rules, operation policies, task data, schemas, semantic plans, and persisted revisions currently overlap across nodes, Skills, renderers, and validators. String concatenation makes the final request difficult to inspect, while root-level plan replacement cannot prove minimum consistent change.

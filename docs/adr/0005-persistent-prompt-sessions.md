@@ -1,5 +1,10 @@
 # Persistent Prompt Sessions Use Workflow-Serialized Structured State
 
+> **2026-08-11 amendment:** ADR 0007 supersedes the mandatory single structured
+> execution path and v2 migration behavior. This document remains the lineage and
+> atomic-commit foundation for the strict lane; the default lenient lane persists a
+> prompt payload in PromptSession v3 without requiring a semantic Plan.
+
 Prompt Composer and MiniMax H3 Director use `PromptSession` as the current-state fact source. Conversation explains why revisions changed; it is not replayed to reconstruct the current prompt.
 
 ## Decision

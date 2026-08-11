@@ -1,5 +1,6 @@
 # Changelog
 
+- 架构决策 ADR 0007：Prompt Studio 改为默认宽松/可选严格双通道。宽松通道使用轻量 `<PROMPT>/<SUMMARY>` 协议、确定性垃圾分类与硬规则验证；严格通道保留 Plan/ChangeSet/Diff Guard/原子 Revision，但移除常态化独立审批、LLM Critic 与创意自动修复。新 `APS_PromptStudio`/`APS_H3PromptStudio` 将替换旧 Composer/Director，统一使用 PromptSession v3；本条先建立绑定实现与验收边界，运行代码在后续工作单元迁移。
 - P4.1 事务清理与条件审批：直接由用户原文明确命名、且无依赖/失效/冲突的简单 `set` 路径由 Python 确定性授权，只需一次 ChangeSet 调用；歧义、结构、依赖和 broad 修改仍进入独立审批。三份路径比较实现合并为共享语义路径工具；移除零调用 PlanAdapter 别名、no-op Impact Analyzer，以及已与生产脱节的旧 Plan Patch schema/request/apply 测试接口；`ImageSemanticPlan`/`TextPromptPlan` 统一从 `schemas` 导出。
 - P4.1 恢复与依赖闭包：`PromptSession.commit()` 新增按 Session/节点实例键控的 Recovery Journal 接口、transaction/base/result revision 与提交时 CAS；内存实现用于验证原子发布和 stale branch 拒绝，持久化后端留给 P5。图像 positive 新事实会确定性移除冲突 negative token，H3 duration 变化会按比例联动镜头时间戳；依赖路径写入 revision，Python 已证明的闭包不额外调用 Critic。Revision 与语义一致性结果记录真实 `repair_count`/`repair_attempted`。
 - P4.1 容错与可诊断性：H3 CREATE 结构化 Plan 与 Studio REFINE ChangeSet 遇到非 JSON/畸形协议结果时最多非破坏性重试一次；首次失败的校验问题与截断 raw 作为不可信任务数据反馈，第二次仍失败则在 backend warning 和用户错误中保留有界 raw 摘要，稳定 Session/revision 不变。ChangeSet/语义错误去重限长；指纹错误只提示当前真实可用的新会话/历史恢复操作；没有两个成功版本时，工作台不再 Queue 一个必然失败的恢复请求。

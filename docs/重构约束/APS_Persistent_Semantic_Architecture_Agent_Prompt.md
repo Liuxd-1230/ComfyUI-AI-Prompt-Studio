@@ -5,6 +5,31 @@
 > **目标**：把 APS 从“LLM 改写 Prompt 的节点组”升级为“以 Semantic Plan 为真源、支持安全多轮编辑、模型专属编译、版本控制、Skill Package、风格预设与生成反馈闭环”的 Prompt 创作系统。
 > **重要**：本文不是建议清单。除非当前代码或 ComfyUI API 明确证明某项不可行，否则本文中的架构边界、失败语义、兼容要求和测试要求均视为实施约束。
 
+## 2026-08-11 Binding Amendment — Dual Execution Lanes
+
+This amendment supersedes conflicting requirements below. New
+`APS_PromptStudio` / `APS_H3PromptStudio` nodes expose
+`execution_mode = lenient | strict`, default `lenient`, and no operation dropdown.
+The old Composer/Director nodes and legacy operation compatibility branches are
+removed without workflow migration by explicit product decision.
+
+- **Lenient:** lightweight `<PROMPT>`/`<SUMMARY>` output, deterministic
+  plain-prompt versus protocol-garbage classification, at most one
+  content-preserving protocol repair, provable target checks, atomic prompt
+  revisions, no ChangeSet, independent approval, Semantic Critic, or creative
+  repair. Context fingerprint changes warn and are recorded but never gate.
+- **Strict:** structured Plan/ChangeSet, deterministic impact closure, Diff Guard,
+  locks, renderer/protocol validation, revision CAS, and atomic commit. Routine
+  independent authorization and LLM Semantic Critic are removed. Only protocol
+  formatting may be repaired automatically once; semantic failures abort.
+- `PromptSession v3` is the shared envelope. Switching mode starts a new lineage
+  only after successful CREATE. v1/v2 state is not migrated into editable v3 state.
+- Lenient promises availability, hard checks, and recovery—not perfect preservation
+  of all unmentioned semantics. Strict promises structural/transactional integrity,
+  not perfect natural-language intent interpretation.
+
+ADR 0007 is the authoritative rationale and acceptance contract for this amendment.
+
 ---
 
 # 0. 你的角色
