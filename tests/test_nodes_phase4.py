@@ -272,7 +272,7 @@ def test_composer_pins_the_actual_builtin_model_skill(monkeypatch, store):
         "anima_expand": actual.hash or actual.compute_hash()}
 
 
-def test_legacy_session_duplicate_is_noop_but_new_message_requires_new_session(
+def test_legacy_session_is_reset_and_recreated_as_v3(
         monkeypatch, store):
     payload = setup_profile(store)
     node = pc_mod.APS_PromptComposer()
@@ -298,13 +298,17 @@ def test_legacy_session_duplicate_is_noop_but_new_message_requires_new_session(
         safety_tag="none", prompt_session=legacy_json)
     repeated_session = json.loads(repeated["ui"]["prompt_session"][0])
     assert repeated_session["revision"] == 1
-    assert repeated_session["fingerprint_state"] == "legacy_unbound"
-    with pytest.raises(ValueError, match="legacy_unbound"):
-        node.compose(
-            AI_PROFILE=payload, text="change the dress to blue",
-            target="anima_base", operation="generate", prompt_mode="tags",
-            negative="", safety_tag="none", message_nonce="legacy-new",
-            prompt_session=legacy_json)
+    assert repeated_session["schema_version"] == "3.0"
+    assert repeated_session["fingerprint_state"] == "bound"
+    assert repeated_session["id"] != legacy["id"]
+    changed = node.compose(
+        AI_PROFILE=payload, text="change the dress to blue",
+        target="anima_base", operation="generate", prompt_mode="tags",
+        negative="", safety_tag="none", message_nonce="legacy-new",
+        prompt_session=legacy_json)
+    changed_session = json.loads(changed["ui"]["prompt_session"][0])
+    assert changed_session["revision"] == 1
+    assert "blue" in changed_session["current_prompt"]
 
 
 def test_composer_new_session_requires_explicit_action(store):

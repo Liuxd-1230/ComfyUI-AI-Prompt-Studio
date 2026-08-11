@@ -1,7 +1,6 @@
 """Versioned Prompt Studio session and immutable revision snapshots."""
 import copy
 import dataclasses
-import hashlib
 import time
 import uuid
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, List
@@ -96,6 +95,8 @@ class PromptRevision(Schema):
     change_summary: str = ""
     message_id: str = ""
     transaction_id: str = ""
+    execution_mode: str = "lenient"
+    payload_kind: str = "structured"
     event_source: str = "user"
     repair_attempted: bool = False
     repair_count: int = 0
@@ -106,6 +107,7 @@ class PromptRevision(Schema):
     model_core_hash: str = ""
     source_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
     skill_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
+    context_changes: List[str] = dataclasses.field(default_factory=list)
     timestamp: str = ""
 
     def __setattr__(self, name: str, value: Any) -> None:
@@ -122,8 +124,13 @@ class PromptRevision(Schema):
                 self, "timestamp", time.strftime("%Y-%m-%dT%H:%M:%S"))
         object.__setattr__(self, "repair_count", max(0, int(self.repair_count)))
         object.__setattr__(self, "repair_attempted", self.repair_count > 0)
+        if self.execution_mode not in {"lenient", "strict"}:
+            raise SchemaError("PromptRevision.execution_mode 非法")
+        if self.payload_kind not in {"freeform", "structured"}:
+            raise SchemaError("PromptRevision.payload_kind 非法")
         for name in ("plan", "validation", "requested_paths", "dependent_paths",
-                     "invalidated_paths", "source_hashes", "skill_hashes"):
+                     "invalidated_paths", "source_hashes", "skill_hashes",
+                     "context_changes"):
             object.__setattr__(
                 self, name, _freeze_revision_value(getattr(self, name)))
         object.__setattr__(self, "_sealed", True)
@@ -132,50 +139,29 @@ class PromptRevision(Schema):
         return self
 
 
-def _migrate_session_v1_to_v2(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Preserve legacy workflow state while adding deterministic revision identity."""
-    migrated = copy.deepcopy(data)
-    session_id = str(migrated.get("id", "") or "psess_legacy")
-    revisions = migrated.get("revisions", [])
-    if isinstance(revisions, list):
-        for index, raw in enumerate(revisions):
-            if not isinstance(raw, dict):
-                continue
-            number = int(raw.get("revision", index + 1))
-            raw.setdefault("revision_id", "prev_" + uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                f"ai-prompt-studio:{session_id}:revision:{number}").hex[:16])
-            raw.setdefault("parent_revision", max(0, number - 1))
-            raw.setdefault("base_revision", max(0, number - 1))
-            raw.setdefault("event_source", "legacy")
-    last_user_message = ""
-    conversation = migrated.get("conversation", [])
-    if isinstance(conversation, list):
-        for item in reversed(conversation):
-            if isinstance(item, dict) and item.get("role") == "user":
-                last_user_message = str(item.get("content", "")).strip()
-                break
-    migrated.setdefault(
-        "last_processed_message_id",
-        ("legacy_" + hashlib.sha256(last_user_message.encode("utf-8")).hexdigest()[:20]
-         if last_user_message else ""))
-    migrated.setdefault("fingerprints", {})
-    migrated.setdefault("fingerprint_state", "legacy_unbound")
-    migrated["schema_version"] = "2.0"
-    return migrated
+def _reset_legacy_session_to_v3(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Legacy state is intentionally not rebound to either ADR 0007 lane."""
+    del data
+    return {
+        "schema_version": "3.0", "execution_mode": "lenient",
+        "current_payload_kind": "empty", "fingerprint_state": "bound",
+    }
 
 
 @dataclasses.dataclass
 class PromptSession(Schema):
     """Source of truth for one persistent CREATE/REFINE lifecycle."""
 
-    CURRENT_SCHEMA_VERSION: ClassVar[str] = "2.0"
+    CURRENT_SCHEMA_VERSION: ClassVar[str] = "3.0"
     MIGRATIONS: ClassVar[Dict[str, Dict[str, Any]]] = {
-        "1.0": {"2.0": _migrate_session_v1_to_v2},
+        "1.0": {"3.0": _reset_legacy_session_to_v3},
+        "2.0": {"3.0": _reset_legacy_session_to_v3},
     }
 
-    schema_version: str = "2.0"
+    schema_version: str = "3.0"
     id: str = ""
+    execution_mode: str = "lenient"
+    current_payload_kind: str = "empty"
     target_family: str = ""
     target_variant: str = ""
     current_plan: Dict[str, Any] = dataclasses.field(default_factory=dict)
@@ -204,9 +190,13 @@ class PromptSession(Schema):
                     f"PromptSession.conversation[{index}] 必须是 ChatMessage")
         if not isinstance(self.fingerprints, SessionFingerprints):
             raise SchemaError("PromptSession.fingerprints 必须是 SessionFingerprints")
+        if self.execution_mode not in {"lenient", "strict"}:
+            raise SchemaError("PromptSession.execution_mode 非法")
+        if self.current_payload_kind not in {"empty", "freeform", "structured"}:
+            raise SchemaError("PromptSession.current_payload_kind 非法")
         if self.fingerprint_state not in {"bound", "legacy_unbound"}:
             raise SchemaError("PromptSession.fingerprint_state 非法")
-        if (self.has_current_plan
+        if (self.has_current_state
                 and not (self.fingerprints.target_signature
                          or self.fingerprints.model_core_hash
                          or self.fingerprints.source_hashes
@@ -233,7 +223,7 @@ class PromptSession(Schema):
                 candidate = None
         if isinstance(candidate, dict):
             version = str(candidate.get("schema_version", "1.0"))
-            if version not in {"1.0", cls.CURRENT_SCHEMA_VERSION}:
+            if version not in {"1.0", "2.0", cls.CURRENT_SCHEMA_VERSION}:
                 raise SchemaError(
                     f"PromptSession future schema_version {version!r} 无法安全编辑")
         restored = super().from_json(data)
@@ -243,7 +233,14 @@ class PromptSession(Schema):
 
     @property
     def has_current_plan(self) -> bool:
-        return bool(self.current_plan and self.current_prompt and self.revision > 0)
+        return bool(self.current_payload_kind == "structured"
+                    and self.current_plan and self.current_prompt
+                    and self.revision > 0)
+
+    @property
+    def has_current_state(self) -> bool:
+        return bool(self.current_payload_kind in {"freeform", "structured"}
+                    and self.current_prompt and self.revision > 0)
 
     def commit(self, plan: Dict[str, Any], prompt: str,
                validation: Dict[str, Any] | ValidationReport,
@@ -258,7 +255,9 @@ class PromptSession(Schema):
                invalidated_paths: List[str] | None = None,
                renderer_signature: str = "", repair_count: int = 0,
                transaction_id: str = "", node_instance_id: str = "",
-               recovery_journal: "RecoveryJournal | None" = None) -> None:
+               recovery_journal: "RecoveryJournal | None" = None,
+               execution_mode: str = "", payload_kind: str = "",
+               context_changes: List[str] | None = None) -> None:
         """Atomically commit a valid plan+prompt pair; invalid input changes nothing."""
         if expected_revision is not None and self.revision != expected_revision:
             raise ValueError(
@@ -268,8 +267,15 @@ class PromptSession(Schema):
         report = ValidationReport.from_json(validation)
         if not report.valid:
             raise ValueError("validation 未通过，不能提交 PromptSession revision")
-        if not isinstance(plan, dict) or not plan or not str(prompt or "").strip():
-            raise ValueError("plan 与 prompt 必须是非空的有效结果")
+        next_mode = execution_mode or self.execution_mode
+        next_payload = payload_kind or ("structured" if plan else "freeform")
+        if next_mode not in {"lenient", "strict"}:
+            raise ValueError("execution_mode 必须是 lenient 或 strict")
+        if next_payload not in {"freeform", "structured"}:
+            raise ValueError("payload_kind 必须是 freeform 或 structured")
+        if (not isinstance(plan, dict) or not str(prompt or "").strip()
+                or (next_payload == "structured" and not plan)):
+            raise ValueError("structured 需要非空 plan；所有提交都需要非空 prompt")
         staged = copy.deepcopy(self)
         next_fingerprints = (SessionFingerprints.from_json(fingerprints)
                              if fingerprints is not None
@@ -284,7 +290,8 @@ class PromptSession(Schema):
             plan=copy.deepcopy(plan), prompt=str(prompt),
             validation=copy.deepcopy(report), user_instruction=user_instruction,
             change_summary=change_summary, message_id=message_id,
-            transaction_id=transaction_id, event_source=event_source,
+            transaction_id=transaction_id, execution_mode=next_mode,
+            payload_kind=next_payload, event_source=event_source,
             repair_count=repair_count,
             requested_paths=list(requested_paths or []),
             dependent_paths=list(dependent_paths or []),
@@ -292,10 +299,13 @@ class PromptSession(Schema):
             renderer_signature=renderer_signature,
             model_core_hash=next_fingerprints.model_core_hash,
             source_hashes=copy.deepcopy(next_fingerprints.source_hashes),
-            skill_hashes=copy.deepcopy(next_fingerprints.skill_hashes))
+            skill_hashes=copy.deepcopy(next_fingerprints.skill_hashes),
+            context_changes=list(context_changes or []))
         staged.current_plan = copy.deepcopy(snapshot.plan)
         staged.current_prompt = snapshot.prompt
         staged.validation = copy.deepcopy(report)
+        staged.execution_mode = next_mode
+        staged.current_payload_kind = next_payload
         staged.revision = new_revision
         staged.revisions.append(snapshot)
         staged.revisions = staged.revisions[-MAX_REVISIONS:]
@@ -332,7 +342,10 @@ class PromptSession(Schema):
             expected_revision=self.revision,
             message_id=f"restore:{source.revision}:{self.revision + 1}",
             parent_revision=source.revision, event_source="restore",
-            renderer_signature=source.renderer_signature)
+            renderer_signature=source.renderer_signature,
+            execution_mode=source.execution_mode,
+            payload_kind=source.payload_kind,
+            context_changes=list(source.context_changes))
         return True
 
     def revert_previous(self) -> bool:
@@ -346,14 +359,15 @@ class PromptSession(Schema):
 
     def fingerprint_mismatches(
             self, fingerprints: SessionFingerprints | Dict[str, Any]) -> List[str]:
-        if self.fingerprint_state == "legacy_unbound" and self.has_current_plan:
+        if self.fingerprint_state == "legacy_unbound" and self.has_current_state:
             return ["legacy_unbound"]
         return self.fingerprints.mismatches(
             SessionFingerprints.from_json(fingerprints))
 
     def reset(self, target_family: str = "", target_variant: str = "") -> None:
         fresh = PromptSession(target_family=target_family or self.target_family,
-                              target_variant=target_variant or self.target_variant)
+                              target_variant=target_variant or self.target_variant,
+                              execution_mode=self.execution_mode)
         for field in dataclasses.fields(self):
             if field.name != "schema_version":
                 setattr(self, field.name, copy.deepcopy(getattr(fresh, field.name)))

@@ -16,6 +16,47 @@ from aps.services.prompt_session import broad_rewrite_requested, content_fingerp
 VALID = {"valid": True, "issues": [], "checks": ["non_empty"]}
 
 
+def test_v3_defaults_to_empty_lenient_session() -> None:
+    session = PromptSession()
+    assert session.schema_version == "3.0"
+    assert session.execution_mode == "lenient"
+    assert session.current_payload_kind == "empty"
+    assert session.has_current_state is False
+
+
+def test_v2_workflow_state_resets_instead_of_becoming_editable_v3() -> None:
+    old = {
+        "schema_version": "2.0", "id": "old-session", "revision": 4,
+        "target_family": "anima", "current_prompt": "old prompt",
+        "current_plan": {"scene": "old"},
+    }
+    session = PromptSession.from_json(old)
+    assert session.schema_version == "3.0"
+    assert session.id != "old-session"
+    assert session.revision == 0
+    assert session.current_prompt == ""
+    assert session.revisions == []
+
+
+def test_freeform_commit_and_restore_share_atomic_revision_interface() -> None:
+    session = PromptSession(
+        target_family="anima", execution_mode="lenient")
+    session.commit(
+        {}, "first English prompt", VALID, "create", "created",
+        expected_revision=0, message_id="m1", payload_kind="freeform",
+        execution_mode="lenient", context_changes=["source:character_book"])
+    session.commit(
+        {}, "second English prompt", VALID, "make it warmer", "changed light",
+        expected_revision=1, message_id="m2", payload_kind="freeform",
+        execution_mode="lenient")
+    assert session.has_current_state is True
+    assert session.current_payload_kind == "freeform"
+    assert session.revisions[0].context_changes == ["source:character_book"]
+    assert session.revert_previous() is True
+    assert session.current_prompt == "first English prompt"
+    assert session.revision == 3
+
+
 def test_broad_rewrite_authority_requires_explicit_user_wording():
     assert broad_rewrite_requested("整个重新设计，不用保留旧方案") is True
     assert broad_rewrite_requested("rebuild the entire plan") is True
@@ -168,7 +209,7 @@ def test_session_history_is_bounded_without_mutating_retained_snapshots():
     assert len(restored.conversation) == MAX_CONVERSATION_MESSAGES
 
 
-def test_legacy_v1_session_migrates_to_v2_without_losing_current_state():
+def test_legacy_v1_session_resets_to_empty_v3_state():
     legacy = {
         "schema_version": "1.0", "id": "psess_legacy",
         "target_family": "anima", "target_variant": "base",
@@ -180,12 +221,12 @@ def test_legacy_v1_session_migrates_to_v2_without_losing_current_state():
                        "user_instruction": "create", "change_summary": "v1"}],
     }
     restored = PromptSession.from_json(legacy)
-    assert restored.schema_version == "2.0"
-    assert restored.current_plan == {"scene": "Tokyo"}
-    assert restored.revisions[0].revision_id
-    assert restored.revisions[0].parent_revision == 0
+    assert restored.schema_version == "3.0"
+    assert restored.current_plan == {}
+    assert restored.current_prompt == ""
+    assert restored.revisions == []
     assert restored.last_processed_message_id == ""
-    assert restored.fingerprint_state == "legacy_unbound"
+    assert restored.fingerprint_state == "bound"
 
 
 def test_source_schema_version_is_part_of_the_authoritative_fingerprint():
@@ -196,7 +237,7 @@ def test_source_schema_version_is_part_of_the_authoritative_fingerprint():
 
 def test_future_or_malformed_session_is_rejected_instead_of_silently_downgraded():
     with pytest.raises(SchemaError, match="future schema_version"):
-        PromptSession.from_json({"schema_version": "3.0", "current_plan": {}})
+        PromptSession.from_json({"schema_version": "4.0", "current_plan": {}})
     with pytest.raises(SchemaError, match=r"revisions\[0\]"):
         PromptSession.from_json({
-            "schema_version": "2.0", "revisions": ["not a revision"]})
+            "schema_version": "3.0", "revisions": ["not a revision"]})

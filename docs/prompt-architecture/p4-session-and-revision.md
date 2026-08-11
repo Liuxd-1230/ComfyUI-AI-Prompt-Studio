@@ -2,26 +2,25 @@
 
 ## Versioned Session Envelope
 
-`PromptSession` remains the compatibility name used by existing workflows, but its
-serialized envelope is now schema version `2.0`. Loading a v1 workflow migrates each
-stored snapshot to a stable revision identity and preserves the active Plan, prompt,
-validation and revision number. Unknown future Session versions and malformed
-revision entries are rejected instead of silently dropping authoritative state. The
-v2 state records the last processed message ID
-and a typed `SessionFingerprints` block.
+`PromptSession` is now schema version `3.0` and carries `execution_mode` plus an
+explicit `freeform` or `structured` payload kind. Both modes share atomic commit,
+nonce, validation, bounded history, restore, transaction identity, and Recovery
+Journal seams. A freeform revision requires a non-empty prompt but no semantic Plan;
+a structured revision requires both.
 
-A migrated v1 Session cannot reconstruct the target/source/Skill fingerprints that
-did not exist in the old workflow. It is therefore marked `legacy_unbound`: an exact
-repeat of its last user message remains a zero-call no-op, while any new instruction
-is rejected until the user explicitly starts a new Session. It is never silently
-bound to whichever inputs happen to be connected at migration time.
+ADR 0007 intentionally does not migrate v1/v2 state into editable v3 state. Loading
+either legacy envelope creates a new empty lenient Session with a new ID. This avoids
+silently treating a previously structured lineage as freeform or rebinding old
+fingerprints to current inputs. Unknown future versions and malformed v3 revisions
+remain hard schema errors.
 
 ## Immutable Revision Lineage
 
 Every successful commit creates a fresh `PromptRevision` containing `revision_id`,
 `parent_revision`, `base_revision`, Plan/prompt snapshots, validation, user message,
 requested/dependent/invalidated paths, renderer signature, and Model Core, Skill and
-source hashes. P4.1 also records `transaction_id` and the actual bounded
+source hashes. V3 adds execution mode, payload kind, and observed context changes.
+P4.1 also records `transaction_id` and the actual bounded
 `repair_count`/`repair_attempted`. Its fields and nested mapping/list snapshots are frozen after
 construction; Plan and validation inputs are deep-copied before the atomic swap.
 History is bounded to 10 revisions and chat display to 40 messages.

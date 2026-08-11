@@ -13,7 +13,7 @@
 - **Reference Analyzer**：文本锚点 / 图片特征反推，多图共识与冲突，人物来源证据，输出参考资产清单。
 - **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID。
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
-- **Persistent Prompt Studio**：Composer 与 H3 保存结构化 Current Plan；第一次自动 CREATE，后续反馈只请求 reasoned ChangeSet，经影响分析、clone、Diff Guard、渲染/协议校验后原子提交。任一阶段失败都保留 Current Plan、Current Prompt 和 revision。Session v2 保存最近 10 个不可变 revision；恢复旧版会创建新 revision，不删除历史。显式消息 nonce 防止重复 Queue 再次调用模型，target、实际 Model Core/Skill、来源对象及 H3 媒体内容指纹用于阻断静默上下文漂移。旧 v1 Session 保留结果但标记为未绑定，新修改必须显式新建会话；兼容端口 `continue_previous` 不再控制会话。ANIMA 使用 Plan Normal Form v2；旧 Session/Plan 有明确迁移路径。
+- **Persistent Prompt Studio（迁移中）**：PromptSession v3 已支持宽松 freeform 与严格 structured 两种 revision payload，共用最近 10 个不可变版本、nonce、恢复和原子提交。旧 v1/v2 Session 不再绑定到新执行语义，会从空 v3 状态重新 CREATE。当前节点替换仍在进行；双通道实际可用性以 ADR 0007 后续工作单元为准。
   REFINE 先请求紧凑 ChangeSet。用户原文明确命名、无依赖/失效/冲突的简单字段修改由 Python 直接证明并只调用一次；歧义、结构、依赖及 broad 修改才调用第二次独立审批，避免提案自己扩大授权范围。
 - **Model Prompt Composer**：ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 专用提示词；旧 Generic/SDXL/FLUX 仅保留工作流兼容。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
