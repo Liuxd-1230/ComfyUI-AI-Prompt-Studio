@@ -81,10 +81,12 @@ def test_changeset_retry_failure_logs_and_reports_bounded_raw(
 def test_strict_changeset_uses_one_declared_proposal_call() -> None:
     class Gateway:
         calls = 0
+        requests = []
 
         def generate(self, profile, api_key, req):
-            del profile, api_key, req
+            del profile, api_key
             type(self).calls += 1
+            type(self).requests.append(req)
             return LLMResult(text=json.dumps(_valid_changeset()))
 
     result = request_changeset(
@@ -92,6 +94,10 @@ def test_strict_changeset_uses_one_declared_proposal_call() -> None:
         "Change the lighting to blue hour.")
     assert result.approved_requested_paths == ["lighting"]
     assert Gateway.calls == 1
+    system = Gateway.requests[0].system
+    assert "content/characters/0/required_traits/3" in system
+    assert "Never prefix a path with current_plan" in system
+    assert "dependent_changes must be []" in system
 
 
 def test_fingerprint_error_names_only_currently_available_recovery_actions() -> None:

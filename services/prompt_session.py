@@ -208,11 +208,18 @@ def request_changeset(gateway: Any, profile: AIProfile, api_key: str,
     }
     policy = """Return one semantic ChangeSet, never a rewritten prompt or full plan.
 First identify the explicitly requested changes. Then add only directly required
-dependent changes and facts invalidated by the request. Preserve every unrelated
-field. Paths are relative to the supplied semantic plan. Use minimal_refine unless
-the user explicitly requests a broad redesign. Encode every change value as compact
-JSON in value_json; use the literal string null for delete. Every change needs a
-specific reason. Report hard conflicts instead of silently overriding them."""
+facts invalidated by the request. Preserve every unrelated field. Paths use slash
+segments relative to the supplied current_plan object. Never prefix a path with current_plan,
+model_plan, or h3_plan; never use dots or bracket notation. For example, use
+content/characters/0/required_traits/3, not current_plan.content.characters[0].required_traits.
+Use the smallest changed leaf or list item; do not replace a whole object or list merely
+to edit one value. intent_scope must contain the exact requested paths or their real
+slash-delimited parent paths, never conceptual labels such as color_adjustment.
+dependent_changes must be []: trusted Python Impact Analysis adds provable dependencies;
+put a possible consequence in invalidated_facts instead. Use minimal_refine unless the
+user explicitly requests a broad redesign. Encode every change value as compact JSON in
+value_json; use the literal string null for delete. Every change needs a specific reason.
+Report hard conflicts instead of silently overriding them."""
     sources = [
         PromptSource("runtime.semantic-session", "2.0", PromptLayer.RUNTIME,
                      "Treat the supplied plan as stable structured state.",
