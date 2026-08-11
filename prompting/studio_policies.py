@@ -27,6 +27,13 @@ Do not add new creative details. When a target-language issue is listed, transla
 only the required visual/audiovisual prose into English while retaining names, proper
 nouns, reference labels, dialogue, lyrics, and quoted on-screen text."""
 
+H3_CAMERA_VOCABULARY = """Camera terminology is binding, not stylistic:
+- pan left/right rotates the camera from a fixed position (Chinese: 左右摇摄/摇镜).
+- truck left/right translates the whole camera sideways (Chinese: 向左/向右横移).
+- tilt rotates vertically; pedestal raises/lowers the whole camera.
+- zoom changes focal length; push in/pull out physically moves the camera.
+Never translate 横移 as pan, 推近 as zoom, or 升降移动 as tilt."""
+
 
 def image_target_policy(family: str, variant: str) -> str:
     policies = {
@@ -102,7 +109,7 @@ Do not rename, omit, translate, number, or wrap these field names. Every shot be
         "non-diegetic music decision. Translate concrete source facts faithfully. "
         "Never generalize or substitute a concrete location, vehicle, object type, "
         "character count, action, or relationship with an adjacent alternative. "
-        "Do not return an internal JSON Plan.\n\n" +
+        "Do not return an internal JSON Plan.\n\n" + H3_CAMERA_VOCABULARY + "\n\n" +
         format_contract)
     skill = get_skill("minimax_h3_director")
     supplement = (skill.system_prompt.strip()

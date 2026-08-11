@@ -23,6 +23,7 @@ from ..schemas.references import ReferenceManifest
 from ..schemas.storyboard import Storyboard
 from .reference import extract_json_object
 from .json_schema import make_strict_schema
+from ..prompting.studio_policies import H3_CAMERA_VOCABULARY
 
 MODE_HINTS = {
     "T2VA": "纯文本转视频：从零构建完整视听时间线，无参考图。",
@@ -46,7 +47,8 @@ Protocol rules (official manual; violations are rejected):
 - Reference labels: <Subject N>, <Picture N>, <Video N>, <Audio N>. Picture/Video/Audio are numbered independently per type, starting at 1.
 - R2V mode: six sections in fixed order — subject_definitions: / summary: / retention_analysis: / detailed_description: / overall_soundscape: / non_diegetic_music:. The semantic body must be English; only <d> dialogue, lyrics, and on-screen text keep the source language.
 - overall_soundscape: 1-4 sentences, never repeating dialogue/lyrics/music. non_diegetic_music: 1-3 sentences of instruments/speed/dynamics only (no abstract mood words); N/A when absent.
-- Camera motion is a natural English action. Distinguish zoom/push, pan/truck, and tilt/pedestal; include amplitude and speed only when meaningful.
+- Camera motion is a natural English action; include amplitude and speed only when meaningful.
+""" + H3_CAMERA_VOCABULARY + """
 - Voiceover requires the on-screen speaker's lips to remain closed. Use <scenetrans> across cuts and <cutoff> when speech is truncated by the video end.
 - Preserve visible text verbatim inside English double quotes.
 - Retention markers: visual = fully_preserved / partially_preserved / attribute_transfer / weak_reference; audio = fully_copy / partially_copy / reference / weak_reference (weak_reference means only broad similarity in style/atmosphere retained, for both visual and audio).

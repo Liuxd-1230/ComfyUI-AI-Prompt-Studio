@@ -1,6 +1,7 @@
 """ADR 0007 MiniMax H3 Prompt Studio with lenient and strict lanes."""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
@@ -10,6 +11,7 @@ from ..prompting.studio_policies import (
     LENIENT_CREATE_POLICY,
     LENIENT_OUTPUT_CONTRACT,
     LENIENT_REFINE_POLICY,
+    H3_CAMERA_VOCABULARY,
     h3_target_policy,
 )
 from ..schemas import types
@@ -168,7 +170,8 @@ class APS_H3PromptStudio:
             storyboard, bible, book, manifest)
         parsed = parse_lenient_output(raw)
         report = _validate_lenient_h3(
-            parsed, mode, duration, manifest, image_count, source_bibles)
+            parsed, mode, duration, manifest, image_count, source_bibles,
+            instruction)
         repair_count = 0
         if parsed.kind == "protocol_garbage" or not report.valid:
             repair_count = 1
@@ -178,7 +181,8 @@ class APS_H3PromptStudio:
                 mode, duration)
             parsed = parse_lenient_output(raw)
             report = _validate_lenient_h3(
-                parsed, mode, duration, manifest, image_count, source_bibles)
+                parsed, mode, duration, manifest, image_count, source_bibles,
+                instruction)
         if parsed.kind == "protocol_garbage" or not report.valid:
             detail = report.as_text() if report.issues else "；".join(parsed.issues)
             raise ValueError(
@@ -237,7 +241,8 @@ class APS_H3PromptStudio:
             changeset = request_changeset(
                 Gateway(), profile, api_key, session, instruction,
                 {"mode": mode, "duration_seconds": duration,
-                 "image_count": image_count})
+                 "image_count": image_count,
+                 "camera_vocabulary": H3_CAMERA_VOCABULARY})
             plan = apply_changeset(
                 session, changeset, mode=mode, duration=duration,
                 manifest=manifest, image_count=image_count)
@@ -249,6 +254,9 @@ class APS_H3PromptStudio:
             report.add("error", "h3_ref2va_english",
                        "Ref2VA 语义描述必须使用英文；对白/歌词/画面文字除外")
         _append_identity_anchor_errors(report, rendered, source_bibles)
+        camera_issue = _camera_motion_intent_issue(instruction, rendered)
+        if camera_issue:
+            report.add("error", "h3_camera_motion_mismatch", camera_issue)
         if not report.valid:
             raise ValueError("H3 严格模式校验未通过；上一版保持不变：\n" + report.as_text())
         bundle = {"h3_plan": plan.to_json(),
@@ -401,7 +409,7 @@ def _h3_task_sources(
 def _validate_lenient_h3(
         parsed: LenientPromptOutput, mode: str, duration: float,
         manifest: ReferenceManifest, image_count: int,
-        source_bibles: list[CharacterBible]) -> ValidationReport:
+        source_bibles: list[CharacterBible], instruction: str) -> ValidationReport:
     if parsed.kind == "protocol_garbage" or not parsed.prompt.strip():
         report = ValidationReport()
         report.add("error", "lenient_protocol_garbage",
@@ -416,7 +424,22 @@ def _validate_lenient_h3(
         report.add("error", "h3_ref2va_english",
                    "Ref2VA 语义描述必须使用英文；对白/歌词/画面文字除外")
     _append_identity_anchor_errors(report, parsed.prompt, source_bibles)
+    camera_issue = _camera_motion_intent_issue(instruction, parsed.prompt)
+    if camera_issue:
+        report.add("error", "h3_camera_motion_mismatch", camera_issue)
     return report
+
+
+def _camera_motion_intent_issue(instruction: str, prompt: str) -> str:
+    """Reject the common pan/truck mistranslation when intent is explicit."""
+    requested = str(instruction or "")
+    rendered = str(prompt or "").lower()
+    if "横移" in requested and re.search(r"\bpan(?:s|ning|ned)?\b", rendered):
+        return "用户要求横移（truck/sideways translation），输出却使用 pan（固定机位摇摄）"
+    if any(token in requested for token in ("摇摄", "摇镜")) and re.search(
+            r"\btruck(?:s|ing|ed)?\b", rendered):
+        return "用户要求摇摄（pan/rotation），输出却使用 truck（整机横移）"
+    return ""
 
 
 def _source_bibles(
