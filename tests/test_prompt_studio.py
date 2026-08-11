@@ -33,6 +33,7 @@ def test_prompt_studio_public_interface_has_no_operation_or_plan_ports() -> None
     assert studio_mod.APS_PromptStudio.RETURN_NAMES == (
         "positive", "negative", "prompt_session", "validation",
         "change_summary")
+    assert studio_mod.APS_PromptStudio.OUTPUT_NODE is True
 
 
 def test_lenient_create_and_refine_commit_freeform_revisions(

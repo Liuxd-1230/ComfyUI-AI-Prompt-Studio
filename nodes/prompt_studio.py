@@ -118,6 +118,7 @@ class APS_PromptStudio:
                     "change_summary")
     FUNCTION = "run"
     CATEGORY = "AI Prompt Studio"
+    OUTPUT_NODE = True
     DESCRIPTION = "默认宽松、可选严格的持续图像提示词工作台。"
 
     def run(self, AI_PROFILE: Any, text: str, target: str,

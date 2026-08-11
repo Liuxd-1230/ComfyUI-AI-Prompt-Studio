@@ -81,6 +81,7 @@ class APS_H3PromptStudio:
                     "validation", "change_summary")
     FUNCTION = "run"
     CATEGORY = "AI Prompt Studio"
+    OUTPUT_NODE = True
     DESCRIPTION = "默认宽松、可选严格的持续 MiniMax H3 提示词工作台。"
 
     def run(self, AI_PROFILE: Any, text: str, mode: str, duration: float,

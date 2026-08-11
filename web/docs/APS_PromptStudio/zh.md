@@ -2,6 +2,7 @@
 
 用同一个节点创建提示词并继续用自然语言修改。第一次执行是 CREATE；成功保存
 `prompt_session` 后，后续执行自动成为 REFINE，不需要选择 operation。
+节点本身是输出节点，可以单独 Queue 检查提示词和 validation，不必连接生成模型。
 
 ## 输入
 

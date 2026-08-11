@@ -59,6 +59,7 @@ def test_h3_studio_public_interface_removes_operation_and_plan_port() -> None:
     assert studio_mod.APS_H3PromptStudio.RETURN_NAMES == (
         "prompt", "prompt_session", "REFERENCE_MANIFEST", "validation",
         "change_summary")
+    assert studio_mod.APS_H3PromptStudio.OUTPUT_NODE is True
 
 
 def test_h3_lenient_create_and_refine_commit_freeform(monkeypatch, store) -> None:
