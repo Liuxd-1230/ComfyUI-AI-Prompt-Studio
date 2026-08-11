@@ -4,7 +4,7 @@ from .character_bible import APS_CharacterBible
 from .llm_chat import APS_LLMGenerate
 from .minimax_h3_director import APS_MiniMaxH3Director
 from .model_profile import APS_ModelProfile
-from .prompt_composer import APS_PromptComposer
+from .prompt_studio import APS_PromptStudio
 from .reference_analyzer import APS_ReferenceAnalyzer
 from .reference_prompt import APS_ReferencePrompt
 from .runtime_control import APS_RuntimeControl
@@ -20,7 +20,7 @@ NODE_CLASSES = [
     APS_CharacterBible,
     APS_StoryboardBuilder,
     APS_StoryboardSelect,
-    APS_PromptComposer,
+    APS_PromptStudio,
     APS_MiniMaxH3Director,
     APS_RuntimeControl,
     APS_UnloadModel,

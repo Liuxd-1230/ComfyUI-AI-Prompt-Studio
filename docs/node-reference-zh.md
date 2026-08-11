@@ -40,11 +40,11 @@
 
 输入：`storyboard`；`select_mode` 选择 scene/shot/range/all；`scene_id` 可填 `1`、`scene_01`、`场景1` 或结构中的真实 ID，`shot_id` 可填扁平序号、`shot_01`、`镜头1` 或真实 ID；`range` 用 `1-3` 等扁平镜头序号范围。输出 `STORY_ITEM` 单项；`STORY_ITEM_LIST` 容器；`scene_text` 可读文本；`character_ids`；`batch_count`；`STORY_ITEMS` 是 ComfyUI 真列表输出，可驱动列表感知节点。
 
-## APS_PromptComposer · 模型提示词编排
+## APS_PromptStudio · 图像提示词工作台
 
-输入：`AI_PROFILE`；`text` 第一次写构想、之后写最新反馈；`target` 选择目标模型；`prompt_mode` 控制标签或自然语言形态；`negative` 覆盖负面词；`safety_tag` 仅按用户明确选择添加。`prompt_session`、`session_action` 负责 workflow 持久化和恢复/新会话；恢复旧版会创建新 revision，不删除历史。`continue_previous` 只保留旧端口位置，新工作台不显示或依赖它，重新开始必须显式选择新会话。`message_nonce` 由前端自动生成，用来阻止重复 Queue 再处理同一消息。`operation` 仅保留旧工作流兼容，新 UI 隐藏。可选端口接分镜项、人物档案/集合、参考清单、自定义 `skill`、`lora_triggers` 和旧 `content_tier`。
+输入：`AI_PROFILE`；`text` 第一次写完整要求、之后只写最新修改；`target` 选择 ANIMA、Z-Image、Qwen Edit 或 Generic；`execution_mode` 默认 `lenient`，也可选 `strict`；`session_action` 控制继续、恢复或新会话。可选 `story_item`、`character_bible`、`character_book`、`reference_manifest` 提供当前权威上下文；`prompt_session` 与 `message_nonce` 由前端自动维护。
 
-输出：`positive/negative` 直接接下游文本编码；`PROMPT_PLAN` 是结构化中间计划；`GENERATION_PROFILE` 给出步数/CFG 等建议；`validation` 有 error 时不要继续生成。
+输出：`positive` / `negative` 直接接下游；`prompt_session` 保存最近 10 个成功 revision；`validation` 显示硬检查和警告；`change_summary` 说明本轮结果。内部 Plan 不再作为公开端口。
 
 ## APS_MiniMaxH3Director · H3 导演
 
@@ -69,9 +69,9 @@
 ```text
 ModelProfile.AI_PROFILE ─┬→ LLMGenerate.AI_PROFILE
                          ├→ StoryboardBuilder.AI_PROFILE
-                         └→ PromptComposer.AI_PROFILE
+                         └→ PromptStudio.AI_PROFILE
 
 StoryboardBuilder.STORYBOARD → StoryboardSelect.storyboard
-StoryboardSelect.STORY_ITEM   → PromptComposer.story_item
-PromptComposer.positive       → UnloadModel.prompt → 下游模型 prompt
+StoryboardSelect.STORY_ITEM   → PromptStudio.story_item
+PromptStudio.positive         → UnloadModel.prompt → 下游模型 prompt
 ```

@@ -3,7 +3,7 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
-const TARGETS = new Set(["APS_PromptComposer", "APS_MiniMaxH3Director"]);
+const TARGETS = new Set(["APS_PromptStudio", "APS_MiniMaxH3Director"]);
 const byName = (node, name) => (node.widgets || []).find((widget) => widget.name === name);
 const newMessageNonce = () => globalThis.crypto?.randomUUID?.()
   || `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -92,7 +92,9 @@ function renderSession(node, root, session = parseSession(node), message = null)
     `v${message?.revision?.[0] ?? session.revision ?? 0}`;
   const summary = root.querySelector(".aps-studio-summary");
   summary.classList.remove("is-error");
-  summary.textContent = message?.change_summary?.[0] || "";
+  const change = message?.change_summary?.[0] || "";
+  const validation = message?.validation?.[0] || "";
+  summary.textContent = [change, validation].filter(Boolean).join("\n");
 }
 
 function attachStudio(node) {

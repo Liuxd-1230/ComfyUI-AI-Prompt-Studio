@@ -4,7 +4,7 @@ import pytest
 EXPECTED_NODES = [
     "APS_ModelProfile", "APS_LLMGenerate", "APS_ReferenceAnalyzer",
     "APS_CharacterBible", "APS_StoryboardBuilder", "APS_StoryboardSelect",
-    "APS_PromptComposer", "APS_ReferencePrompt", "APS_MiniMaxH3Director", "APS_RuntimeControl",
+    "APS_PromptStudio", "APS_ReferencePrompt", "APS_MiniMaxH3Director", "APS_RuntimeControl",
     "APS_UnloadModel",
 ]
 

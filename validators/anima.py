@@ -109,3 +109,21 @@ def validate_anima(positive: str, negative: str = "",
             report.add("warning", "anima_negative_core",
                        f"负面提示词缺少核心项 {core!r}")
     return report
+
+
+def anima_english_issue(prompt: str,
+                        allowed_terms: List[str] | None = None) -> str:
+    """Return a readable issue when ANIMA visual prose is materially non-English."""
+    prose = str(prompt or "")
+    # Quoted on-screen text is explicitly allowed to retain its source language.
+    prose = re.sub(r'["“”「」『』].*?["“”「」『』]', " ", prose, flags=re.DOTALL)
+    for term in sorted((str(item).strip() for item in (allowed_terms or [])
+                        if str(item).strip()), key=len, reverse=True):
+        prose = re.sub(re.escape(term), " ", prose, flags=re.IGNORECASE)
+    prose = re.sub(r"(?:Figure\s+\d+|<Picture\s+\d+>|@图\d+)", " ", prose,
+                   flags=re.IGNORECASE)
+    latin = len(re.findall(r"[A-Za-z]", prose))
+    cjk = len(re.findall(r"[\u3400-\u9fff]", prose))
+    if cjk >= 3 and (latin < 12 or cjk / max(1, latin + cjk) > 0.12):
+        return "ANIMA 视觉描述必须以英语输出（人名、专名、引用标签和引号内画面文字除外）"
+    return ""

@@ -13,9 +13,7 @@
 - **Reference Analyzer**：文本锚点 / 图片特征反推，多图共识与冲突，人物来源证据，输出参考资产清单。
 - **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID。
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
-- **Persistent Prompt Studio（迁移中）**：PromptSession v3 已支持宽松 freeform 与严格 structured 两种 revision payload，共用最近 10 个不可变版本、nonce、恢复和原子提交。旧 v1/v2 Session 不再绑定到新执行语义，会从空 v3 状态重新 CREATE。当前节点替换仍在进行；双通道实际可用性以 ADR 0007 后续工作单元为准。
-  REFINE 先请求紧凑 ChangeSet。用户原文明确命名、无依赖/失效/冲突的简单字段修改由 Python 直接证明并只调用一次；歧义、结构、依赖及 broad 修改才调用第二次独立审批，避免提案自己扩大授权范围。
-- **Model Prompt Composer**：ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 专用提示词；旧 Generic/SDXL/FLUX 仅保留工作流兼容。
+- **Image Prompt Studio**：`APS_PromptStudio` 覆盖 ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 与 Generic Image。默认 `lenient` 直接维护完整提示词，适合本地小模型；`strict` 使用结构化 Plan、ChangeSet、Diff Guard 与原子 revision。两种模式都自动从 Session 判断 CREATE/REFINE，不再提供 operation 下拉。旧 v1/v2 Session 会重置为空 v3；最近保留 10 个成功版本。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
 - **MiniMax H3 Prompt Director**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（另保留旧 R2V 别名），支持图片、视频和音频参考；LLM 产出结构化计划 + Python 确定性渲染 + 规则校验 + 修复循环。
 - **结构化输出容错**：H3 CREATE Plan 或 Studio REFINE ChangeSet 首次出现非 JSON、重复路径或缺少授权范围时，会在不修改当前 revision 的前提下最多重试一次；仍失败会显示并记录截断的模型原始输出，便于区分 provider 降级、截断和格式漂移。
@@ -45,12 +43,12 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 2. 新建档案，选择 provider、API 根地址和模型，保存后填写 API Key（只保存在本机 `user/ai_prompt_studio/secrets.json`）。先点“测试连接”，再点“重新探测”。
 3. “重新探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。
 4. 在节点图中放置 **AI Model Profile**，直接从“档案名称 [ID]”和该档案的模型目录下拉选择。
-5. 放置 **MiniMax H3 Prompt Director**（或 **Model Prompt Composer**），连接 `AI_PROFILE`，填第一次需求并运行；看到真实结果后，在同一节点填本轮修改意见再运行，系统会只修改 Current Plan 的必要部分。
+5. 图像提示词放置 **Image Prompt Studio**；H3 暂用 **MiniMax H3 Prompt Director**（双通道替换进行中）。连接 `AI_PROFILE`，第一次填完整要求；成功后只填本轮修改意见。小型本地模型优先用 `lenient`，需要结构化变更审计时再选 `strict`。
 6. H3：把 `prompt`（STRING）接到 H3 生成节点；图像模型：把 `positive` / `negative` 接到采样链路。
 
 示例工作流见 [`examples/`](examples/)：
 - `h3_full_chain.json` — H3 全链路（Profile → H3 Director → STRING）
-- `anima_full_chain.json` — ANIMA 全链路（Profile → Storyboard → Select → Composer）
+- `anima_full_chain.json` — ANIMA 全链路（Profile → Storyboard → Select → Prompt Studio）
 - `aps_usage_showcase.json` — Z-Image、Qwen 图片引用和 LLM 生成后卸载
 
 示例均不含密钥。

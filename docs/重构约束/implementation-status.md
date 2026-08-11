@@ -1,10 +1,10 @@
 # Persistent Contract Implementation Status
 
 > **ADR 0007 transition:** the 2026-08-11 dual-lane amendments are binding, but the
-> runtime is not fully migrated until the corresponding work units land. PromptSession
-> v3 and the lenient protocol parser are implemented and tested, but the repository
-> still registers the legacy Composer/Director; do not describe the new Studios as
-> available yet.
+> runtime is not fully migrated until both Studio work units land. PromptSession v3,
+> the lenient protocol parser, and the registered `APS_PromptStudio` image node are
+> implemented and tested. H3 still registers the legacy Director, so the H3 dual-lane
+> Studio must not yet be described as available.
 
 This table tracks the binding Persistent contract §108 at the current HEAD.
 “Partial” means the invariant has an executable base but the named end-to-end
@@ -49,9 +49,9 @@ work and are intentionally reported as unfinished.
 
 ## Known Phase Gaps Outside §108
 
-- `PlanAdapter` currently owns typed load/normalize/context/clone/dump only. The
-  complete §13/§109 propose/validate/apply/render/protocol/repair façade and dedicated
-  Studio nodes are not implemented; Composer/H3 remain compatibility facades.
+- Image Studio uses typed adapters, ChangeSet transactions, renderers and validators
+  end to end; the obsolete Composer is no longer registered. H3 remains on its
+  transitional Director until the next ADR 0007 work unit.
 - Recovery Journal has a tested clean interface but is not connected to durable
   backend storage or frontend recovery prompts.
 - Automatic fingerprint Rebase/target migration is not implemented; mismatches

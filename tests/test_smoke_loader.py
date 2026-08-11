@@ -18,7 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 EXPECTED_NODES = [
     "APS_ModelProfile", "APS_LLMGenerate", "APS_ReferenceAnalyzer",
     "APS_CharacterBible", "APS_StoryboardBuilder", "APS_StoryboardSelect",
-    "APS_PromptComposer", "APS_ReferencePrompt", "APS_MiniMaxH3Director", "APS_RuntimeControl",
+    "APS_PromptStudio", "APS_ReferencePrompt", "APS_MiniMaxH3Director", "APS_RuntimeControl",
     "APS_UnloadModel",
 ]
 
@@ -142,13 +142,15 @@ def test_binding_refactor_contracts_are_present_and_referenced():
         assert name in agents, f"AGENTS.md 未强制引用重构约束：{name}"
 
 
-def test_session_widgets_are_appended_after_legacy_serialized_widgets(loaded):
-    """旧 workflow 的 widget_values 是位置数组；新字段只能追加，不能插队。"""
+def test_studio_session_widgets_follow_public_inputs(loaded):
+    """ADR 0007 removes image legacy widgets and keeps explicit v3 state."""
     module, _, _ = loaded
-    composer = list(module.NODE_CLASS_MAPPINGS["APS_PromptComposer"].INPUT_TYPES()["optional"])
-    assert composer.index("content_tier") < composer.index("continue_previous")
-    assert composer[-4:] == ["continue_previous", "prompt_session", "session_action",
-                             "message_nonce"]
+    composer_inputs = module.NODE_CLASS_MAPPINGS["APS_PromptStudio"].INPUT_TYPES()
+    assert "operation" not in composer_inputs["required"] | composer_inputs["optional"]
+    assert list(composer_inputs["required"])[-2:] == [
+        "execution_mode", "session_action"]
+    assert list(composer_inputs["optional"])[-2:] == [
+        "prompt_session", "message_nonce"]
     h3 = list(module.NODE_CLASS_MAPPINGS["APS_MiniMaxH3Director"].INPUT_TYPES()["optional"])
     assert h3[-4:] == ["continue_previous", "prompt_session", "session_action",
                        "message_nonce"]

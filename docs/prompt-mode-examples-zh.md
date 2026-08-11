@@ -52,11 +52,16 @@
 
 示例输入：`雨夜，铃冲进空车站寻找即将离开的朋友；广播响起，她在末班车关门前看见对方。` 不要在这里写 ANIMA 标签或 H3 六段格式。
 
-## Prompt Composer target
+## Image Prompt Studio
+
+`execution_mode=lenient` 期待模型返回 `<PROMPT>完整目标提示词</PROMPT>` 与
+`<SUMMARY>简短摘要</SUMMARY>`；适合普通创建和反复修改。`strict` 的 CREATE 使用
+结构化 Plan，REFINE 使用 ChangeSet，适合需要字段级变更审计的任务。两者都不再使用
+operation；Session 为空时创建，已有成功 Session 时修改。
 
 ### ANIMA Base / Aesthetic / Turbo
 
-ANIMA 最终提示词使用英文。中文可以作为 Composer 输入，但 `generate`（natural/hybrid）、`expand`、`rewrite` 与 `repair` 的 Skill 必须把视觉描述字段转换为英文；角色名、专有名词和画面内文字允许保留原文。`tags` 的确定性路径不会调用翻译模型，因此应直接输入英文 Danbooru/Gelbooru 风格标签。
+ANIMA 最终视觉提示词使用英文。中文可以作为 `text` 输入；两种执行模式都会检查最终视觉正文。角色名、专有名词、引用标签和引号内画面文字允许保留原文。
 
 原始构想：`红发少女在雨夜车站回头，看见远处驶来的列车。`
 
@@ -73,7 +78,7 @@ ANIMA 最终提示词使用英文。中文可以作为 Composer 输入，但 `ge
 一名红色短发少女站在雨夜的旧式火车站月台中央，镜头略低于眼平，湿地反射暖黄色车灯；她刚刚回头，外套和发梢被风吹起。画面强调冷暖对比、真实雨丝和清晰面部。
 ```
 
-输出应是连贯长描述；负面词为空；`GENERATION_PROFILE` 建议 9 步、CFG 0。
+输出应是连贯长描述，负面词为空。采样侧建议 9 步、CFG 0。
 
 ### Qwen-Image-Edit-2511
 
@@ -85,21 +90,9 @@ ANIMA 最终提示词使用英文。中文可以作为 Composer 输入，但 `ge
 
 先用 `APS_ReferencePrompt` 把 `@图1/@图2` 转成 `Figure 1/Figure 2` 并连接同一份 Manifest。不要写摄影散文替代编辑动作。
 
-### Generic / custom_skill
+### Generic
 
-`generic_image` 接受普通自然语言；`custom_skill` 的期待格式由 Skill 的 `target_family/renderer/system_prompt` 决定。自定义 Skill 必须在设置工作台中启用。
-
-## Prompt Composer operation
-
-| 模式 | 输入应是什么 | 结果 |
-|---|---|---|
-| `generate` | 简短构想/分镜 | 按目标模型生成提示词 |
-| `expand` | 已有但细节不足的提示词 | 增加构图、光照、材质等，不换主题 |
-| `rewrite` | 需要重写表达的提示词 | 保留意图，重组语言 |
-| `translate` | 已完成提示词 | 翻译，不主动扩写情节 |
-| `audit` | 已完成提示词 | 离线检查，绝不改写 |
-| `repair` | 校验失败的提示词 | 只修报告中的问题 |
-| `convert` | 一种格式的成品 | 确定性转换到目标 renderer；不支持时明确报错 |
+`generic_image` 接受普通自然语言。第一次描述完整画面；后续直接写“只把光线改成冷色，人物和构图不变”一类修改意见。
 
 ## MiniMax H3 mode
 

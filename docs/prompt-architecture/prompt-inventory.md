@@ -12,6 +12,10 @@ This inventory is the P0 baseline for every path that can send instructions or t
 | `reference.identity` | `nodes/reference_analyzer.py` | Decide whether images share identity | none at caller | `IDENTITY_COMPARISON_PROMPT`, images | prompt-described JSON | `VisionService.call_vision` |
 | `storyboard.create` | `nodes/storyboard_builder.py` | Build model-neutral storyboard | storyboard role | split/style constraints, CharacterBook/Bible, manifest, story | `STORYBOARD_SCHEMA` | `Gateway.generate` |
 | `composer.render` | `nodes/prompt_composer.py` | Generate/expand/rewrite/translate/repair image prompts | selected Skill; transitional create policy | prompt, book, references, repair issues | family-specific JSON | `Gateway.generate` |
+| `studio.image` | `nodes/prompt_studio.py` | Own all image Studio model calls across the two lanes | lightweight/strict runtime boundary plus target and operation policies | latest instruction, current prompt or Plan, and current connected sources | lenient envelope, strict Plan, or ChangeSet | `Gateway.generate` |
+| `studio.image.lenient` | `nodes/prompt_studio.py` | Create/refine one complete image prompt | lightweight envelope + target policy + create/refine policy | latest instruction, current prompt, current connected sources | `<PROMPT>/<SUMMARY>` | `Gateway.generate` |
+| `studio.image.repair` | `nodes/prompt_studio.py` | One content-preserving lenient protocol repair | envelope + target policy + format-repair policy | rejected output and concrete deterministic issues | `<PROMPT>/<SUMMARY>` | `Gateway.generate` |
+| `studio.image.strict-create` | `nodes/prompt_studio.py` | Create typed image semantic state | strict state boundary + target policy | latest instruction and current connected sources | family-specific `ImageSemanticPlan` schema | `Gateway.generate` |
 | `session.changeset` | `services/prompt_session.py` | Canonical semantic REFINE proposal | minimum-consistent-change policy | editable semantic plan, locked paths, latest request, revision | `CHANGESET_SCHEMA` | injected `Gateway.generate` |
 | `session.impact` | `services/prompt_session.py` | Approve ambiguous requested/dependent paths | intent grounding + impact approval policy | current semantic plan, latest request, runtime constraints, proposed ChangeSet | `CHANGE_AUTHORIZATION_SCHEMA` | conditional second Gateway call; directly named simple leaf edits are proven in Python |
 | `semantic.critic` | `domain/gateway_critic.py` | Audit only high-risk transaction candidates | semantic consistency policy; anti-realism-policing boundary | affected before/after slice, adjacent shots, proposed ChangeSet, locked values | `CRITIC_SCHEMA` | injected `Gateway.generate`; never mutates Plan |
@@ -24,11 +28,13 @@ This inventory is the P0 baseline for every path that can send instructions or t
 
 `services/gateway.py`, `services/adapters/chat_adapter.py`, and `services/adapters/responses_adapter.py` may add schema fallbacks, untrusted-search guards, tool results, and attachment content. They own protocol encoding only. They must not acquire target-model prompting rules.
 
-## Remaining Compatibility Boundaries
+## Remaining Transition Boundaries
 
 - `services/h3_plan.py` and `skills/minimax_h3/director.yaml` still state overlapping H3 protocol guidance; the Model Core migration must leave one immutable owner.
 - ANIMA model rules and operation behavior are mixed across `skills/anima_*.yaml`, `renderers/anima.py`, and validators.
 - Some legacy Skill files still combine Model Core and operation policy in one `system_prompt`.
+- `nodes/prompt_composer.py` is no longer registered; its source remains only until
+  the ADR 0007 H3 replacement and final obsolete-test cleanup work unit.
 
 ## Inventory Gate
 

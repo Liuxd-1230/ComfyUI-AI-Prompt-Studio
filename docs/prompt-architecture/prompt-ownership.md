@@ -21,7 +21,10 @@ Prompt content has one authoritative owner per semantic layer. Rendered request 
 
 ## Compatibility Boundary
 
-`APS_PromptComposer` and `APS_MiniMaxH3Director` remain one-shot public facades. Their class names, widget order, required input names, return types, and workflow JSON compatibility are frozen unless a migration is supplied. Stateful Studio nodes are separate consumers of the same adapters, renderers, and validators; they do not call a one-shot node internally.
+ADR 0007 intentionally breaks the former frozen facade rule for the only current
+user. `APS_PromptStudio` is now the public image owner and does not call the obsolete
+Composer internally. `APS_MiniMaxH3Director` remains transitional until the matching
+H3 Studio work unit lands.
 
 Composer and H3 Director now delegate persistent REFINE to the canonical semantic
 transaction. The old root-oriented patch helpers remain callable only for pre-P2

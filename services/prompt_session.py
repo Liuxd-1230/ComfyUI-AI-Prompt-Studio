@@ -79,13 +79,15 @@ class NodeExecutionResult(dict[str, Any]):
 
 def node_execution_result(result: tuple[Any, ...], session_json: str,
                           current_prompt: str, change_summary: str,
-                          revision: int) -> NodeExecutionResult:
+                          revision: int,
+                          validation_text: str = "") -> NodeExecutionResult:
     return NodeExecutionResult(
         result=result,
         ui={"prompt_session": [session_json],
             "current_prompt": [current_prompt],
             "change_summary": [change_summary],
-            "revision": [str(revision)]},
+            "revision": [str(revision)],
+            "validation": [validation_text]},
     )
 
 
@@ -201,7 +203,8 @@ def assert_session_fingerprints(session: PromptSession,
 
 def request_changeset(gateway: Any, profile: AIProfile, api_key: str,
                       session: PromptSession, feedback: str,
-                      runtime_constraints: dict[str, Any] | None = None) -> ChangeSet:
+                      runtime_constraints: dict[str, Any] | None = None, *,
+                      independent_authorization: bool = True) -> ChangeSet:
     """Request and decode the canonical P2 semantic ChangeSet contract."""
     import json
 
@@ -320,7 +323,15 @@ specific reason. Report hard conflicts instead of silently overriding them."""
     if changeset is None:
         raise ValueError(protocol_failure_message(
             "REFINE ChangeSet", last_raw_text, last_issues))
-    if not _deterministically_authorize_direct_request(changeset, feedback):
+    if not independent_authorization:
+        # ADR 0007 strict lane uses the declared ChangeSet as mutation authority.
+        # Diff Guard, locked paths, deterministic dependency closure and final
+        # validation still constrain the actual candidate. Model-proposed
+        # dependencies are deliberately not auto-authorized.
+        changeset.approved_requested_paths = [
+            item.path for item in changeset.requested_changes]
+        changeset.approved_dependent_paths = []
+    elif not _deterministically_authorize_direct_request(changeset, feedback):
         _authorize_changeset_impacts(
             gateway, profile, api_key, session, feedback, changeset,
             runtime_constraints=runtime_constraints)
