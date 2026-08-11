@@ -146,6 +146,7 @@ def test_h3_lenient_failure_exposes_bounded_raw_and_exact_format_contract(
         assert "overall_soundscape:" in request.system
         assert "non_diegetic_music:" in request.system
         assert "Never generalize or substitute a concrete location" in request.system
+        assert "Distinguish zoom from push, pan from truck" in request.system
 
 
 def test_h3_strict_validator_failure_does_not_creatively_repair(

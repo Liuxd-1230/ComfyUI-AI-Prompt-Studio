@@ -62,6 +62,8 @@ def image_target_policy(family: str, variant: str) -> str:
 
 
 def h3_target_policy(mode: str, duration: float) -> str:
+    from ..services.skills import get_skill
+
     if mode == "Ref2VA":
         format_contract = """Use exactly these six headings in this order:
 subject_definitions:
@@ -90,7 +92,7 @@ overall_soundscape: concrete full-video ambience, or N/A only for explicit compl
 non_diegetic_music: concrete instrumentation/tempo/dynamics, or N/A when absent
 Do not rename, omit, translate, number, or wrap these field names. Every shot begins with
 [Shot N]; Shot 1 has no timestamp and later shots use At MM:SS.mmm."""
-    return (
+    hard_policy = (
         "Write one complete MiniMax H3 target prompt in the official rendered text "
         f"format. Mode: {mode}. Duration: {float(duration):.2f} seconds. Preserve "
         "dialogue, lyrics, and visible text verbatim in their source language; write "
@@ -102,3 +104,8 @@ Do not rename, omit, translate, number, or wrap these field names. Every shot be
         "character count, action, or relationship with an adjacent alternative. "
         "Do not return an internal JSON Plan.\n\n" +
         format_contract)
+    skill = get_skill("minimax_h3_director")
+    supplement = (skill.system_prompt.strip()
+                  if skill is not None and skill.system_prompt.strip() else "")
+    return hard_policy + ("\n\n[Editable H3 target strategy]\n" + supplement
+                          if supplement else "")

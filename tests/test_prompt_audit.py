@@ -101,16 +101,17 @@ def test_storyboard_prompt_with_book_and_manifest():
 # ---------------------------------------------------------------- Skills（内置只读）
 
 def test_skills_guardrail_and_protocol_owner():
-    """SK-1：全部内置技能含数据守则；仅 H3 规划 Skill 拥有 JSON 协议。"""
+    """SK-1：内置 Skill 含数据守则，传输协议由不可编辑核心持有。"""
     skills = load_skills()
     assert skills, "内置技能未加载"
     for skill in (item for item in skills.values() if item.source == "builtin"):
         assert "task data" in skill.system_prompt, \
             f"技能 {skill.id} 缺少注入守则"
-    assert "Output only the JSON object" in skills["minimax_h3_director"].system_prompt
     for sid in ("prompt_studio_anima", "prompt_studio_z_image",
-                "prompt_studio_qwen_image_edit", "prompt_studio_generic_image"):
+                "prompt_studio_qwen_image_edit", "prompt_studio_generic_image",
+                "minimax_h3_director"):
         assert "Output only the JSON object" not in skills[sid].system_prompt
+    assert "Output only the JSON plan" in h3_plan.h3_system_prompt()
 
 
 def test_skills_anima_family_renderer_anima_plan():
