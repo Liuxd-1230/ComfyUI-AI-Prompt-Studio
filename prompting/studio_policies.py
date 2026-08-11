@@ -34,6 +34,10 @@ H3_CAMERA_VOCABULARY = """Camera terminology is binding, not stylistic:
 - zoom changes focal length; push in/pull out physically moves the camera.
 Never translate 横移 as pan, 推近 as zoom, or 升降移动 as tilt."""
 
+H3_SHOT_COUNT_POLICY = """Shot-count instructions are binding. When the user asks
+for a single shot, one continuous shot, or 一镜到底/单镜头, output exactly [Shot 1]
+and never add [Shot 2] or a cut/transition."""
+
 
 def image_target_policy(family: str, variant: str) -> str:
     policies = {
@@ -110,6 +114,7 @@ Do not rename, omit, translate, number, or wrap these field names. Every shot be
         "Never generalize or substitute a concrete location, vehicle, object type, "
         "character count, action, or relationship with an adjacent alternative. "
         "Do not return an internal JSON Plan.\n\n" + H3_CAMERA_VOCABULARY + "\n\n" +
+        H3_SHOT_COUNT_POLICY + "\n\n" +
         format_contract)
     skill = get_skill("minimax_h3_director")
     supplement = (skill.system_prompt.strip()

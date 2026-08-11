@@ -12,6 +12,7 @@ from ..prompting.studio_policies import (
     LENIENT_OUTPUT_CONTRACT,
     LENIENT_REFINE_POLICY,
     H3_CAMERA_VOCABULARY,
+    H3_SHOT_COUNT_POLICY,
     h3_target_policy,
 )
 from ..schemas import types
@@ -242,7 +243,8 @@ class APS_H3PromptStudio:
                 Gateway(), profile, api_key, session, instruction,
                 {"mode": mode, "duration_seconds": duration,
                  "image_count": image_count,
-                 "camera_vocabulary": H3_CAMERA_VOCABULARY})
+                 "camera_vocabulary": H3_CAMERA_VOCABULARY,
+                 "shot_count_policy": H3_SHOT_COUNT_POLICY})
             plan = apply_changeset(
                 session, changeset, mode=mode, duration=duration,
                 manifest=manifest, image_count=image_count)
@@ -257,6 +259,9 @@ class APS_H3PromptStudio:
         camera_issue = _camera_motion_intent_issue(instruction, rendered)
         if camera_issue:
             report.add("error", "h3_camera_motion_mismatch", camera_issue)
+        shot_count_issue = _shot_count_intent_issue(instruction, rendered)
+        if shot_count_issue:
+            report.add("error", "h3_shot_count_mismatch", shot_count_issue)
         if not report.valid:
             raise ValueError("H3 严格模式校验未通过；上一版保持不变：\n" + report.as_text())
         bundle = {"h3_plan": plan.to_json(),
@@ -427,6 +432,9 @@ def _validate_lenient_h3(
     camera_issue = _camera_motion_intent_issue(instruction, parsed.prompt)
     if camera_issue:
         report.add("error", "h3_camera_motion_mismatch", camera_issue)
+    shot_count_issue = _shot_count_intent_issue(instruction, parsed.prompt)
+    if shot_count_issue:
+        report.add("error", "h3_shot_count_mismatch", shot_count_issue)
     return report
 
 
@@ -439,6 +447,16 @@ def _camera_motion_intent_issue(instruction: str, prompt: str) -> str:
     if any(token in requested for token in ("摇摄", "摇镜")) and re.search(
             r"\btruck(?:s|ing|ed)?\b", rendered):
         return "用户要求摇摄（pan/rotation），输出却使用 truck（整机横移）"
+    return ""
+
+
+def _shot_count_intent_issue(instruction: str, prompt: str) -> str:
+    """Enforce an explicit one-shot request without guessing other shot counts."""
+    requested = str(instruction or "").lower()
+    single_shot = any(token in requested for token in (
+        "单镜头", "一镜到底", "single shot", "one continuous shot", "one-shot"))
+    if single_shot and re.search(r"\[shot\s+[2-9]\d*\]", str(prompt or ""), re.I):
+        return "用户明确要求单镜头/一镜到底，输出不得包含 [Shot 2] 或后续镜头"
     return ""
 
 

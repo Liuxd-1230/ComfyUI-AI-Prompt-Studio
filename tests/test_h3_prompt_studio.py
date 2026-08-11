@@ -101,7 +101,9 @@ def test_h3_lenient_create_and_refine_commit_freeform(monkeypatch, store) -> Non
 
 
 def test_h3_lenient_repairs_pan_when_user_requested_truck(monkeypatch, store) -> None:
-    wrong = _valid_prompt().replace("push-in", "pan right")
+    wrong = (_valid_prompt().replace("push-in", "pan right")
+             .replace("\noverall_soundscape:",
+                      " [Shot 2] At 00:05.000 A needless cut.\noverall_soundscape:"))
     corrected = _valid_prompt().replace("push-in", "truck right")
     SequenceGateway.responses = [
         f"<PROMPT>{wrong}</PROMPT><SUMMARY>Moved right.</SUMMARY>",
@@ -111,14 +113,16 @@ def test_h3_lenient_repairs_pan_when_user_requested_truck(monkeypatch, store) ->
     monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
 
     result = studio_mod.APS_H3PromptStudio().run(
-        _profile(store), "镜头缓慢向右横移", "T2VA", 10.0,
+        _profile(store), "单镜头缓慢向右横移", "T2VA", 10.0,
         "lenient", message_nonce="truck")
     session = PromptSession.from_json(result["result"][1])
 
     assert "truck right" in result["result"][0]
+    assert "[Shot 2]" not in result["result"][0]
     assert session.revisions[-1].repair_count == 1
     assert len(SequenceGateway.requests) == 2
     assert "Never translate 横移 as pan" in SequenceGateway.requests[0].system
+    assert "一镜到底/单镜头" in SequenceGateway.requests[0].system
 
 
 def test_h3_strict_create_and_refine_use_one_call_each(monkeypatch, store) -> None:
