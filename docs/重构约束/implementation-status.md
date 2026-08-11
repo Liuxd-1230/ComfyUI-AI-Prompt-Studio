@@ -3,8 +3,13 @@
 > **ADR 0007 transition:** the 2026-08-11 dual-lane amendments are binding, but the
 > ADR 0007 runtime migration is implemented: PromptSession v3, the lenient protocol
 > parser, `APS_PromptStudio`, and `APS_H3PromptStudio` are registered and tested.
-> The former Composer/Director implementations are removed. Real ComfyUI/LM Studio
-> prompt-only acceptance remains required before the whole refactor is declared done.
+> The former Composer/Director implementations are removed. The 2026-08-11 real
+> ComfyUI/LM Studio prompt-only matrix passed for image/H3 lenient and strict
+> CREATE/REFINE, two consecutive lenient refinements, untagged output, explicit mode
+> switch, and restore. The local model would not emit deliberately truncated JSON/tag
+> output, so that provider-dependent live fault injection remains open; the same public
+> node failure seam is covered deterministically in `test_p41_resilience.py` and
+> `test_h3_prompt_studio.py`. See `docs/prompt-architecture/p4.1-real-acceptance-2026-08-11.md`.
 
 This table tracks the binding Persistent contract §108 at the current HEAD.
 “Partial” means the invariant has an executable base but the named end-to-end
