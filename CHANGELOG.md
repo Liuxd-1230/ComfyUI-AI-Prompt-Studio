@@ -1,5 +1,6 @@
 # Changelog
 
+- ChangeSet 解码现在按当前 Plan 的真实根键校验 requested/scope/dependent/invalidation/conflict 路径；`current_plan/...` 等包装前缀会在事务前触发一次协议修复，而不是直接落到 allowed-root 异常。
 - 把 ANIMA PNF owner 规则写入 strict JSON Schema 字段说明：provider 现在直接看到 scene/tags/notes 默认留空，以及人物、环境、构图、光线、风格的唯一职责，降低本地结构化模型“每个 required 字段都填一遍”的倾向。
 - 强化 ANIMA strict CREATE 的 PNF owner 指令：明确 traits/action/position/environment/lighting/composition/style 的唯一职责，scene 只放残余事实，notes/tags 默认留空且不得复述；一次协议修复失败会附带有界 raw。
 - 收紧严格 REFINE ChangeSet 协议：明确使用相对 current Plan 的斜线叶子路径、禁止 `current_plan.`/点号/方括号路径，`intent_scope` 必须使用真实路径；模型不再伪造 dependent changes，确定性依赖只由 Python Impact Analysis 追加。

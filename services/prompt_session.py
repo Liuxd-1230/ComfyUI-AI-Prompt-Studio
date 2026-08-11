@@ -290,6 +290,19 @@ Report hard conflicts instead of silently overriding them."""
                 last_issues.append(
                     f"revision 冲突：请求基于 {candidate.base_revision}，"
                     f"当前为 {session.revision}")
+            valid_roots = set(task_data["current_plan"])
+            declared_paths = [
+                *[item.path for item in candidate.all_changes()],
+                *candidate.intent_scope,
+                *[item.path for item in candidate.invalidated_facts],
+                *[item.path for item in candidate.constraint_conflicts],
+            ]
+            for path in declared_paths:
+                root = str(path).strip().strip("/").split("/", 1)[0]
+                if root and root not in valid_roots:
+                    last_issues.append(
+                        f"语义路径 {path!r} 的根 {root!r} 不属于 current_plan；"
+                        f"可用根：{', '.join(sorted(valid_roots))}")
             last_issues = bounded_issues(last_issues)
             if last_issues:
                 raise ValueError("；".join(last_issues))
