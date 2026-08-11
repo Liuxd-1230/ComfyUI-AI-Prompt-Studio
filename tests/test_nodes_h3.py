@@ -1,5 +1,6 @@
 """节点层测试：MiniMax H3 Prompt Director（LLM mock + 确定性渲染 + 校验接线）。"""
 import json
+import logging
 
 import numpy as np
 import pytest
@@ -127,6 +128,64 @@ def test_generate_t2va_full_chain(monkeypatch, store):
     assert "通过" in validation
     assert warnings == ""
     assert manifest_json["assets"] == [] and manifest_json["subjects"] == []
+
+
+def test_h3_create_retries_one_protocol_failure_before_commit(monkeypatch, store):
+    payload = setup_profile(store)
+    simple = json.loads(json.dumps(PLAN_JSON))
+    simple["shots"] = [simple["shots"][0]]
+    simple["shots"][0]["camera"] = ""
+    simple["shots"][0]["dialogues"] = []
+
+    class RetryGateway:
+        calls = 0
+
+        def generate(self, profile, api_key, req):
+            del profile, api_key, req
+            type(self).calls += 1
+            return LLMResult(text=("plain text, not JSON" if type(self).calls == 1
+                                   else json.dumps(simple)))
+
+    monkeypatch.setattr(h3_mod, "Gateway", RetryGateway)
+    result = h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+        AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA",
+        duration=10.0, message_nonce="retry-create"))
+    assert RetryGateway.calls == 2
+    assert json.loads(result["ui"]["prompt_session"][0])["revision"] == 1
+
+
+def test_h3_create_retry_failure_exposes_bounded_raw_without_commit(
+        monkeypatch, store, caplog):
+    payload = setup_profile(store)
+    raw = "invalid-h3:" + "x" * 900
+
+    class BrokenGateway:
+        calls = 0
+
+        def generate(self, profile, api_key, req):
+            del profile, api_key, req
+            type(self).calls += 1
+            return LLMResult(text=raw)
+
+    commit_calls = []
+    original_commit = h3_mod.PromptSession.commit
+
+    def commit_spy(self, *args, **kwargs):
+        commit_calls.append(1)
+        return original_commit(self, *args, **kwargs)
+
+    monkeypatch.setattr(h3_mod, "Gateway", BrokenGateway)
+    monkeypatch.setattr(h3_mod.PromptSession, "commit", commit_spy)
+    with caplog.at_level(logging.WARNING, logger="ai_prompt_studio.h3_director"):
+        with pytest.raises(ValueError) as exc_info:
+            h3_mod.APS_MiniMaxH3Director().direct(**node_payload(
+                AI_PROFILE=payload, text="少女走进咖啡店", mode="T2VA",
+                duration=10.0, message_nonce="broken-create"))
+    assert BrokenGateway.calls == 2
+    assert commit_calls == []
+    assert "模型原始输出（截断）" in str(exc_info.value)
+    assert len(str(exc_info.value)) < 900
+    assert raw[:120] in caplog.text
 
 
 def test_h3_create_persists_identity_and_reference_binding_locks(monkeypatch, store):

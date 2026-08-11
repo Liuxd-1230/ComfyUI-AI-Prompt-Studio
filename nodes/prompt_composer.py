@@ -37,6 +37,10 @@ from ..services.gateway import Gateway, GenerateRequest
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ..services.skills import get_skill
+from ..services.semantic_errors import (
+    append_semantic_issues as _append_semantic_issues,
+    semantic_error_text as _semantic_error_text,
+)
 from ..services.prompt_session import (
     CREATE_POLICY,
     assert_session_fingerprints,
@@ -235,7 +239,9 @@ class APS_PromptComposer:
         if persistent_lifecycle and session_action == "previous":
             assert_session_fingerprints(session, fingerprints)
             if not session.revert_previous():
-                raise ValueError("当前会话没有可回退的上一版 revision")
+                raise ValueError(
+                    "当前会话尚无可恢复的成功版本；至少需要两个成功 revision。"
+                    "本次未调用模型，当前结果保持不变。")
             return self._session_result(session, "已恢复上一版方案。")
         if persistent_lifecycle and session.has_current_plan:
             # A migrated v1 session has no reconstructable source fingerprints.
@@ -1140,20 +1146,6 @@ def _evaluate_image_semantics(prof: AIProfile, candidate: dict[str, Any],
         get_session_plan_adapter(family), validator).run(
             semantic, changeset, critic=critic, force_critic=force_critic)
     return result.issues
-
-
-def _append_semantic_issues(report: ValidationReport,
-                            issues: list[SemanticIssue]) -> None:
-    for issue in issues:
-        report.add(issue.severity, issue.code,
-                   f"{issue.message}（路径: {issue.path}；原因: {issue.reason}）",
-                   issue.path)
-
-
-def _semantic_error_text(issues: list[SemanticIssue]) -> str:
-    return "\n".join(
-        f"[{issue.code}] {issue.path}: {issue.message}；{issue.reason}"
-        for issue in issues if issue.severity == "error")
 
 
 def _composer_repair_paths(changeset: ChangeSet,

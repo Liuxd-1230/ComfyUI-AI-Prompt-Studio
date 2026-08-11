@@ -124,6 +124,7 @@ def test_prompt_studio_frontend_persists_backend_session_in_widget():
         "return root;", source.index("data-action=\"new\""))]
     assert 'setWidget(node, "prompt_session", "")' not in new_action
     assert "旧会话会保留到新结果成功提交" in new_action
+    assert "当前会话尚无可恢复的成功版本" in source
 
 
 def test_binding_refactor_contracts_are_present_and_referenced():

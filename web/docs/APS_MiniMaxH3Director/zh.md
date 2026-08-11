@@ -2,6 +2,8 @@
 
 `AI_PROFILE` 提供模型；`text` 第一次写导演任务，之后填写看过视频后的最新修改意见；`mode` 选模式，`duration` 只能 4–15 秒，`auto_repair` 最多修复一次。有 `prompt_session` 时基于当前 `H3PromptPlan` 做最小 patch；重新开始只能显式使用“新会话”。`continue_previous` 仅保留旧 workflow 端口位置，工作台不再显示或依赖它。`session_action` 由“恢复上一版为新版本/新会话”按钮维护。`prompt_session` 随 workflow 保存 Plan、Prompt、validation、聊天和最近 10 个不可变 revision；恢复旧版会创建新 revision，不删除后续历史。`message_nonce` 由工作台自动维护，用来防止重复 Queue 再次处理同一消息，请勿手工填写。新 UI 隐藏 `operation`，旧 `generate/rewrite/convert_storyboard/audit/repair` 值仍兼容。
 
+模型首次未返回合法 H3 JSON Plan 时会在提交前重试一次；第二次仍失败会显示截断的模型原始输出并写入 backend warning，当前 Session/revision 不变。恢复按钮只有在至少存在两个成功 revision 时才可执行。
+
 可选接 `storyboard`、`character_bible`、`character_book`、`reference_manifest`、IMAGE 批次 `images`，以及 `video_1`、`video_2`、`video_3`、`audio_1`、`audio_2`、`audio_3`。Storyboard 在 CREATE 时自动作为结构化上下文，不要求选择转换操作。
 
 模式：T2VA 不接参考；I2VA 接 1 张首帧；FL2VA 接首尾 2 张；L2VA 接 1 张尾帧；Ref2VA 支持 Picture/Video/Audio（图片≤9、视频≤3、音频≤3、合计≤12）；R2V 是旧别名。

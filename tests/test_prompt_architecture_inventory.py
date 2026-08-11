@@ -23,7 +23,7 @@ def test_every_creative_gateway_call_has_an_inventory_owner() -> None:
         "nodes/prompt_composer.py": ("composer.render", 1),
         "services/prompt_session.py": ("session.changeset", 3),
         "domain/gateway_critic.py": ("semantic.critic", 1),
-        "nodes/minimax_h3_director.py": ("h3.create", 2),
+        "nodes/minimax_h3_director.py": ("h3.create", 3),
     }
     inventory = INVENTORY.read_text(encoding="utf-8")
     discovered = {

@@ -9,6 +9,7 @@ LLM 产出结构化计划（内容决策）→ Python renderer 确定性拼装�
 from __future__ import annotations
 
 import copy
+import logging
 from typing import Any, List, Optional
 
 from ..schemas import types
@@ -37,6 +38,15 @@ from ..services.h3_plan import (
     h3_system_prompt,
 )
 from ..services.skills import get_skill
+from ..services.semantic_errors import (
+    append_semantic_issues as _append_semantic_issues,
+    semantic_error_text as _semantic_error_text,
+)
+from ..services.structured_output import (
+    log_protocol_failure,
+    protocol_failure_message,
+    raw_excerpt,
+)
 from ..services.prompt_session import (
     CREATE_POLICY,
     assert_session_fingerprints,
@@ -50,6 +60,9 @@ from ..services.prompt_session import (
 )
 from ..validators.minimax_h3 import r2v_english_issue, validate_h3
 from ._helpers import require_api_key, resolve_profile_input, try_api_key
+
+
+logger = logging.getLogger("ai_prompt_studio.h3_director")
 
 # 模式资产约束：T2VA=0；I2VA=1（首帧）；FL2VA=2（首尾）；L2VA=1（尾帧）；R2V 不限
 MODE_IMAGE_REQUIREMENTS = {"T2VA": 0, "I2VA": 1, "FL2VA": 2, "L2VA": 1}
@@ -76,18 +89,6 @@ def _evaluate_h3_semantics(prof: AIProfile, api_key: str, plan: H3PromptPlan,
         get_plan_adapter("minimax_h3"), validate_h3_semantics).run(
             plan, changeset, critic=critic, force_critic=force_critic)
     return result.issues
-
-
-def _append_semantic_issues(report: Any, issues: list[SemanticIssue]) -> None:
-    for issue in issues:
-        detail = f"{issue.message}（路径: {issue.path}；原因: {issue.reason}）"
-        report.add(issue.severity, issue.code, detail, issue.path)
-
-
-def _semantic_error_text(issues: list[SemanticIssue]) -> str:
-    return "\n".join(
-        f"[{issue.code}] {issue.path}: {issue.message}；{issue.reason}"
-        for issue in issues if issue.severity == "error")
 
 
 def _apply_h3_changeset(session: PromptSession, changeset: ChangeSet,
@@ -282,7 +283,9 @@ class APS_MiniMaxH3Director:
         if persistent_lifecycle and session_action == "previous":
             assert_session_fingerprints(session, fingerprints)
             if not session.revert_previous():
-                raise ValueError("当前 H3 会话没有可回退的上一版 revision")
+                raise ValueError(
+                    "当前 H3 会话尚无可恢复的成功版本；至少需要两个成功 revision。"
+                    "本次未调用模型，当前结果保持不变。")
             return self._session_result(session, "已恢复上一版 H3 方案。")
         if persistent_lifecycle and session.has_current_plan:
             if (session.fingerprint_state == "legacy_unbound"
@@ -336,6 +339,8 @@ class APS_MiniMaxH3Director:
                 needs_llm = True  # 有 API：走 LLM 计划（可增强）
 
         # ------------------------------------------------------------ LLM 计划
+        gateway = None
+        task_payload: dict[str, Any] = {}
         if needs_llm:
             task_payload = build_plan_task_data(
                 text.strip() if text else "", mode, float(duration or 1.0),
@@ -352,7 +357,8 @@ class APS_MiniMaxH3Director:
                 # 不支持时 Gateway 自动降级为提示词约束（与 build_plan_prompt 的 JSON 模板一致）
                 output_schema=H3_SCHEMA,
                 assembly_report=report_payload(assembly))
-            result = Gateway().generate(prof, api_key, req)
+            gateway = Gateway()
+            result = gateway.generate(prof, api_key, req)
             if result.has_error():
                 raise ValueError(result.error.as_text)
         else:
@@ -371,7 +377,41 @@ class APS_MiniMaxH3Director:
             "模型没有返回合法 JSON" in warning or "计划解析失败" in warning
             for warning in plan.warnings)
         if persistent_lifecycle and parse_failed and operation != "convert_storyboard":
-            raise ValueError("H3 CREATE 模型没有返回合法结构化 Plan；会话与 revision 未改变")
+            assert result is not None and gateway is not None
+            first_issues = list(plan.warnings)
+            log_protocol_failure(
+                logger, "H3 CREATE attempt 1", result.text, first_issues)
+            retry_payload = dict(task_payload)
+            retry_payload["previous_protocol_failure"] = {
+                "instruction": "Return a fresh H3 plan that matches the JSON schema.",
+                "validation_errors": first_issues[:8],
+                "raw_excerpt": raw_excerpt(result.text),
+            }
+            retry_assembly = _assemble_h3(
+                retry_payload, operation,
+                persistent_lifecycle=persistent_lifecycle)
+            retry_request = GenerateRequest(
+                system=retry_assembly.system,
+                messages=[task_message(retry_assembly)], web_search="off",
+                reasoning="medium", max_tokens=8192, timeout=prof.timeout,
+                output_schema=H3_SCHEMA,
+                assembly_report=report_payload(retry_assembly))
+            retry_result = gateway.generate(prof, api_key, retry_request)
+            if retry_result.has_error():
+                raise ValueError(retry_result.error.as_text)
+            retry_plan = self._parse_plan(
+                retry_result.text, sb, mode, duration, manifest, book)
+            retry_failed = any(
+                "模型没有返回合法 JSON" in warning or "计划解析失败" in warning
+                for warning in retry_plan.warnings)
+            if retry_failed:
+                log_protocol_failure(
+                    logger, "H3 CREATE attempt 2", retry_result.text,
+                    retry_plan.warnings)
+                raise ValueError(protocol_failure_message(
+                    "H3 CREATE 结构化 Plan", retry_result.text,
+                    retry_plan.warnings))
+            plan = retry_plan
         # Legacy convert_storyboard keeps its documented deterministic fallback,
         # but a protocol failure is not promoted to persistent session state.
         if operation == "convert_storyboard" and parse_failed:

@@ -55,6 +55,12 @@ function studioElement(node) {
     setWidget(node, "message_nonce", newMessageNonce());
   };
   root.querySelector('[data-action="previous"]').onclick = () => {
+    const session = parseSession(node);
+    if ((session.revisions || []).length < 2) {
+      root.querySelector(".aps-studio-summary").textContent =
+        "当前会话尚无可恢复的成功版本；请先完成至少两次成功提交。";
+      return;
+    }
     setWidget(node, "session_action", "previous");
     root.querySelector(".aps-studio-summary").textContent =
       "已选择恢复上一版；执行后会创建新 revision，历史不会删除。";

@@ -5,6 +5,7 @@ import copy
 import hashlib
 import inspect
 import json
+import logging
 import re
 from collections.abc import Iterator
 from typing import Any, Iterable
@@ -13,6 +14,15 @@ from ..schemas.profile import AIProfile
 from ..schemas.prompt_session import PromptSession, SessionFingerprints
 from ..schemas.changeset import ChangeSet
 from .json_schema import make_strict_schema
+from .structured_output import (
+    bounded_issues,
+    log_protocol_failure,
+    protocol_failure_message,
+    raw_excerpt,
+)
+
+
+logger = logging.getLogger("ai_prompt_studio.prompt_session")
 
 
 IMMUTABLE_ROOTS = {"schema_version", "plan_id", "created_at", "validation"}
@@ -205,9 +215,10 @@ def assert_session_fingerprints(session: PromptSession,
     mismatches = session.fingerprint_mismatches(fingerprints)
     if mismatches:
         raise ValueError(
-            "Session 上下文指纹已变化，不能当作普通聊天修改：" +
-            "、".join(mismatches) + "。请使用新会话；后续 Rebase/Migration "
-            "必须显式处理，当前稳定 revision 保持不变。")
+            "Session 上下文指纹已变化，不能当作普通聊天修改。原因：" +
+            "、".join(mismatches) + "。当前可执行：选择“新会话”；若已有至少"
+            "两个成功版本，也可先恢复上一版。自动 Rebase 尚未实现；当前稳定 "
+            f"revision v{session.revision} 保持不变。")
 
 
 def request_plan_patch(gateway: Any, profile: AIProfile, api_key: str,
@@ -292,26 +303,29 @@ field. Paths are relative to the supplied semantic plan. Use minimal_refine unle
 the user explicitly requests a broad redesign. Encode every change value as compact
 JSON in value_json; use the literal string null for delete. Every change needs a
 specific reason. Report hard conflicts instead of silently overriding them."""
-    assembly = assemble_prompt(
-        [PromptSource("runtime.semantic-session", "2.0", PromptLayer.RUNTIME,
-                      "Treat the supplied plan as stable structured state.",
-                      "session.changeset"),
-         PromptSource("operation.minimum-consistent-change", "2.0",
-                      PromptLayer.OPERATION, REFINE_POLICY + "\n" + policy,
-                      "session.changeset")],
-        task_data=[StructuredTaskData("changeset_request", task_data)],
-        output_contract_id="semantic-changeset.schema@2")
-    req = GenerateRequest(
-        system=assembly.system, messages=[task_message(assembly)],
-        web_search="off", reasoning="medium", max_tokens=4096,
-        timeout=profile.timeout, json_mode=True, output_schema=CHANGESET_SCHEMA,
-        assembly_report=report_payload(assembly))
-    result = gateway.generate(profile, api_key, req)
-    if result.has_error():
-        raise ValueError(result.error.as_text)
-    raw = extract_json_object(result.text)
-    if not isinstance(raw, dict):
-        raise ValueError("REFINE 模型没有返回合法 ChangeSet；上一版保持不变")
+    sources = [
+        PromptSource("runtime.semantic-session", "2.0", PromptLayer.RUNTIME,
+                     "Treat the supplied plan as stable structured state.",
+                     "session.changeset"),
+        PromptSource("operation.minimum-consistent-change", "2.0",
+                     PromptLayer.OPERATION, REFINE_POLICY + "\n" + policy,
+                     "session.changeset"),
+    ]
+
+    def make_request(retry_payload: dict[str, Any] | None = None) -> Any:
+        retry_data = [StructuredTaskData("changeset_request", task_data)]
+        if retry_payload is not None:
+            retry_data.append(StructuredTaskData(
+                "previous_protocol_failure", retry_payload))
+        assembly = assemble_prompt(
+            sources, task_data=retry_data,
+            output_contract_id="semantic-changeset.schema@2")
+        return GenerateRequest(
+            system=assembly.system, messages=[task_message(assembly)],
+            web_search="off", reasoning="medium", max_tokens=4096,
+            timeout=profile.timeout, json_mode=True,
+            output_schema=CHANGESET_SCHEMA,
+            assembly_report=report_payload(assembly))
 
     def decode_change(item: Any) -> SemanticChange:
         if not isinstance(item, dict):
@@ -324,34 +338,98 @@ specific reason. Report hard conflicts instead of silently overriding them."""
                               operation=str(item.get("operation", "")),
                               value=value, reason=str(item.get("reason", "")))
 
-    changeset = ChangeSet(
-        base_revision=int(raw.get("base_revision", -1)),
-        plan_type=str(raw.get("plan_type", "")),
-        change_category=str(raw.get("change_category", "")),
-        intent_scope=[str(item) for item in raw.get("intent_scope", [])],
-        requested_changes=[decode_change(item)
-                           for item in raw.get("requested_changes", [])],
-        dependent_changes=[decode_change(item)
-                           for item in raw.get("dependent_changes", [])],
-        invalidated_facts=[InvalidatedFact.from_json(item)
-                           for item in raw.get("invalidated_facts", [])],
-        constraint_conflicts=[ConstraintConflict.from_json(item)
-                              for item in raw.get("constraint_conflicts", [])],
-        summary=str(raw.get("summary", "")))
-    issues = changeset.validate()
-    if issues:
-        raise ValueError("ChangeSet 校验失败：" + "；".join(issues))
-    if changeset.plan_type != plan_type:
-        raise ValueError(
-            f"ChangeSet plan_type 不匹配: {changeset.plan_type!r} != {plan_type!r}")
-    if changeset.base_revision != session.revision:
-        raise ValueError(
-            f"revision 冲突：请求基于 {changeset.base_revision}，"
-            f"当前为 {session.revision}")
+    changeset: ChangeSet | None = None
+    retry_payload: dict[str, Any] | None = None
+    last_raw_text = ""
+    last_issues: list[str] = []
+    for attempt in range(2):
+        result = gateway.generate(profile, api_key, make_request(retry_payload))
+        if result.has_error():
+            raise ValueError(result.error.as_text)
+        last_raw_text = result.text
+        raw = extract_json_object(result.text)
+        try:
+            if not isinstance(raw, dict):
+                raise ValueError("无法解析 JSON 对象")
+            candidate = ChangeSet(
+                base_revision=int(raw.get("base_revision", -1)),
+                plan_type=str(raw.get("plan_type", "")),
+                change_category=str(raw.get("change_category", "")),
+                intent_scope=[str(item) for item in raw.get("intent_scope", [])],
+                requested_changes=[decode_change(item)
+                                   for item in raw.get("requested_changes", [])],
+                dependent_changes=[decode_change(item)
+                                   for item in raw.get("dependent_changes", [])],
+                invalidated_facts=[InvalidatedFact.from_json(item)
+                                   for item in raw.get("invalidated_facts", [])],
+                constraint_conflicts=[ConstraintConflict.from_json(item)
+                                      for item in raw.get("constraint_conflicts", [])],
+                summary=str(raw.get("summary", "")))
+            last_issues = bounded_issues(candidate.validate())
+            if candidate.plan_type != plan_type:
+                last_issues.append(
+                    f"plan_type 不匹配: {candidate.plan_type!r} != {plan_type!r}")
+            if candidate.base_revision != session.revision:
+                last_issues.append(
+                    f"revision 冲突：请求基于 {candidate.base_revision}，"
+                    f"当前为 {session.revision}")
+            last_issues = bounded_issues(last_issues)
+            if last_issues:
+                raise ValueError("；".join(last_issues))
+            changeset = candidate
+            break
+        except (TypeError, ValueError) as exc:
+            if not last_issues:
+                last_issues = bounded_issues([exc])
+            log_protocol_failure(
+                logger, f"REFINE ChangeSet attempt {attempt + 1}",
+                last_raw_text, last_issues)
+            if attempt == 1:
+                raise ValueError(protocol_failure_message(
+                    "REFINE ChangeSet", last_raw_text, last_issues)) from exc
+            retry_payload = {
+                "instruction": "Correct the protocol errors only and return a new object.",
+                "validation_errors": last_issues,
+                "sanitized_previous_output": _sanitize_changeset_retry(raw),
+                "raw_excerpt": raw_excerpt(last_raw_text),
+            }
+    if changeset is None:
+        raise ValueError(protocol_failure_message(
+            "REFINE ChangeSet", last_raw_text, last_issues))
     _authorize_changeset_impacts(
         gateway, profile, api_key, session, feedback, changeset,
         runtime_constraints=runtime_constraints)
     return changeset
+
+
+def _sanitize_changeset_retry(raw: Any) -> dict[str, Any]:
+    """Prepare bounded task data for one retry; never accept it as authority."""
+    if not isinstance(raw, dict):
+        return {}
+    cleaned = copy.deepcopy(raw)
+    seen: set[str] = set()
+    for field in ("requested_changes", "dependent_changes"):
+        unique: list[Any] = []
+        values = cleaned.get(field, [])
+        if not isinstance(values, list):
+            cleaned[field] = []
+            continue
+        for item in values:
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path", "")).strip()
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            unique.append(item)
+        cleaned[field] = unique
+    scope = cleaned.get("intent_scope")
+    if not isinstance(scope, list) or not any(str(item).strip() for item in scope):
+        cleaned["intent_scope"] = [
+            str(item.get("path", "")).strip()
+            for item in cleaned.get("requested_changes", [])
+            if isinstance(item, dict) and str(item.get("path", "")).strip()]
+    return cleaned
 
 
 def _authorize_changeset_impacts(

@@ -35,6 +35,12 @@ is built on a copy and swapped only after every revision field succeeds and the
 expected revision still matches. Broad replacement additionally requires explicit
 whole-plan redesign wording in the user's latest instruction.
 
+Provider protocol failure is not a semantic commit. H3 CREATE Plan and REFINE
+ChangeSet parsing may perform one bounded retry using only the concrete validation
+errors and a sanitized, truncated previous response as untrusted task data. Both
+attempts operate before commit; failure logs a bounded raw excerpt and returns an
+actionable error while the stable plan, prompt, and revision remain unchanged.
+
 Legacy v1 sessions preserve their last valid Plan/prompt/revisions but enter an
 explicit `legacy_unbound` fingerprint state. They may recognize the final repeated
 message as a no-op, but cannot accept a new refinement until the user starts a new
