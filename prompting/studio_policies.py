@@ -62,6 +62,34 @@ def image_target_policy(family: str, variant: str) -> str:
 
 
 def h3_target_policy(mode: str, duration: float) -> str:
+    if mode == "Ref2VA":
+        format_contract = """Use exactly these six headings in this order:
+subject_definitions:
+summary:
+retention_analysis:
+detailed_description: [Shot 1] ...
+overall_soundscape:
+non_diegetic_music:
+Do not rename, omit, translate, number, or wrap these headings."""
+    else:
+        alignment = {
+            "T2VA": "T2VA starts directly with integrated_multimodal_description; add no alignment line.",
+            "I2VA": ("The first line must be: For the target video, at 0.00 seconds into the "
+                     "target video, <Picture 1> (from [Shot 1]) is fully referenced."),
+            "FL2VA": ("The first line must start with: How the reference pictures align with "
+                      "the target video — and align Picture 1 at 0.00 seconds and Picture 2 "
+                      f"at {float(duration):.2f} seconds."),
+            "L2VA": ("The first line must start with: How the reference pictures align with "
+                     "the target video — and align <Picture 1> with the final shot at "
+                     f"{float(duration):.2f} seconds."),
+        }.get(mode, "")
+        format_contract = f"""{alignment}
+After any required alignment line, use exactly these three fields in this order:
+integrated_multimodal_description: [Shot 1] complete shot description
+overall_soundscape: concrete full-video ambience, or N/A only for explicit complete silence
+non_diegetic_music: concrete instrumentation/tempo/dynamics, or N/A when absent
+Do not rename, omit, translate, number, or wrap these field names. Every shot begins with
+[Shot N]; Shot 1 has no timestamp and later shots use At MM:SS.mmm."""
     return (
         "Write one complete MiniMax H3 target prompt in the official rendered text "
         f"format. Mode: {mode}. Duration: {float(duration):.2f} seconds. Preserve "
@@ -69,4 +97,5 @@ def h3_target_policy(mode: str, duration: float) -> str:
         "all other visual and audiovisual description in English. Use only connected "
         "Picture/Video/Audio labels. Include synchronized shot audio, a non-empty "
         "overall soundscape unless explicit silence was requested, and a concrete "
-        "non-diegetic music decision. Do not return an internal JSON Plan.")
+        "non-diegetic music decision. Do not return an internal JSON Plan.\n\n" +
+        format_contract)

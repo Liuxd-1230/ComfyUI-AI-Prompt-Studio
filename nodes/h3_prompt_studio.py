@@ -43,6 +43,7 @@ from ..services.prompt_session import (
     node_execution_result,
     request_changeset,
 )
+from ..services.structured_output import raw_excerpt
 from ..validators.minimax_h3 import r2v_english_issue, validate_h3
 from ._helpers import require_api_key, resolve_profile_input
 
@@ -180,7 +181,9 @@ class APS_H3PromptStudio:
                 parsed, mode, duration, manifest, image_count, source_bibles)
         if parsed.kind == "protocol_garbage" or not report.valid:
             detail = report.as_text() if report.issues else "；".join(parsed.issues)
-            raise ValueError("H3 宽松提示词修复一次后仍不可用；上一版保持不变：\n" + detail)
+            raise ValueError(
+                "H3 宽松提示词修复一次后仍不可用；上一版保持不变：\n" +
+                detail + "\n模型原始输出（截断）：" + raw_excerpt(raw))
         for warning in parsed.warnings:
             report.add("warning", "lenient_untagged_prompt", warning)
         for change in context_changes:

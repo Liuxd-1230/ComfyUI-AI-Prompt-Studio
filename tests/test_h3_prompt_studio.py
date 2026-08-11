@@ -131,6 +131,22 @@ def test_h3_strict_protocol_repairs_once_then_fails_without_state(
     assert len(SequenceGateway.requests) == 2
 
 
+def test_h3_lenient_failure_exposes_bounded_raw_and_exact_format_contract(
+        monkeypatch, store) -> None:
+    SequenceGateway.responses = ["first malformed H3 text", "second malformed H3 text"]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+    with pytest.raises(ValueError, match="second malformed H3 text"):
+        studio_mod.APS_H3PromptStudio().run(
+            _profile(store), "woman waits", "T2VA", 10.0, "lenient",
+            message_nonce="bad-lenient")
+    assert len(SequenceGateway.requests) == 2
+    for request in SequenceGateway.requests:
+        assert "integrated_multimodal_description:" in request.system
+        assert "overall_soundscape:" in request.system
+        assert "non_diegetic_music:" in request.system
+
+
 def test_h3_strict_validator_failure_does_not_creatively_repair(
         monkeypatch, store) -> None:
     invalid = dict(PLAN)
