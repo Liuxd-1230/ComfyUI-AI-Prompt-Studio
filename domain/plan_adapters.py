@@ -63,6 +63,11 @@ class H3PlanAdapter(PlanAdapter[H3PromptPlan]):
     def normalize(self, plan: H3PromptPlan) -> H3PromptPlan:
         clone = self.clone(plan)
         clone.shots.sort(key=lambda shot: shot.index)
+        # A list delete/insert changes positional semantics. Reassign the
+        # public H3 shot numbers after sorting so the renderer and validator
+        # cannot emit a gap such as Shot 1 / Shot 3 after deleting Shot 2.
+        for index, shot in enumerate(clone.shots, start=1):
+            shot.index = index
         clone.speakers.sort(key=lambda speaker: speaker.speaker_id)
         return clone
 

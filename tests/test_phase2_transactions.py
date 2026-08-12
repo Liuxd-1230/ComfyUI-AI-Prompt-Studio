@@ -149,6 +149,18 @@ def test_transaction_enforces_plan_type_allowed_roots_locks_and_value_type() -> 
             _plan(), base, current_revision=1, allowed_roots=["lighting"])
 
 
+def test_h3_normalizer_reindexes_after_middle_shot_delete() -> None:
+    plan = H3PromptPlan(shots=[
+        H3Shot(index=1, description=["first"]),
+        H3Shot(index=2, description=["middle"]),
+        H3Shot(index=3, description=["last"]),
+    ])
+    plan.shots.pop(1)
+    normalized = H3PlanAdapter().normalize(plan)
+    assert [shot.index for shot in normalized.shots] == [1, 2]
+    assert [shot.description[0] for shot in normalized.shots] == ["first", "last"]
+
+
 def test_transaction_rejects_immutable_metadata_and_magic_paths() -> None:
     for path in ("schema_version", "normal_form_version", "__class__/x"):
         changeset = ChangeSet(

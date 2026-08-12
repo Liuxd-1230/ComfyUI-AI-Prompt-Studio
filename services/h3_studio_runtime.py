@@ -47,6 +47,7 @@ def prepare_manifest(reference_manifest: Any, images: Any,
 
 def normalize_plan(plan: H3PromptPlan, manifest: ReferenceManifest,
                    image_count: int, mode: str, duration: float) -> H3PromptPlan:
+    previous_indices = [shot.index for shot in plan.shots]
     plan.duration_seconds = float(duration)
     if plan.shots:
         plan.shots[0].start_time = None
@@ -54,7 +55,13 @@ def normalize_plan(plan: H3PromptPlan, manifest: ReferenceManifest,
     plan.warnings = list(dict.fromkeys(
         [*plan.warnings, *map_image_assets(plan, image_count, mode)]))
     normalize_media_labels(plan)
-    return get_plan_adapter("minimax_h3").normalize(plan)
+    normalized = get_plan_adapter("minimax_h3").normalize(plan)
+    expected_indices = list(range(1, len(normalized.shots) + 1))
+    if previous_indices and previous_indices != expected_indices:
+        warning = "镜头列表发生插入/删除或编号不连续，已按当前顺序重新编号"
+        if warning not in normalized.warnings:
+            normalized.warnings.append(warning)
+    return normalized
 
 
 def render_validate(plan: H3PromptPlan, manifest: ReferenceManifest,

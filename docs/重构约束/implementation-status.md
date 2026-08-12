@@ -22,7 +22,7 @@ surface is not complete; it must not be described as finished functionality.
 | 108.3 Environment Invalidation | done | PNF ownership plus strict candidate validation |
 | 108.4 Positive / Negative Conflict | done | deterministic negative cleanup in `test_phase2_transactions.py` and Studio failure regression |
 | 108.5 H3 Timing Dependency | done | proportional timestamp closure in transaction and H3 Studio tests |
-| 108.6 Delete Middle Shot | partial | guarded collection edits exist; dedicated reindex end-to-end regression remains |
+| 108.6 Delete Middle Shot | done | H3 adapter reindexes list items after guarded middle-shot deletion; public strict-node regression covers rendered Shot 1/2 output |
 | 108.7 Object State | partial | no LLM Critic under ADR 0007; protocol validator covers representable hard conflicts only |
 | 108.8 Intentional Surreal Transition | done | creative interpretation remains with the selected model; strict mode guards only declared mutations |
 | 108.9 Unauthorized Changes | done | declared requested paths + Diff Guard; model-proposed dependencies are rejected |

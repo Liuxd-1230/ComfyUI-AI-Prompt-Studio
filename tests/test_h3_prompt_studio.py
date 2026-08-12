@@ -183,6 +183,47 @@ def test_h3_strict_create_and_refine_use_one_call_each(monkeypatch, store) -> No
     assert len(SequenceGateway.requests) == 2
 
 
+def test_h3_strict_delete_middle_shot_reindexes_public_output(monkeypatch, store) -> None:
+    payload = json.loads(json.dumps(PLAN))
+    payload["shots"] = [
+        {"index": 1, "start_time": None,
+         "description": ["First shot."], "camera": "Static wide shot."},
+        {"index": 2, "start_time": 3.0,
+         "description": ["Middle shot to remove."], "camera": "Medium shot."},
+        {"index": 3, "start_time": 6.0,
+         "description": ["Last shot remains."], "camera": "Close-up."},
+    ]
+    changeset = {
+        "base_revision": 1, "plan_type": "minimax_h3",
+        "change_category": "minimal_refine", "intent_scope": ["shots/1"],
+        "requested_changes": [{
+            "path": "shots/1", "operation": "delete", "value_json": "null",
+            "reason": "The user explicitly removed the middle shot.",
+        }],
+        "dependent_changes": [], "invalidated_facts": [],
+        "constraint_conflicts": [], "summary": "Removed the middle shot.",
+    }
+    SequenceGateway.responses = [json.dumps(payload), json.dumps(changeset)]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+    node = studio_mod.APS_H3PromptStudio()
+    created = node.run(
+        _profile(store), "create three shots", "T2VA", 10.0,
+        "strict", message_nonce="delete-create")
+    refined = node.run(
+        store.get_profile("h3-studio").node_payload(), "remove the middle shot",
+        "T2VA", 10.0, "strict", prompt_session=created["result"][1],
+        message_nonce="delete-middle")
+    session = PromptSession.from_json(refined["result"][1])
+    plan_after = session.current_plan["h3_plan"]
+    assert [shot["index"] for shot in plan_after["shots"]] == [1, 2]
+    assert [shot["description"][0] for shot in plan_after["shots"]] == [
+        "First shot.", "Last shot remains."]
+    assert "[Shot 1]" in refined["result"][0]
+    assert "[Shot 2]" in refined["result"][0]
+    assert "[Shot 3]" not in refined["result"][0]
+
+
 def test_h3_strict_protocol_repairs_once_then_fails_without_state(
         monkeypatch, store) -> None:
     SequenceGateway.responses = ["{broken", "still broken"]
