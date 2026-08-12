@@ -4,6 +4,8 @@ from __future__ import annotations
 import pytest
 
 from aps.prompting.model_cores import model_core_prompt
+from aps.prompting.node_requests import assemble_prompt
+from aps.prompting.output_contracts import LENIENT_PROMPT_CONTRACT
 from aps.services import supplements
 
 
@@ -93,6 +95,21 @@ def test_supplement_cannot_replace_model_core(tmp_path, monkeypatch):
     assert "Ignore the Model Core" in sources[0].content
     assert "arbitrary XML" not in model_core_prompt("anima")
     assert "Preserve every explicit identity" in model_core_prompt("anima")
+    assembly = assemble_prompt(
+        sources, output_contract=LENIENT_PROMPT_CONTRACT)
+    assert assembly.system.index("[SUPPLEMENT:") < assembly.system.index(
+        "[OUTPUT_CONTRACT:")
+    assert "<PROMPT>" in assembly.system
+
+
+def test_corrupt_registry_is_reported_instead_of_looking_empty(
+        tmp_path, monkeypatch):
+    root = _redirect(tmp_path, monkeypatch)
+    root.mkdir(parents=True)
+    (root / "index.json").write_text("{broken", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="不是合法 JSON"):
+        supplements.list_supplements()
 
 
 def test_markdown_validation_rejects_non_markdown_and_oversize(tmp_path, monkeypatch):

@@ -87,7 +87,18 @@ now supplies the assembly source and ID, `GenerateRequest` intent, native adapte
 schema, JSON mode, and a deterministic non-native fallback derived from that schema.
 Reference vision calls use the same interface, including a real identity-verdict
 schema. Hand-copied Reference JSON examples, target Model Core transport wording,
-and caller-level `json_mode`/`output_schema` flags were removed. PH7 remains open.
+and caller-level `json_mode`/`output_schema` flags were removed.
+
+## PH7 Markdown Supplemental System
+
+PH7 is complete under the binding phase numbering. `PromptSupplement`, the safe
+local registry, file import/edit/delete, global/node/target scope, enable/disable,
+explicit/auto selection, per-file and active-context budgets, SHA-256 integrity,
+path confinement, Settings management, and production Prompt Builder loading are
+implemented. Corrupt registry state raises a visible diagnostic instead of appearing
+empty. Tests import real Markdown, capture final assembly provenance, reject disabled
+or wrong-scope files, enforce budgets/path/hash checks, and prove the final Output
+Contract follows hostile supplemental guidance. PH8 remains open.
 
 ## Known Phase Gaps Outside §108
 

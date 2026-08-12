@@ -37,22 +37,29 @@ def _read_index() -> list[PromptSupplement]:
         return []
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
+    except OSError as exc:
+        raise ValueError(f"无法读取 Markdown 补充资料注册表：{exc}") from exc
+    except ValueError as exc:
+        raise ValueError("Markdown 补充资料注册表不是合法 JSON；请修复或移走 index.json") from exc
     if not isinstance(raw, list):
-        return []
+        raise ValueError("Markdown 补充资料注册表根结构必须是数组")
     records: list[PromptSupplement] = []
-    for item in raw:
+    for index, item in enumerate(raw):
         try:
             record = PromptSupplement.from_json(item)
-            path = Path(record.path).resolve()
+            record_path = Path(record.path).resolve()
             root = supplements_dir().resolve()
-            if (not record.validate() and path.parent == root
-                    and path.name == f"{record.supplement_id}.md"
-                    and path.is_file()):
-                records.append(record)
-        except (TypeError, ValueError, OSError):
-            continue
+            issues = record.validate()
+            if issues:
+                raise ValueError("；".join(issues))
+            if (record_path.parent != root
+                    or record_path.name != f"{record.supplement_id}.md"
+                    or not record_path.is_file()):
+                raise ValueError("记录路径越界、文件名不匹配或 Markdown 文件不存在")
+            records.append(record)
+        except (TypeError, ValueError, OSError) as exc:
+            raise ValueError(
+                f"Markdown 补充资料注册表第 {index + 1} 条记录无效：{exc}") from exc
     return records
 
 

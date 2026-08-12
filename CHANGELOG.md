@@ -1,5 +1,7 @@
 # Changelog
 
+- **PH7 Markdown Supplemental System 验收收口**：按绑定阶段编号正式核验既有 `PromptSupplement` schema、注册表、Markdown 导入、global/node/target scope、启停、运行时加载、数量/上下文预算、hash 与路径安全。注册表损坏不再静默显示为空；设置页会收到明确错误。新增最终 Prompt Assembly 回归，证明恶意 Markdown 位于 Output Contract 之前，不能覆盖成品格式。
+
 - **PH6 Schema Contract Cleanup**：新增 `prompting/output_contracts.py` 深模块；每个 LLM 请求现在只接收一个 `OutputContract`，由它同时拥有 provenance ID、system 摘要、机器 JSON Schema、JSON 模式和非原生 provider fallback。Image/H3 Studio、Storyboard、Reference Analyzer（含视觉身份判断）、ChangeSet 与通用 LLM JSON 输出全部迁移；删除节点中的 `json_mode`/`output_schema` 双状态、Reference 手写 JSON 示例和 Model Core 内的输出格式命令。Markdown supplement 排在 Output Contract 之前，不能覆盖最终格式。
 
 - **PH5 Operation Policy Migration**：新增唯一的版本化 `prompting/operation_policies.py` 接口，Image/H3 Studio、Storyboard Builder、Reference Analyzer 与语义 ChangeSet 统一从这里取得 CREATE、REFINE、FORMAT_REPAIR、PROTOCOL_RETRY 和文字/图片观察职责。删除旧 `COMPOSER_OPERATIONS`/`H3_OPERATIONS` 状态、断开的 PromptSource registry、H3 `build_plan_prompt()` 手写 JSON 模板与无生产调用的 `convert_storyboard()`；ChangeSet 的 `set/delete/insert` 仍是内部事务操作，不是用户工作模式。
