@@ -42,6 +42,9 @@ def test_analyzer_text_only(monkeypatch, store):
     assert cand.name == "少女"
     assert cand.traits[0].value == "红发"
     assert "text_anchor" in cand.sources[0]
+    assert "人物锚点：少女" in caption
+    assert "稳定特征：hair=红发" in caption
+    assert "来源：text_anchor" in caption
     assert images is None  # 无输入透传 None
     manf = ReferenceManifest.from_json(manifest)
     assert manf.assets == []
@@ -70,6 +73,7 @@ def test_analyzer_images_consensus_and_passthrough(monkeypatch, store):
     # 两图 stable 特征值冲突 → 身份判断为不同主体：不跨主体串绑特征，
     # 只取最高一致度分组；身份冲突以 warning + __subject_identity__ conflict 记录
     assert cand.same_subject is False
+    assert cand.name == ""  # 图片-only 不接受模型自报姓名
     assert any(c.trait_name == "__subject_identity__" for c in cand.conflicts)
     assert cand.traits[0].category == "stable"      # 未混合成 uncertain
     anl = analysis if isinstance(analysis, dict) else json.loads(analysis)

@@ -47,6 +47,49 @@ def test_parse_candidate_json_invalid():
     assert cand.confidence == 0.0
 
 
+def test_parse_candidate_does_not_use_poster_title_as_character_name():
+    """图片标题/通用占位名不能污染人物锚点身份。"""
+    cand = reference.parse_candidate_json(
+        '{"name": "Character in \'Repose Amidst The Roses\' artwork", '
+        '"traits": [{"name": "hair", "value": "black", '
+        '"category": "stable", "confidence": 0.8}]}',
+        "character_full", ["image:0"])
+    assert cand.name == ""
+
+
+def test_image_candidate_name_can_be_forced_empty_and_context_is_filtered():
+    cand = reference.parse_candidate_json(
+        '{"name": "Repose Amidst The Roses", "traits": ['
+        '{"name": "hair", "value": "dark brown", "category": "stable", "confidence": 0.9},'
+        '{"name": "decoration_element", "value": "vine border with grapes", '
+        '"category": "current", "confidence": 0.9}]}',
+        "character_full", ["image:0"], allow_name=False)
+    assert cand.name == ""
+    assert [trait.name for trait in cand.traits] == ["hair"]
+    assert cand.confidence == 0.9
+
+
+def test_format_character_anchor_is_human_readable_and_source_visible():
+    candidate = CharacterCandidate(
+        name="玫瑰",
+        sources=["text_anchor"],
+        traits=[
+            CharacterTrait(name="hair", value="black wavy hair",
+                           category="stable", sources=["image:0"]),
+            CharacterTrait(name="dress", value="white lace dress",
+                           category="current", sources=["text_anchor"]),
+            CharacterTrait(name="expression", value="unclear",
+                           category="uncertain", sources=["image:0"]),
+        ])
+    preview = reference.format_character_anchor(candidate)
+    assert "人物锚点：玫瑰" in preview
+    assert "整体置信度：0.50" in preview
+    assert "稳定特征：hair=black wavy hair" in preview
+    assert "当前状态：dress=white lace dress" in preview
+    assert "不确定（请复核）：expression=unclear" in preview
+    assert "来源：text_anchor, image:0" in preview
+
+
 # ------------------------------------------------------------------ 共识
 
 def test_consensus_agreement():

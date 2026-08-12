@@ -25,3 +25,13 @@ Observed result on the production `APS_StoryboardBuilder` with `retry_on_invalid
 ## Verification
 
 `python -m pytest tests/ -q` passed; `python -m compileall nodes services renderers validators schemas server tests` passed; all four web JavaScript `node --check` commands passed.
+
+## Reference Analyzer spot check
+
+The same local 9B model was run three times against `C:\Users\Rosemary\Downloads\640.jpg`
+through the production `APS_ReferenceAnalyzer` image path. All 3/3 calls returned valid
+structured candidates and a visible `caption` anchor summary. The summary now shows the
+name, overall confidence, stable/variable/current groups, and source (`image:0`); image-only
+names remain blank even when the model tries to copy the poster title. Background/title-like
+traits are discarded from character modes. The text-anchor path and the storyboard path also
+passed 3/3 production runs in the same local-session check.

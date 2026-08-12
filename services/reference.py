@@ -61,8 +61,22 @@ def extract_json_object(raw: str) -> Optional[dict]:
         return None
 
 
+def _usable_character_name(value: str, *, allow_name: bool = True) -> str:
+    """只保留用户提供或模型明确给出的名字，不把海报标题当姓名。"""
+    name = (value or "").strip()
+    if not allow_name or not name:
+        return ""
+    normalized = re.sub(r"\s+", " ", name).casefold()
+    if normalized in {"unknown", "unnamed", "none", "null", "n/a", "character", "person", "subject"}:
+        return ""
+    if re.match(r"^(?:a |an |the )?(?:character|person|subject)\b", normalized):
+        return ""
+    return name
+
+
 def parse_candidate_json(raw: str, mode: str = "character_full",
-                         sources: Optional[List[str]] = None) -> CharacterCandidate:
+                         sources: Optional[List[str]] = None,
+                         *, allow_name: bool = True) -> CharacterCandidate:
     """把模型输出的 JSON 解析为 CharacterCandidate（容错，失败给空候选）。"""
     candidate = CharacterCandidate(analysis_mode=mode,
                                    sources=list(sources or []), raw=raw or "")
@@ -70,14 +84,24 @@ def parse_candidate_json(raw: str, mode: str = "character_full",
     if data is None:
         candidate.confidence = 0.0
         return candidate
-    if isinstance(data.get("name"), str) and data["name"].strip():
-        candidate.name = data["name"].strip()
+    if isinstance(data.get("name"), str):
+        candidate.name = _usable_character_name(data["name"], allow_name=allow_name)
+    ignored_character_context = re.compile(
+        r"(?:^|_)(?:background|backdrop|architecture|border|frame|logo|title|text|"
+        r"lighting|scene|environment|composition)(?:$|_)", re.I)
+    ignored_context_words = re.compile(
+        r"\b(?:background|backdrop|architecture|border|frame|logo|title|lighting|"
+        r"scene|environment|composition)\b", re.I)
     for t in data.get("traits") or []:
         if not isinstance(t, dict):
             continue
         name = str(t.get("name", "")).strip()
         value = str(t.get("value", "")).strip()
         if not name or not value:
+            continue
+        if (mode in {"character_identity", "character_full"}
+                and (ignored_character_context.search(name)
+                     or ignored_context_words.search(value))):
             continue
         category = str(t.get("category", "stable"))
         if category not in _TRAIT_CATEGORIES:
@@ -91,7 +115,44 @@ def parse_candidate_json(raw: str, mode: str = "character_full",
             name=name, value=value, category=category,
             confidence=min(max(confidence, 0.0), 1.0),
             sources=list(sources or [])))
+    if candidate.traits:
+        candidate.confidence = sum(t.confidence for t in candidate.traits) / len(candidate.traits)
     return candidate
+
+
+def format_character_anchor(candidate: CharacterCandidate) -> str:
+    """生成可直接接到 STRING 预览端口的人物锚点摘要。
+
+    这是人工复核视图，不是新的语义事实源；完整字段仍在 CHARACTER_CANDIDATE/
+    CHARACTER_BIBLE 中。按类别分行能让用户看出哪些是稳定身份、当前服装或不确定推断。
+    """
+    labels = {
+        "stable": "稳定特征",
+        "variable": "可变特征",
+        "current": "当前状态",
+        "uncertain": "不确定（请复核）",
+    }
+    lines = [f"人物锚点：{candidate.name or '（未命名人物）'}"]
+    lines.append(f"整体置信度：{candidate.confidence:.2f}")
+    for category in ("stable", "variable", "current", "uncertain"):
+        traits = [t for t in candidate.traits
+                  if t.category == category and t.value]
+        if traits:
+            values = "; ".join(f"{t.name}={t.value}" for t in traits)
+            lines.append(f"{labels[category]}：{values}")
+    sources: List[str] = []
+    for source in [*candidate.sources,
+                   *(source for trait in candidate.traits for source in trait.sources)]:
+        source = str(source).strip()
+        if source and source not in sources:
+            sources.append(source)
+    if sources:
+        lines.append(f"来源：{', '.join(sources)}")
+    if candidate.conflicts:
+        lines.append("冲突：" + "; ".join(
+            f"{conflict.trait_name}（{' vs '.join(conflict.values)}）"
+            for conflict in candidate.conflicts))
+    return "\n".join(lines)
 
 
 def consensus_of(candidates: List[CharacterCandidate]) -> CharacterCandidate:

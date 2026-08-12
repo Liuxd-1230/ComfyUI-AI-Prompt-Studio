@@ -42,6 +42,13 @@ def test_reference_mode_identity_uses_observable_features():
     assert "empty" in p.lower()
 
 
+def test_reference_full_excludes_poster_text_and_requires_confidence():
+    """人物锚点不得把海报标题当人名，且每个视觉特征要带置信度。"""
+    p = ra_mod.MODE_PROMPTS["character_full"].lower()
+    assert "poster" in p and "logo" in p
+    assert "confidence" in p
+
+
 # ---------------------------------------------------------------- H3
 
 def test_h3_system_prompt_protocol_layer():

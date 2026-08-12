@@ -18,7 +18,7 @@
 
 输入：`AI_PROFILE`；`analysis_mode` 选择分析目标；`text_anchor` 提供已知事实；`images` 接 IMAGE 批次；`character_bible` 提供已有身份；`custom_prompt` 仅 custom 模式使用。
 
-输出：`REFERENCE_ANALYSIS` 是本次结构化分析；`CHARACTER_CANDIDATE` 可接 Character Bible；`REFERENCE_MANIFEST` 保存资产与主体映射；`caption/confidence/raw` 用于预览诊断；`IMAGES` 原样透传图片。
+输出：`REFERENCE_ANALYSIS` 是本次结构化分析；`CHARACTER_CANDIDATE` 可接 Character Bible；`REFERENCE_MANIFEST` 保存资产与主体映射；`caption` 是用户可直接查看/连接的多行人物锚点摘要（按稳定特征、可变特征、当前状态、不确定项和来源分组），`confidence/raw` 用于进一步复核；`IMAGES` 原样透传图片。图片-only 分析不会把海报标题、Logo、文件名或 `Unknown` 当成人名。
 
 ## APS_ReferencePrompt · 图片引用提示词
 

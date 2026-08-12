@@ -39,16 +39,26 @@ MODE_PROMPTS = {
     "character_identity": (
         "Identify the main character's stable identity from observable visual features "
         "only: hair, eyes, build, skin/hair color, distinctive visible marks, visible style. "
-        "Use the name only if it is visible or supplied; otherwise leave it empty. "
+        "Name policy: copy a name only when it is supplied in the text anchor/CharacterBook "
+        "or explicitly visible as a character label. For image-only input, name must be an "
+        "empty string. Never use a poster title, logo, franchise title, filename, or generic "
+        "'Unknown'/'Character...' phrase as the person's name. "
         "Return JSON only: {\"name\": string, \"traits\": [{\"name\": string, "
         "\"value\": string, \"category\": \"stable|variable|current|uncertain\", "
         "\"confidence\": 0-1}]}. "
         "Lowercase values, spaces not underscores. " + _PROMPT_GUARDRAIL),
     "character_full": (
-        "Describe the character fully: stable identity + current full-body appearance. "
+        "Describe the character only: stable identity + current full-body appearance. "
+        "Focus on the person, clothing, accessories, pose, and visible expression; exclude "
+        "poster titles, logos, background architecture, decorative borders, and unrelated "
+        "text unless the user explicitly asks for them. Name policy: copy a name only when "
+        "it is supplied in the text anchor/CharacterBook or explicitly visible as a character "
+        "label. For image-only input, name must be an empty string. Never use a poster title, "
+        "logo, filename, or generic 'Unknown'/'Character...' phrase as the person's name. "
         "Return JSON only: "
         "{\"name\": string, \"traits\": [{\"name\", \"value\", \"category\", "
-        "\"confidence\"}]}. " + _PROMPT_GUARDRAIL),
+        "\"confidence\"}]}. Every trait must include a numeric confidence from 0 to 1. "
+        + _PROMPT_GUARDRAIL),
     "clothing": (
         "Describe the character's clothing and accessories (observable in the image only). "
         "Return JSON only: "
@@ -181,8 +191,10 @@ class APS_ReferenceAnalyzer:
         if analysis_mode == "custom":
             base_prompt = f"{base_prompt.strip()}\n{_PROMPT_GUARDRAIL}"
         bible_context = ""
+        bible_name = ""
         if character_bible:
             bible = CharacterBible.from_json(character_bible)
+            bible_name = bible.name
             if bible.character_prompt():
                 bible_context = bible.character_prompt()
 
@@ -242,8 +254,11 @@ class APS_ReferenceAnalyzer:
                 assembly_report=report_payload(assembly))
             if not res["ok"]:
                 raise ValueError(res["error"].as_text)
-            cand = reference_svc.parse_candidate_json(res["text"], analysis_mode,
-                                                      [f"image:{i}"])
+            cand = reference_svc.parse_candidate_json(
+                res["text"], analysis_mode, [f"image:{i}"],
+                allow_name=bool(text_anchor.strip()))
+            if not text_anchor.strip() and bible_name:
+                cand.name = bible_name
             if reference_svc.extract_json_object(res["text"]) is None:
                 raise ValueError(f"第 {i + 1} 张图片分析未返回合法 JSON；请重试或更换视觉模型")
             image_candidates.append(cand)
@@ -321,9 +336,7 @@ class APS_ReferenceAnalyzer:
         ]
         manifest = reference_svc.build_manifest(asset_refs, [candidate],
                                                 notes="由 Reference Analyzer 生成")
-        analysis.caption = ", ".join(
-            [candidate.name] + [t.value for t in candidate.traits if t.category != "uncertain"]
-        ) if candidate.traits else candidate.name
+        analysis.caption = reference_svc.format_character_anchor(candidate)
         analysis.subjects = manifest.subjects
         analysis.assets = manifest.assets
         return (analysis.to_json(), candidate.to_json(), manifest.to_json(),
