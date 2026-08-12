@@ -194,3 +194,20 @@ def test_supplement_picker_is_advanced_and_preserves_workflow_ids(loaded):
     assert "不适用于当前节点/目标" in source
     assert "资料已删除或注册表中不存在" in source
     assert 'APS_LLMGenerate: { family: "generic_llm", nodeId: "llm.generate", auto: false }' in source
+
+
+def test_ph9_regression_gate_covers_every_required_runtime_check():
+    """The final phase must stay one executable gate, not a prose checklist."""
+    script = (PROJECT_ROOT / "scripts" / "verify_prompt_contracts.ps1").read_text(
+        encoding="utf-8")
+    assert "python -m pytest tests/ -q" in script
+    assert "python -m compileall" in script
+    assert "Get-ChildItem -LiteralPath web -Filter *.js" in script
+    assert "node --check" in script
+    assert "git diff --check" in script
+    matrix = (PROJECT_ROOT / "docs" / "prompt-architecture"
+              / "ph9-prompt-contract-regression.md").read_text(encoding="utf-8")
+    for requirement in ("Unit rules", "Integration", "Mock Gateway",
+                        "Workflow compatibility", "Node import",
+                        "Python compilation", "JavaScript syntax"):
+        assert requirement in matrix

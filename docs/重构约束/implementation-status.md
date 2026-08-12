@@ -108,7 +108,17 @@ loads the live registry, distinguishes enabled/applicable/disabled/missing recor
 supports explicit multi-selection and the nodes where `auto` is safe, and reports
 load failures with retry. The raw serialized STRING widget is hidden but retained as
 the stable workflow compatibility field, so Markdown content never enters workflow
-JSON and the primary node UI remains focused. PH9 remains open.
+JSON and the primary node UI remains focused.
+
+## PH9 Prompt Contract Regression
+
+PH9 is complete. `scripts/verify_prompt_contracts.ps1` is the single executable release
+gate for the binding checklist: full unit/integration/mock-Gateway/workflow/node-loader
+pytest coverage, compilation of every production Python layer, enumeration and syntax
+checking of every frontend JavaScript file, and diff whitespace validation. The durable
+evidence map is `docs/prompt-architecture/ph9-prompt-contract-regression.md`. External
+provider behavior changes still require a separately recorded live acceptance run;
+the deterministic gate does not overclaim that boundary.
 
 ## Known Phase Gaps Outside §108
 

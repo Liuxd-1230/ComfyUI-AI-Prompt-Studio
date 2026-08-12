@@ -1,5 +1,7 @@
 # Changelog
 
+- **PH9 Prompt Contract Regression**：新增 `scripts/verify_prompt_contracts.ps1` 单一发布门，顺序执行全量 unit/integration/mock Gateway/workflow/node-loader 测试、所有生产层 Python 编译、逐个前端 JS 语法检查及 diff whitespace 检查。新增验收矩阵，明确每项绑定合同的可执行证据，并注明 live provider 行为变化仍需独立实跑。
+
 - **PH8 Node UI Integration**：LLM Generate、Reference Analyzer、Storyboard Builder、Image Prompt Studio 与 H3 Prompt Studio 不再要求手填 `prompt_supplements` ID。新增默认收起的高级多选器，从后端读取资料并按 global/node/target scope 与启用状态展示；支持自动选择、显式多选、不使用、加载失败重试和旧工作流缺失 ID 提示。工作流仍只序列化稳定 ID，主操作区不增加常驻控件。
 
 - **PH7 Markdown Supplemental System 验收收口**：按绑定阶段编号正式核验既有 `PromptSupplement` schema、注册表、Markdown 导入、global/node/target scope、启停、运行时加载、数量/上下文预算、hash 与路径安全。注册表损坏不再静默显示为空；设置页会收到明确错误。新增最终 Prompt Assembly 回归，证明恶意 Markdown 位于 Output Contract 之前，不能覆盖成品格式。

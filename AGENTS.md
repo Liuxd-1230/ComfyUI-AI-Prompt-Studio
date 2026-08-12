@@ -12,14 +12,17 @@ Create a virtual environment, then install runtime and development dependencies:
 python -m pip install -r requirements.txt
 python -m pip install "pytest>=8.0"
 python -m pytest tests/
-python -m compileall nodes services renderers validators schemas server tests
+python -m compileall nodes services renderers validators schemas server prompting domain tests
 node --check web/settings.js
 node --check web/profile_widgets.js
 node --check web/reference_mentions.js
 node --check web/prompt_studio.js
+node --check web/supplement_picker.js
 ```
 
 `pytest` uses ComfyUI-style package loading. `compileall` catches Python compilation issues; `node --check` validates JavaScript syntax. Optional features use `pip install "Pillow>=10.0" "numpy>=1.24"` for vision or `pip install "pypdf>=4.0" "python-docx>=1.1"` for document extraction.
+
+For the complete Windows release gate, run `powershell -ExecutionPolicy Bypass -File scripts/verify_prompt_contracts.ps1`; it enumerates every frontend script instead of relying on shell wildcard expansion.
 
 ## Binding Refactor Contracts
 

@@ -17,11 +17,15 @@
 - PH8 Node UI Integration is complete: all five supplement-capable nodes expose one
   collapsed Advanced picker backed by the registry, with scope/status diagnostics and
   stable-ID workflow serialization; the raw ID widget is hidden.
+- PH9 Prompt Contract Regression is complete: one executable PowerShell release gate
+  covers the full pytest suite, production Python compilation, every frontend script,
+  workflow/node-loader compatibility, and diff whitespace.
 - Runtime YAML Prompt Skill loading, CRUD, node injection, settings UI, tests, and `/skills` routes are removed.
 - Markdown supplements are implemented end to end: safe local storage, explicit/target/node selection, enable/disable, hash fingerprints, Prompt Assembly provenance, settings UI, and node inputs for LLM, Reference Analyzer, Storyboard Builder, Image Studio, and H3 Studio.
 
 ## Deliberately open
 
-- PH9 final prompt-contract regression remains separate.
+- Live provider acceptance remains required when an external provider/model behavior
+  changes; PH9 intentionally does not claim a deterministic mock can prove that.
   No placeholder operation, output-contract, or Skill compatibility path is retained.
 - Markdown supplements do not become a second policy language; adding a new hard rule requires a Model Core/code/test change.

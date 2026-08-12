@@ -21,7 +21,7 @@
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
 - **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
 - **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、本地运行时和 Markdown 补充资料管理。
-- **Model Core + Markdown 参考**：目标模型的硬规则由仓库内不可编辑 Model Core 持有；用户 Markdown 只能通过节点 `prompt_supplements` 显式选择（`auto` 仅用于目标节点），作为带来源/hash 的低优先级参考，不能覆盖协议、Schema、锁定事实或 validator。单份资料最多 256 KiB，每次最多 8 份、总上下文最多 128 KiB。
+- **Model Core + Markdown 参考**：目标模型的硬规则由仓库内不可编辑 Model Core 持有；用户 Markdown 通过节点默认收起的 **高级设置 · Prompt Supplements** 选择（`auto` 仅用于目标节点），作为带来源/hash 的低优先级参考，不能覆盖协议、Schema、锁定事实或 validator。单份资料最多 256 KiB，每次最多 8 份、总上下文最多 128 KiB；工作流只保存稳定 ID。
 - **统一操作策略**：CREATE、REFINE、格式修复、协议重试和参考观察由同一版本化 Operation Policy 接口提供。REFINE 只表达本轮增量并保留无关内容；修复只处理明确问题且最多一次。旧 generate/expand/rewrite/translate/audit/convert 下拉与持久化状态已删除；`set/delete/insert` 仅是严格模式内部 ChangeSet 操作。
 - **机器输出契约**：JSON Schema、`<PROMPT>/<SUMMARY>` envelope、JSON-only 模式和 provider fallback 由统一 `OutputContract` 持有。支持原生 Structured Output 时发送机器 Schema；不支持时从同一 Schema 自动派生约束，不再手抄 JSON 示例。输出契约是最后一个 system 层，Markdown 资料不能覆盖它。
 - **前端入口（0.2.1c）**：不占用 ComfyUI Sidebar；入口放在 ComfyUI 原生 **Settings** 页面中的 `AI Prompt Studio > General > Settings Workbench`。选择「Open Settings Workbench」打开大型设置工作台；语言也在同一组设置中切换。API Key 不进原生 Settings，仍由工作台填写并只存服务端。
@@ -131,12 +131,10 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 ## 开发与测试
 
 ```bash
-python -m pytest tests/          # 全量测试（节点/网关/渲染器/校验器/安全/示例工作流）
-node --check web/*.js            # 前端语法检查
-python -m compileall nodes services renderers validators schemas server tests
+powershell -ExecutionPolicy Bypass -File scripts/verify_prompt_contracts.ps1
 ```
 
-- 测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约和主链路回归；数量以本地 `pytest` 结果为准。
+- PH9 单一入口依次执行全量 pytest、所有生产层 Python 编译、逐个 `web/*.js` 语法检查和 `git diff --check`；测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约和主链路回归。验收矩阵见 `docs/prompt-architecture/ph9-prompt-contract-regression.md`。
 - 架构与决策：`docs/decisions.md`、`docs/adr/`、`docs/compatibility.md`。
 - P0-P4 历史架构与 ADR 0007 当前双通道决策见 `docs/prompt-architecture/` 和 `docs/adr/`。宽松模式只做可证明的硬检查；严格模式执行 ChangeSet、确定性依赖闭包、Diff Guard、locks、renderer/validator 与 revision CAS。两种模式都不调用 Semantic Critic，也不做隐藏的创意自动修复。四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
 - 2026-08-11 的真实 ComfyUI/LM Studio 提示词验收记录见 `docs/prompt-architecture/p4.1-real-acceptance-2026-08-11.md`；记录明确区分已实跑项、自动化故障注入项和仍未能由当前模型现场诱发的损坏协议响应。
