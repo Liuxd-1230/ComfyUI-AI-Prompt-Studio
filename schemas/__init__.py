@@ -78,6 +78,7 @@ from .storyboard import (
     ContinuityNote,
     Scene,
     Shot,
+    StoryCharacter,
     StoryItem,
     StoryItemList,
     Storyboard,
@@ -120,7 +121,7 @@ __all__ = [
     "ReferenceAnalysis", "ReferenceManifest", "AssetRef", "SubjectRef",
     "ANALYSIS_MODES", "ASSET_TYPES",
     # storyboard
-    "Storyboard", "Scene", "Shot", "Beat", "StoryItem", "StoryItemList",
+    "Storyboard", "Scene", "Shot", "Beat", "StoryCharacter", "StoryItem", "StoryItemList",
     "ContinuityNote", "SPLIT_MODES", "SELECT_MODES",
     # prompt_plan
     "PromptPlan", "GenerationProfile", "ValidationReport", "ValidationIssue",

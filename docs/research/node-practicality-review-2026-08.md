@@ -2,6 +2,8 @@
 
 ## 范围与结论
 
+> 更新（2026-08-12）：本页早期审查中的 Storyboard 约束/连续性缺口已在当前工作单元收口；下文对应条目保留为历史发现，现状以节点文档和 CHANGELOG 为准。
+
 本次对照仓库 10 个节点、内置 Prompt Skill、用户的 `t2v.json`，并核对 ComfyUI、LM Studio、llama.cpp、Black Forest Labs、Stability AI 等一手资料。整体判断：**H3 的结构化计划/确定性渲染/校验链和 ANIMA 专用渲染器方向正确；通用 Composer、批处理、运行时状态和节点可发现性仍有明显产品缺口。** 现有 452 项测试主要验证结构和协议，不能证明最终图片/视频提示词质量。
 
 ## P0：会直接让功能名不副实
@@ -17,7 +19,7 @@
 - **LM Studio 状态语义混淆。** `/api/v1/models` 返回可用模型及 `loaded_instances`；当前实现把全部 key 当作“已加载模型”，`unload_all` 会尝试卸载未加载项；同一 key 多实例只卸第一个。应分别返回 available/loaded instances，并允许按 instance 或全部实例卸载。LM Studio v1 官方端点见 [REST API](https://lmstudio.ai/docs/developer/rest)。
 - **LM Studio Token 不受支持。** Runtime HTTP 层不发送 Authorization；开启 “Require Authentication” 后状态与卸载都会失败。官方要求 Bearer token：[Server Settings](https://lmstudio.ai/docs/developer/core/server/settings)。Token 应复用 SecretStore，不能进入工作流 JSON。
 - **自动卸载配置难以实际使用。** Profile 有隐藏的 `runtime` 字典但设置工作台不能编辑；默认 backend 又是 Ollama。更实用的方案是卸载节点可接 `AI_PROFILE` 或 `LLM_RESULT`，自动取得实际 backend/url/model/token，同时保留 prompt 透传。
-- **Storyboard 约束只写进提示词、未强制。** `max_scenes`、总时长和镜头 ID 唯一性缺少确定性校验；模型漏写 duration 时按“每个场景”分摊，可能令全片总时长超过目标。`continuity` 目前只报告人物跨场景出现，并未检查服装、位置、道具状态。
+- **（已修复）Storyboard 约束曾只写进提示词。** 当前 `normalize_storyboard()` 确定性执行 `max_scenes`、全片目标时长、场景/镜头/节拍 ID 唯一和空场景可选择性；`build_continuity()` 额外报告人物跨场景位置变化，Select 会把机位/时长/声音/节拍带到下游。服装/道具仍属于软连续性提示，不能从缺少状态字段的原文中臆造。
 - **Reference Analyzer 成本不可控。** 多图逐张串行分析，再追加一次身份判断；只限制身份判断取前 6 张，却不限制逐图分析总数。应增加 `max_images`、并发上限、缩略图策略和成本预估。
 - **Skill 管理 UI 未完成。** 后端有 create/update，但前端只有复制、启停、删除，没有编辑 `system_prompt` 的表单；界面却声称复制后可编辑。
 - **LLM 的 context 被放进 system 消息。** 虽有“把上下文当数据”的文字守则，但把外部资料提升到 system 层仍扩大提示注入风险；应作为独立 user/context content part，并使用明确边界。

@@ -354,3 +354,15 @@ def __trait(name, value, sources=None):
     from aps.schemas.character import CharacterTrait
 
     return CharacterTrait(name=name, value=value, sources=list(sources or []))
+
+
+def test_bible_preserves_candidate_subject_provenance(store):
+    node = cb_mod.APS_CharacterBible()
+    candidate = CharacterCandidate(
+        name="少女", subject_id="subject_2",
+        traits=[__trait("hair", "black", sources=["image:1"])])
+    _, _, json_out, _, _, _, _ = node.merge(
+        merge_strategy="consensus", character_candidate=candidate.to_json(),
+        existing_bible=None, text_anchor="", lock_fields="", character_name="少女")
+    bible = CharacterBible.from_json(json.loads(json_out))
+    assert "subject:subject_2" in bible.sources

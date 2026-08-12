@@ -410,6 +410,10 @@ def merge_candidate_into_bible(
     for s in candidate.sources:
         if s not in bible.sources:
             bible.sources.append(s)
+    if candidate.subject_id:
+        subject_source = f"subject:{candidate.subject_id}"
+        if subject_source not in bible.sources:
+            bible.sources.append(subject_source)
     if candidate.confidence < 0.4:
         bible.uncertainty_notes.append(f"候选整体置信度低（{candidate.confidence:.2f}），特征需人工复核")
     bible.touch()

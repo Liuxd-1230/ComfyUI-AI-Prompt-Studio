@@ -11,8 +11,8 @@
 - **统一 LLM 网关**：主动实测后选择 Responses / Chat Completions；支持任意 OpenAI 兼容端点及本地运行时（Ollama / llama.cpp / LM Studio）。
 - **AI Model Profile**：命名服务档案 + 主动能力探测 + 密钥安全存放（密钥永远不进工作流 JSON）。探测会用运行时相同请求格式验证文本、JSON、工具、联网、图片和文件，不再从 `/models` 猜能力。
 - **Reference Analyzer**：文本锚点 / 图片特征反推，多图共识与冲突，人物来源证据，输出参考资产清单。
-- **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID。
-- **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
+- **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID；角色表会把状态类别和来源证据传给分镜，默认不把 uncertain 推断当成硬事实。
+- **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式；确定性收敛场景上限、全片时长、重复 ID、空场景和人物显示名，并保留镜头/节拍声音。
 - **Image Prompt Studio**：`APS_PromptStudio` 覆盖 ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 与 Generic Image。默认 `lenient` 直接维护完整提示词，适合本地小模型；`strict` 使用结构化 Plan、ChangeSet、Diff Guard 与原子 revision。两种模式都自动从 Session 判断 CREATE/REFINE，不再提供 operation 下拉。旧 v1/v2 Session 会重置为空 v3.1；最近保留 10 个成功版本。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
 - **MiniMax H3 Prompt Studio**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（读取旧 R2V 值时归一化），支持图片、视频和音频参考。默认宽松模式直接维护完整官方文本；严格模式由结构化 Plan、ChangeSet、Python renderer 与规则校验驱动。
@@ -63,8 +63,8 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 | **LLM Generate / Chat** | 通用对话/生成（流式、推理、联网、会话） | `AI_PROFILE`、prompt | `LLM_RESULT`、`CHAT_SESSION` |
 | **Reference Analyzer** | 文本/图片参考分析（11 种模式） | `AI_PROFILE`、text、images | `REFERENCE_ANALYSIS`、`CHARACTER_CANDIDATE`、`REFERENCE_MANIFEST`、IMAGE 透传 |
 | **Character Bible** | 合并人物特征、锁定、冲突报告 | `CHARACTER_CANDIDATE`、`existing_bible` | `CHARACTER_BIBLE`、人物提示片段 |
-| **Storyboard Builder** | 剧情 → 结构化分镜（LLM） | `AI_PROFILE`、story_text | `STORYBOARD` |
-| **Storyboard Select / Batch** | 场景/镜头/区间/全部选择（不调模型） | `STORYBOARD` | 单项、容器及真实 ComfyUI `STORY_ITEMS` 列表输出 |
+| **Storyboard Builder** | 剧情 → 结构化分镜（LLM）；收敛场景/时长/ID并生成连续性报告 | `AI_PROFILE`、story_text、CharacterBook | `STORYBOARD`、continuity |
+| **Storyboard Select / Batch** | 场景/镜头/区间/全部选择（不调模型）；输出可直接接下游的完整镜头文本 | `STORYBOARD` | 单项、容器及真实 ComfyUI `STORY_ITEMS` 列表输出 |
 | **Image Prompt Studio** | 宽松完整提示词 / 严格 Plan+ChangeSet，自动 CREATE/REFINE | `AI_PROFILE`、text、target、execution_mode | positive、negative、`prompt_session`、validation |
 | **图片引用提示词（输入 @）** | 图片连接 → 模型引用语法与资产清单 | prompt、target、image_1～3 | prompt、`REFERENCE_MANIFEST`、references、count |
 | **MiniMax H3 Prompt Studio** | 宽松完整 H3 文本 / 严格 H3 Plan+ChangeSet | `AI_PROFILE`、text、mode、execution_mode、媒体 | prompt、`prompt_session`、`REFERENCE_MANIFEST`、validation |

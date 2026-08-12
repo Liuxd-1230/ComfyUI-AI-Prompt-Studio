@@ -50,7 +50,9 @@
 
 `split_mode=scene` 期待段落级剧情，输出每场一个条目；`shot` 期待可拍摄动作，输出镜头；`beat` 适合对白/动作节拍密集的短片；`auto` 让构建器按长度选择。`StoryboardSelect` 的 `scene/shot/range/all` 分别输出一场、一个镜头、序号区间或全部列表。
 
-示例输入：`雨夜，铃冲进空车站寻找即将离开的朋友；广播响起，她在末班车关门前看见对方。` 不要在这里写 ANIMA 标签或 H3 六段格式。
+示例输入：`雨夜，铃冲进空车站寻找即将离开的朋友；广播响起，她在末班车关门前看见对方。` 不要在这里写 ANIMA 标签或 H3 六段格式。若已接 CharacterBook，角色书中的 ID、Speaker、stable/current 状态和来源会进入角色表；故事中新出现的人物要在 `character_definitions` 声明显示名，避免只剩 `char_02` 这种无法回看的编号。
+
+Storyboard Builder 会在模型返回后确定性收敛：`max_scenes` 是硬上限，`target_duration` 会重新分配到全部镜头，重复或缺失 ID 会修复并在 `continuity` 报告；`audio` 可写在镜头或节拍上，之后可被 H3 转换消费。`StoryboardSelect` 的 scene 输出包含该场景的镜头摘要，shot 输出包含机位、时长、声音和节拍，适合直接接 Prompt Studio 或 H3。
 
 ## Image Prompt Studio
 

@@ -5,7 +5,7 @@ import pytest
 
 from aps.schemas.h3 import H3PromptPlan
 from aps.schemas.references import AssetRef, ReferenceManifest, SubjectRef
-from aps.schemas.storyboard import Scene, Shot, Storyboard
+from aps.schemas.storyboard import Scene, Shot, StoryCharacter, Storyboard
 from aps.services.h3_plan import (
     build_plan_prompt,
     convert_storyboard,
@@ -183,6 +183,16 @@ def test_convert_storyboard_maps_structure():
     assert plan.retention[0].marker == "fully_preserved"
     assert plan.summary.startswith("[reference generation]")
     assert plan.style_opening == "Cinematic"
+
+
+def test_convert_storyboard_uses_new_character_definition_name():
+    sb = Storyboard(
+        characters=["c2"],
+        character_definitions=[StoryCharacter(character_id="c2", name="阿岚")],
+        scenes=[Scene(scene_id="s1", characters=["c2"],
+                      shots=[Shot(shot_id="sh1", characters=["c2"])])])
+    plan = convert_storyboard(sb, "T2VA", 6.0)
+    assert plan.speakers[0].name == "阿岚"
 
 
 def test_convert_storyboard_audio_asset_kind():

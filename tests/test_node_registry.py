@@ -96,6 +96,7 @@ def test_storyboard_select_node(ext, storyboard):
     assert item_list["batch_count"] == 3
     assert item["kind"] == "shot"
     assert "c1" in json_loads(chars)
+    assert "时长" in scene_text and "机位" in scene_text
 
     item, item_list, scene_text, chars, batch, items = node.select(
         storyboard=storyboard.to_json(), select_mode="scene",

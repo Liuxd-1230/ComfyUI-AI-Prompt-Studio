@@ -62,6 +62,14 @@ class ContinuityNote(Schema):
 
 
 @dataclasses.dataclass
+class StoryCharacter(Schema):
+    """分镜里新出现、尚未进入 CharacterBook 的人物声明。"""
+
+    character_id: str = ""
+    name: str = ""
+
+
+@dataclasses.dataclass
 class Storyboard(Schema):
     """故事的结构化拆分（模型无关，禁止硬编码 ANIMA/H3 标签）。"""
 
@@ -71,6 +79,7 @@ class Storyboard(Schema):
     split_mode: str = "scene"
     style: str = ""
     characters: List[str] = dataclasses.field(default_factory=list)
+    character_definitions: List[StoryCharacter] = dataclasses.field(default_factory=list)
     scenes: List[Scene] = dataclasses.field(default_factory=list)
     continuity: List[ContinuityNote] = dataclasses.field(default_factory=list)
     created_at: str = ""
@@ -102,6 +111,9 @@ class Storyboard(Schema):
         for c in self.characters:
             if c not in seen:
                 seen.append(c)
+        for definition in self.character_definitions:
+            if definition.character_id and definition.character_id not in seen:
+                seen.append(definition.character_id)
         for s in self.scenes:
             for c in s.characters:
                 if c not in seen:

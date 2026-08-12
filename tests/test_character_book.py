@@ -114,6 +114,31 @@ def test_context_text_contains_ids_and_traits():
     assert "A hair" in ctx
 
 
+def test_role_table_keeps_current_state_and_source_provenance():
+    book = CharacterBook()
+    bible = make_bible("c1", "A")
+    bible.traits.extend([
+        CharacterTrait(name="outfit", value="blue coat", category="current",
+                       sources=["image_1"]),
+        CharacterTrait(name="mood", value="tense", category="variable",
+                       sources=["story_text"]),
+        CharacterTrait(name="hair_color", value="possibly blonde", category="uncertain",
+                       sources=["image_2"]),
+    ])
+    bible.sources = ["image_1", "story_text"]
+    book.upsert_character(bible)
+    book.assign_speaker_ids()
+
+    table = book.role_table_text()
+
+    assert "c1 (S1, A)" in table
+    assert "stable: A hair" in table
+    assert "current: blue coat" in table
+    assert "variable: tense" in table
+    assert "uncertain: possibly blonde" not in table
+    assert "sources: image_1, story_text" in table
+
+
 # ---------------------------------------------------------------- 节点双路输出
 
 def test_bible_node_creates_book(store):

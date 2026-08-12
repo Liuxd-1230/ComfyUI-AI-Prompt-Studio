@@ -17,8 +17,9 @@ from ..prompting.node_requests import assemble_prompt, report_payload, task_mess
 from ..services.storyboard import (
     STORYBOARD_SCHEMA,
     build_continuity,
-    build_storyboard_prompt,
+    bind_character_book,
     fallback_storyboard,
+    normalize_storyboard,
     parse_storyboard_json,
 )
 from ._helpers import require_api_key, resolve_profile_input
@@ -76,6 +77,9 @@ class APS_StoryboardBuilder:
             "max_scenes": int(max_scenes or 12),
             "style": style or "",
             "character_book": book.to_json() if book is not None else None,
+            "character_role_table": (
+                book.role_table_text() if book is not None else ""
+            ),
             "reference_manifest": manifest.to_json() if manifest is not None else None,
         }
         assembly = assemble_prompt(
@@ -90,7 +94,14 @@ class APS_StoryboardBuilder:
                     "stable character IDs. Bind every action to its subject; keep dialogue "
                     "separate from action; maintain clothing, position, prop, and location "
                     "continuity. Camera choices are visual interpretations, not story facts. "
-                    "Do not add major characters or target-model syntax.", "storyboard.create"),
+                    "Do not add major characters or target-model syntax. The CharacterBook "
+                    "role table in task data is authoritative for existing character IDs, "
+                    "display names, Speaker IDs, and stable/current traits: reuse those IDs "
+                    "exactly and never rename or merge them. If the story introduces a named "
+                    "person absent from the table, create one unique ID and include its display "
+                    "name in character_definitions; do not collapse a relationship such as "
+                    "哥哥 into an unnamed character. Preserve story-specified sound/dialogue "
+                    "as shot or beat audio arrays; do not invent audio.", "storyboard.create"),
                 PromptSource(
                     "operation.create", "1.0", PromptLayer.OPERATION,
                     "Return one complete storyboard that satisfies the supplied limits.",
@@ -122,23 +133,13 @@ class APS_StoryboardBuilder:
             fallback_reason = "模型返回的 JSON 没有任何场景"
             sb = fallback_storyboard(story_text, split_mode, style or "",
                                      float(target_duration or 0))
-        if len(sb.scenes) > int(max_scenes):
-            raise ValueError(
-                f"模型返回 {len(sb.scenes)} 个场景，超过 max_scenes={int(max_scenes)}；"
-                "请重试或提高上限")
-        shots = [shot for scene in sb.scenes for shot in scene.shots]
-        if shots and target_duration:
-            total = sum(max(0.0, shot.duration) for shot in shots)
-            if total <= 0:
-                each = float(target_duration) / len(shots)
-                for shot in shots:
-                    shot.duration = each
-            else:
-                scale = float(target_duration) / total
-                for shot in shots:
-                    shot.duration = round(max(0.01, shot.duration * scale), 3)
+        normalization_warnings = normalize_storyboard(
+            sb, max_scenes=int(max_scenes or 12), target_duration=float(target_duration or 0.0))
+        normalization_warnings.extend(bind_character_book(sb, book))
         sb.summary = story_text.strip()[:200]
         sb.continuity = build_continuity(sb)
+        for warning in normalization_warnings:
+            sb.continuity.append(ContinuityNote(note=warning, severity="warning"))
         if fallback_reason:
             sb.continuity.append(ContinuityNote(
                 note=("模型未遵守 Storyboard JSON 格式，已保留原故事并回退为一个"

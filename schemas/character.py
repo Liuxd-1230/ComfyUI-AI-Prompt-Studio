@@ -253,3 +253,39 @@ class CharacterBook(Schema):
             else:
                 lines.append(f"{c.character_id} ({sid}, {name})")
         return "\n".join(lines) or "（无角色）"
+
+    def role_table_text(self, include_uncertain: bool = False) -> str:
+        """渲染供故事/导演节点使用的角色表，保留状态类别和来源。
+
+        ``context_text`` 刻意只输出 stable 特征，适合短提示词；故事分解还需要
+        知道当前服装/情绪等非稳定状态，且需要能追溯参考来源。因此提供一个
+        明确区分类别的较完整视图，仍把不确定推断默认排除，避免模型把猜测当事实。
+        """
+        lines: List[str] = []
+        for character in self.characters:
+            speaker = character.speaker_id or self.speaker_id_for(character.character_id) or "?"
+            name = character.name or character.character_id
+            lines.append(f"{character.character_id} ({speaker}, {name})")
+            grouped = {category: [] for category in TRAIT_CATEGORIES}
+            for trait in character.traits:
+                if trait.value and (include_uncertain or trait.category != "uncertain"):
+                    grouped.setdefault(trait.category, []).append(trait.value)
+            for category in ("stable", "variable", "current", "uncertain"):
+                values = grouped.get(category) or []
+                if values:
+                    lines.append(f"  {category}: {', '.join(dict.fromkeys(values))}")
+            sources: List[str] = []
+            for source in [*character.sources,
+                           *(source for trait in character.traits for source in trait.sources)]:
+                source = str(source).strip()
+                if source and source not in sources:
+                    sources.append(source)
+            if sources:
+                lines.append(f"  sources: {', '.join(sources)}")
+            if character.notes.strip():
+                lines.append(f"  notes: {character.notes.strip()}")
+            if character.conflicts:
+                lines.append("  conflicts: " + "; ".join(
+                    f"{conflict.trait_name} ({' vs '.join(conflict.values)})"
+                    for conflict in character.conflicts))
+        return "\n".join(lines) or "（无角色）"

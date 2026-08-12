@@ -377,7 +377,12 @@ def convert_storyboard(sb: Storyboard, mode: str, duration: float,
         if not speaker_id:
             auto_no += 1
             speaker_id = f"S{auto_no}"
-        name = book.get_character(cid).name if (book is not None and book.get_character(cid)) else cid
+        book_character = book.get_character(cid) if book is not None else None
+        storyboard_character = next(
+            (item for item in sb.character_definitions if item.character_id == cid), None)
+        name = (book_character.name if book_character is not None and book_character.name
+                else storyboard_character.name if storyboard_character is not None
+                else cid)
         plan.speakers.append(H3Speaker(speaker_id=speaker_id, character_id=cid,
                                        name=name))
 

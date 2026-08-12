@@ -1,5 +1,6 @@
 # Changelog
 
+- Storyboard/CharacterBook 实用性补强：角色表现在把 stable/variable/current 状态、Speaker ID 和来源证据分层传给分镜，默认不把 uncertain 推断当成事实；Storyboard 新增 `character_definitions` 声明故事中新人物，H3 转换会使用其显示名并以 CharacterBook 身份为准。分镜 JSON 现在完整消费镜头/节拍 `audio`；模型返回后确定性收敛 `max_scenes`、全片 `target_duration`、重复/缺失场景-镜头-节拍 ID、空场景和人物引用，所有截断/修复写入 `continuity`。Storyboard Select 的 scene/shot 文本带概述、动作、机位、时长、声音和节拍。全库测试与真实 ComfyUI + LM Studio 9B 分镜链路已验证。
 - P5 持久会话与并发恢复：`PromptSession` 升级到 v3.1 并绑定 ComfyUI 节点实例；复制 Image/H3 Studio 节点会保留稳定成品、建立独立 session/origin lineage。成功提交先原子写入 ComfyUI 用户目录下最近 100 条 Recovery Journal，跨 adapter fresh-read CAS 阻止旧请求覆盖新 revision；打开落后的工作流会明确询问恢复或丢弃后端版本，接受后写回隐藏 widget 并标记工作流需要保存。真实 ComfyUI + LM Studio 9B 已验证 CREATE、REFINE、复制分叉、旧结果拒绝和浏览器恢复流程。
 - H3 Studio 在节点内随下拉选择显示 T2VA/I2VA/FL2VA/L2VA/Ref2VA 的参考输入与用途说明，并解释宽松/严格执行模式；R2V 仅保留旧工作流读取兼容，不再出现在新节点下拉框。`message_nonce`、`session_action`、`prompt_session` 等内部状态现在真正隐藏，不再漏出在执行模式下方。
 - 修复 Prompt Studio DOM 工作台越过节点边框并留下大块空白：DOM widget 现在向 ComfyUI 声明固定的 min/max/current height，节点按原生端口高度加工作台高度自动扩展；面板使用有界网格和内部滚动，不再随节点剩余空间无限拉长。

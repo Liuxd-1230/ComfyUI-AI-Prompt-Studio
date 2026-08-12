@@ -11,17 +11,35 @@ from ..schemas.storyboard import SELECT_MODES, Scene, Shot, StoryItem, StoryItem
 
 
 def _shot_text(shot: Shot) -> str:
-    parts = [shot.summary, shot.action]
+    parts = []
+    if shot.summary:
+        parts.append(f"概述：{shot.summary}")
+    if shot.action:
+        parts.append(f"动作：{shot.action}")
+    parts.append(f"机位：{shot.camera or '未指定'}")
+    parts.append(f"时长：{shot.duration:g}s")
+    if shot.audio:
+        parts.append(f"声音：{'、'.join(shot.audio)}")
     for b in shot.beats:
-        parts.append(b.text)
+        if b.text:
+            parts.append(f"{b.kind}：{b.text}")
+        if b.audio:
+            parts.append(f"节拍声音：{'、'.join(b.audio)}")
     return "\n".join(p for p in parts if p)
 
 
 def _scene_item(scene: Scene) -> StoryItem:
-    text = scene.synopsis or scene.title
+    shot_texts = [_shot_text(shot) for shot in scene.shots]
+    shot_text = "\n\n".join(text for text in shot_texts if text)
+    text = "\n".join(p for p in [scene.synopsis or scene.title, shot_text] if p)
+    characters = list(scene.characters)
+    for shot in scene.shots:
+        for character_id in shot.characters:
+            if character_id not in characters:
+                characters.append(character_id)
     return StoryItem(
         item_id=scene.scene_id, kind="scene", scene_id=scene.scene_id, index=scene.index,
-        title=scene.title, text=text, characters=list(scene.characters),
+        title=scene.title, text=text, characters=characters,
         scene_title=scene.title, location=scene.location,
     )
 

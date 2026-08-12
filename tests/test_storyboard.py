@@ -3,11 +3,13 @@ import json
 
 import pytest
 
-from aps.schemas.storyboard import Storyboard
+from aps.schemas.storyboard import StoryCharacter, Storyboard
 from aps.services.storyboard import (
     STORYBOARD_SCHEMA,
+    bind_character_book,
     build_continuity,
     build_storyboard_prompt,
+    normalize_storyboard,
     parse_storyboard_json,
 )
 
@@ -70,6 +72,89 @@ def test_parse_missing_ids_fallback():
     sb = parse_storyboard_json(json.dumps(data), "scene")
     assert sb.scenes[0].scene_id == "s1"
     assert sb.scenes[0].shots[0].shot_id == "s1sh1"
+
+
+def test_parse_storyboard_reads_shot_and_beat_audio():
+    data = {
+        "title": "声音",
+        "characters": [],
+        "scenes": [{"scene_id": "s1", "shots": [{
+            "shot_id": "sh1", "audio": ["雨声"],
+            "beats": [{"text": "门响", "kind": "action", "audio": ["门轴声"]}],
+        }]}],
+    }
+    sb = parse_storyboard_json(json.dumps(data), "beat")
+    assert sb.scenes[0].shots[0].audio == ["雨声"]
+    assert sb.scenes[0].shots[0].beats[0].audio == ["门轴声"]
+
+
+def test_parse_storyboard_keeps_new_character_definitions():
+    data = {
+        "title": "重逢", "characters": ["char_01", "char_02"],
+        "character_definitions": [
+            {"character_id": "char_02", "name": "阿岚"},
+        ],
+        "scenes": [{"scene_id": "s1", "characters": ["char_01", "char_02"],
+                    "shots": [{"shot_id": "sh1", "characters": ["char_02"]}]}],
+    }
+    sb = parse_storyboard_json(json.dumps(data), "shot")
+    assert sb.character_definitions[0].character_id == "char_02"
+    assert sb.character_definitions[0].name == "阿岚"
+
+
+def test_storyboard_character_definition_roundtrips():
+    sb = Storyboard(character_definitions=[StoryCharacter(character_id="c1", name="A")])
+    restored = Storyboard.from_json(sb.to_json())
+    assert restored.character_definitions[0].name == "A"
+
+
+def test_bind_character_book_is_authoritative_for_used_ids():
+    from aps.schemas.character import CharacterBook, CharacterBible
+
+    sb = Storyboard(characters=["c1"], character_definitions=[
+        StoryCharacter(character_id="c1", name="错误名字")])
+    book = CharacterBook.from_bible(CharacterBible(character_id="c1", name="正确名字"))
+    warnings = bind_character_book(sb, book)
+    assert sb.character_definitions[0].name == "正确名字"
+    assert warnings and "CharacterBook" in warnings[0]
+
+
+def test_normalize_storyboard_enforces_limits_ids_and_duration():
+    data = {
+        "title": "长故事", "characters": ["c1"],
+        "scenes": [
+            {"scene_id": "dup", "location": "街道", "characters": ["c1"],
+             "shots": [{"shot_id": "same", "duration": 2, "characters": ["c1"]}]},
+            {"scene_id": "dup", "location": "室内", "shots": [
+                {"shot_id": "same", "duration": 3, "characters": ["c1"]},
+            ]},
+            {"scene_id": "s3", "shots": [{"shot_id": "sh3", "duration": 4}]},
+        ],
+    }
+    sb = parse_storyboard_json(json.dumps(data), "shot")
+    warnings = normalize_storyboard(sb, max_scenes=2, target_duration=10.0)
+
+    assert len(sb.scenes) == 2
+    assert len({scene.scene_id for scene in sb.scenes}) == 2
+    shot_ids = [shot.shot_id for scene in sb.scenes for shot in scene.shots]
+    assert len(shot_ids) == len(set(shot_ids))
+    assert round(sum(shot.duration for scene in sb.scenes for shot in scene.shots), 3) == 10.0
+    assert sb.scenes[0].characters == ["c1"]
+    assert any("max_scenes" in warning for warning in warnings)
+    assert any("ID" in warning for warning in warnings)
+
+
+def test_normalize_storyboard_creates_selectable_shot_for_empty_scene():
+    sb = Storyboard(title="空场景", scenes=[
+        # 一个模型可能返回只有场景没有 shots；不能让下游 Select/H3 丢掉它。
+        __import__("aps.schemas.storyboard", fromlist=["Scene"]).Scene(
+            scene_id="s1", index=1, synopsis="人物走进房间")
+    ])
+    warnings = normalize_storyboard(sb, max_scenes=3, target_duration=4.0)
+    assert len(sb.scenes[0].shots) == 1
+    assert sb.scenes[0].shots[0].summary == "人物走进房间"
+    assert sb.scenes[0].shots[0].duration == 4.0
+    assert any("没有镜头" in warning for warning in warnings)
 
 
 def test_build_continuity():
