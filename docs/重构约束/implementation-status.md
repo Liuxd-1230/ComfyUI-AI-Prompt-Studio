@@ -77,7 +77,17 @@ ChangeSet path syntax remains Node/Domain Core; current plans and validation
 issues remain structured task data. The old Composer/H3 operation enums,
 disconnected PromptSource registry, copied H3 JSON prompt builder, and unused
 offline storyboard-to-H3 conversion were deleted rather than preserved as
-compatibility placeholders. PH6 output-contract migration remains open.
+compatibility placeholders. Its completion preceded the PH6 unit recorded below.
+
+## PH6 Schema Contract Cleanup
+
+PH6 is complete. `prompting/output_contracts.py` is the production interface for
+tagged prompts, JSON objects, and JSON Schema responses. The same immutable contract
+now supplies the assembly source and ID, `GenerateRequest` intent, native adapter
+schema, JSON mode, and a deterministic non-native fallback derived from that schema.
+Reference vision calls use the same interface, including a real identity-verdict
+schema. Hand-copied Reference JSON examples, target Model Core transport wording,
+and caller-level `json_mode`/`output_schema` flags were removed. PH7 remains open.
 
 ## Known Phase Gaps Outside §108
 

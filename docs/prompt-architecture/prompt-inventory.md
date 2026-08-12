@@ -8,8 +8,8 @@ This inventory is the P0 baseline for every path that can send instructions or t
 |---|---|---|---|---|---|---|
 | `llm.generate` | `nodes/llm_chat.py` | General conversation | internal safety boundary; user `system_prompt`; JSON fallback | history, `user_prompt`, `context`, attachments | optional user JSON Schema | `Gateway.generate` |
 | `reference.text` | `nodes/reference_analyzer.py` | Extract text-anchor traits | extraction role | mode prompt, CharacterBook, text anchor | `CANDIDATE_SCHEMA` | `Gateway.generate` |
-| `reference.image` | `nodes/reference_analyzer.py` | Extract traits from each image | none at caller | mode prompt, CharacterBook, image | prompt-described JSON | `VisionService.call_vision` |
-| `reference.identity` | `nodes/reference_analyzer.py` | Decide whether images share identity | none at caller | `IDENTITY_COMPARISON_PROMPT`, images | prompt-described JSON | `VisionService.call_vision` |
+| `reference.image` | `nodes/reference_analyzer.py` | Extract traits from each image | analysis guard + mode semantics | CharacterBook, image | `reference-candidate` OutputContract | `VisionService.call_vision` |
+| `reference.identity` | `nodes/reference_analyzer.py` | Decide whether images share identity | identity evidence policy | images | `identity-verdict` OutputContract | `VisionService.call_vision` |
 | `storyboard.create` | `nodes/storyboard_builder.py` | Build model-neutral storyboard | storyboard role | split/style constraints, CharacterBook/Bible, manifest, story | `STORYBOARD_SCHEMA` | `Gateway.generate` |
 | `studio.image` | `nodes/prompt_studio.py` | Own all image Studio model calls across the two lanes | lightweight/strict runtime boundary plus target and operation policies | latest instruction, current prompt or Plan, and current connected sources | lenient envelope, strict Plan, or ChangeSet | `Gateway.generate` |
 | `studio.image.lenient` | `nodes/prompt_studio.py` | Create/refine one complete image prompt | lightweight envelope + target policy + create/refine policy | latest instruction, current prompt, current connected sources | `<PROMPT>/<SUMMARY>` | `Gateway.generate` |
@@ -24,7 +24,9 @@ This inventory is the P0 baseline for every path that can send instructions or t
 
 `services/capability_probe.py` makes active Chat Completions, Responses, JSON, tool, vision, file, and web-search probes. These are operational tests rather than creative generation, but their probe prompts remain versioned product behavior and must not be reused as model guidance.
 
-`services/gateway.py`, `services/adapters/chat_adapter.py`, and `services/adapters/responses_adapter.py` may add schema fallbacks, untrusted-search guards, tool results, and attachment content. They own protocol encoding only. They must not acquire target-model prompting rules.
+`prompting/output_contracts.py` owns response shape and derived schema fallback.
+`services/gateway.py` and the adapters only select/encode the active provider protocol;
+they must not acquire target-model prompting rules or hand-authored schemas.
 
 ## Model Core and supplement boundary
 

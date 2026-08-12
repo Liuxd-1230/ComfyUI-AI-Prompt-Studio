@@ -16,6 +16,7 @@ from ..prompting.assembly import (PromptAssembly, PromptLayer, PromptSource,
                                    StructuredTaskData)
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ..prompting.operation_policies import OperationKind, operation_source
+from ..prompting.output_contracts import schema_contract
 from ..services.storyboard import (
     STORYBOARD_SCHEMA,
     build_continuity,
@@ -110,12 +111,12 @@ class APS_StoryboardBuilder:
                 "person absent from the table, create one unique ID and include its display "
                 "name in character_definitions; do not collapse a relationship such as "
                 "哥哥 into an unnamed character. Preserve story-specified sound/dialogue "
-                "as shot or beat audio arrays; do not invent audio. Return only the JSON "
-                "object required by the storyboard schema, with no Markdown or explanation.",
+                "as shot or beat audio arrays; do not invent audio.",
                 "storyboard.create"),
             operation_source(OperationKind.CREATE, scope="storyboard.create"),
             *supplement_sources,
         ]
+        contract = schema_contract("storyboard", STORYBOARD_SCHEMA)
 
         def make_request(retry: bool = False) -> tuple[PromptAssembly, GenerateRequest]:
             sources = list(prompt_sources)
@@ -125,14 +126,13 @@ class APS_StoryboardBuilder:
             assembly = assemble_prompt(
                 sources,
                 task_data=[StructuredTaskData("storyboard_request", task_payload)],
-                output_contract_id="storyboard.schema@1")
+                output_contract=contract)
             return assembly, GenerateRequest(
                 system=assembly.system,
                 messages=[task_message(assembly)],
                 web_search="off", reasoning="high", max_tokens=8192,
                 timeout=prof.timeout,
-                # 0.2.1 P1-17：原生 Structured Output（Provider 支持时）；否则提示词约束兜底
-                output_schema=STORYBOARD_SCHEMA,
+                output_contract=assembly.output_contract,
                 assembly_report=report_payload(assembly))
 
         gateway = Gateway()

@@ -7,13 +7,20 @@ from typing import Any, Iterable
 from ..schemas.results import ChatMessage
 from .assembly import (PromptAssembler, PromptAssembly, PromptSource,
                        StructuredTaskData)
+from .output_contracts import OutputContract
 
 
 def assemble_prompt(sources: Iterable[PromptSource], *,
                     task_data: Iterable[StructuredTaskData] = (),
-                    output_contract_id: str = "") -> PromptAssembly:
-    return PromptAssembler().assemble(
-        sources, task_data, output_contract_id=output_contract_id)
+                    output_contract: OutputContract | None = None) -> PromptAssembly:
+    owned_sources = list(sources)
+    if output_contract is not None:
+        owned_sources.append(output_contract.source(scope="prompt-assembly"))
+    assembly = PromptAssembler().assemble(
+        owned_sources, task_data,
+        output_contract_id=(output_contract.identifier
+                            if output_contract is not None else ""))
+    return dataclasses.replace(assembly, output_contract=output_contract)
 
 
 def task_message(assembly: PromptAssembly) -> ChatMessage:

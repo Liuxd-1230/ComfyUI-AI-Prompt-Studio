@@ -8,8 +8,8 @@ from typing import Any
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ..prompting.operation_policies import OperationKind, operation_source
+from ..prompting.output_contracts import LENIENT_PROMPT_CONTRACT, schema_contract
 from ..prompting.studio_policies import (
-    LENIENT_OUTPUT_CONTRACT,
     UNTRUSTED_TASK_DATA_POLICY,
     image_target_policy,
 )
@@ -271,7 +271,7 @@ class APS_PromptStudio:
             supplements: list[PromptSource] | None = None) -> str:
         sources = [
             PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
-                         LENIENT_OUTPUT_CONTRACT + "\n\n" + UNTRUSTED_TASK_DATA_POLICY,
+                         UNTRUSTED_TASK_DATA_POLICY,
                          "prompt-studio"),
             PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                          image_target_policy(family, variant), "prompt-studio"),
@@ -288,11 +288,12 @@ class APS_PromptStudio:
         task_data.extend(_source_task_data(bible, book, manifest))
         assembly = assemble_prompt(
             sources, task_data=task_data,
-            output_contract_id="lenient-tagged-prompt@1")
+            output_contract=LENIENT_PROMPT_CONTRACT)
         request = GenerateRequest(
             system=assembly.system, messages=[task_message(assembly)],
             web_search="off", reasoning=profile.reasoning,
             max_tokens=4096, timeout=profile.timeout,
+            output_contract=assembly.output_contract,
             assembly_report=report_payload(assembly))
         result = Gateway().generate(profile, api_key, request)
         if result.has_error():
@@ -305,7 +306,7 @@ class APS_PromptStudio:
             supplements: list[PromptSource] | None = None) -> str:
         assembly = assemble_prompt(
             [PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
-                          LENIENT_OUTPUT_CONTRACT + "\n\n" + UNTRUSTED_TASK_DATA_POLICY,
+                          UNTRUSTED_TASK_DATA_POLICY,
                           "prompt-studio"),
              PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                           image_target_policy(family, variant), "prompt-studio"),
@@ -314,11 +315,12 @@ class APS_PromptStudio:
              *(supplements or [])],
             task_data=[StructuredTaskData("rejected_output", raw, "text/plain"),
                        StructuredTaskData("concrete_issues", issues)],
-            output_contract_id="lenient-tagged-prompt@1")
+            output_contract=LENIENT_PROMPT_CONTRACT)
         request = GenerateRequest(
             system=assembly.system, messages=[task_message(assembly)],
             web_search="off", reasoning="low", max_tokens=4096,
             timeout=profile.timeout,
+            output_contract=assembly.output_contract,
             assembly_report=report_payload(assembly))
         result = Gateway().generate(profile, api_key, request)
         if result.has_error():
@@ -440,6 +442,7 @@ class APS_PromptStudio:
         task_data.extend(_source_task_data(bible, book, manifest))
         raw = ""
         issues: list[str] = []
+        contract = schema_contract("image-semantic-plan", schema)
         for attempt in range(2):
             retry_data = list(task_data)
             if attempt:
@@ -468,12 +471,13 @@ class APS_PromptStudio:
                      scope="prompt-studio"),
                  *(supplements or [])],
                 task_data=retry_data,
-                output_contract_id="image-semantic-plan.schema@1")
+                output_contract=contract)
             request = GenerateRequest(
                 system=assembly.system, messages=[task_message(assembly)],
                 web_search="off", reasoning=profile.reasoning,
-                max_tokens=4096, timeout=profile.timeout, json_mode=True,
-                output_schema=schema, assembly_report=report_payload(assembly))
+                max_tokens=4096, timeout=profile.timeout,
+                output_contract=assembly.output_contract,
+                assembly_report=report_payload(assembly))
             result = Gateway().generate(profile, api_key, request)
             if result.has_error():
                 raise ValueError(result.error.as_text)

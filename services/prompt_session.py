@@ -188,6 +188,7 @@ def request_changeset(gateway: Any, profile: AIProfile, api_key: str,
     from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
     from ..prompting.node_requests import assemble_prompt, report_payload, task_message
     from ..prompting.operation_policies import OperationKind, operation_source
+    from ..prompting.output_contracts import schema_contract
     from ..schemas.changeset import ConstraintConflict, InvalidatedFact, SemanticChange
     from .gateway import GenerateRequest
     from .reference import extract_json_object
@@ -230,6 +231,8 @@ Report hard conflicts instead of silently overriding them."""
                      policy, "session.changeset"),
         operation_source(OperationKind.REFINE, scope="session.changeset"),
     ]
+    contract = schema_contract(
+        "semantic-changeset", CHANGESET_SCHEMA, version="2.0")
 
     def make_request(retry_payload: dict[str, Any] | None = None) -> Any:
         retry_data = [StructuredTaskData("changeset_request", task_data)]
@@ -238,12 +241,12 @@ Report hard conflicts instead of silently overriding them."""
                 "previous_protocol_failure", retry_payload))
         assembly = assemble_prompt(
             sources, task_data=retry_data,
-            output_contract_id="semantic-changeset.schema@2")
+            output_contract=contract)
         return GenerateRequest(
             system=assembly.system, messages=[task_message(assembly)],
             web_search="off", reasoning="medium", max_tokens=4096,
-            timeout=profile.timeout, json_mode=True,
-            output_schema=CHANGESET_SCHEMA,
+            timeout=profile.timeout,
+            output_contract=assembly.output_contract,
             assembly_report=report_payload(assembly))
 
     def decode_change(item: Any) -> SemanticChange:

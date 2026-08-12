@@ -1,5 +1,7 @@
 # Changelog
 
+- **PH6 Schema Contract Cleanup**：新增 `prompting/output_contracts.py` 深模块；每个 LLM 请求现在只接收一个 `OutputContract`，由它同时拥有 provenance ID、system 摘要、机器 JSON Schema、JSON 模式和非原生 provider fallback。Image/H3 Studio、Storyboard、Reference Analyzer（含视觉身份判断）、ChangeSet 与通用 LLM JSON 输出全部迁移；删除节点中的 `json_mode`/`output_schema` 双状态、Reference 手写 JSON 示例和 Model Core 内的输出格式命令。Markdown supplement 排在 Output Contract 之前，不能覆盖最终格式。
+
 - **PH5 Operation Policy Migration**：新增唯一的版本化 `prompting/operation_policies.py` 接口，Image/H3 Studio、Storyboard Builder、Reference Analyzer 与语义 ChangeSet 统一从这里取得 CREATE、REFINE、FORMAT_REPAIR、PROTOCOL_RETRY 和文字/图片观察职责。删除旧 `COMPOSER_OPERATIONS`/`H3_OPERATIONS` 状态、断开的 PromptSource registry、H3 `build_plan_prompt()` 手写 JSON 模板与无生产调用的 `convert_storyboard()`；ChangeSet 的 `set/delete/insert` 仍是内部事务操作，不是用户工作模式。
 
 - **Model Core / Markdown supplement migration**：移除运行时 YAML Prompt Skill、`services/skills.py`、`skills/` 文件和 `/skills` CRUD；ANIMA、Z-Image、Qwen Image Edit、Generic Image、MiniMax H3 硬规则集中到不可编辑 `prompting/model_cores.py`。新增安全本地 Markdown 资料注册表、hash/范围/启停管理、`/supplements` 路由和设置页编辑器；LLM、Reference Analyzer、Storyboard Builder、Image Studio、H3 Studio 均可接收显式补充资料。资料只作为低优先级参考，不能覆盖 Model Core、协议、Schema、validator、Diff Guard 或锁定事实。新增端到端 supplement 路由、安全和 session fingerprint 测试。

@@ -15,6 +15,11 @@ from ..services.gateway import Gateway, GenerateRequest
 from ..services.supplements import supplement_sources as load_supplement_sources
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
+from ..prompting.output_contracts import (
+    OutputContract,
+    json_object_contract,
+    schema_contract,
+)
 from ._helpers import require_api_key, resolve_profile_input
 
 HISTORY_MODES = ["append", "replace", "off"]
@@ -142,35 +147,34 @@ class APS_LLMGenerate:
         # 结构化输出：合法 schema → gateway 协议层（DeepSeek 自动降级为提示词约束）；
         # 非法 schema → 提示词约束兜底 + warning（不静默丢弃用户约束）
         schema_warnings: List[str] = []
-        output_schema = None
+        output_contract: OutputContract | None = None
+        invalid_schema_data = ""
         if output_mode == "json_schema" and json_schema.strip():
             try:
-                output_schema = json.loads(json_schema.strip())
-                if not isinstance(output_schema, dict):
+                parsed_schema = json.loads(json_schema.strip())
+                if not isinstance(parsed_schema, dict):
                     raise ValueError("schema 必须是 JSON 对象")
+                output_contract = schema_contract(
+                    "user-json-schema", parsed_schema)
             except ValueError:
                 schema_warnings.append(
                     "json_schema 不是合法 JSON 对象；已降级为提示词约束，"
                     "模型输出不保证严格符合该 Schema")
-                sources.append(PromptSource(
-                    "output.invalid-schema-fallback", "1.0", PromptLayer.OPERATION,
-                    "必须输出合法 JSON 对象，并尽量遵守用户提供但无法解析的 JSON Schema：\n"
-                    + json_schema.strip(), "llm.generate"))
-                output_schema = None
-        json_mode = output_mode in ("json", "json_schema")
+                output_contract = json_object_contract("invalid-user-schema-fallback")
+                invalid_schema_data = json_schema.strip()
         if output_mode == "json":
-            sources.append(PromptSource(
-                "output.json-object", "1.0", PromptLayer.OPERATION,
-                "必须只输出一个合法 JSON 对象，不要解释或额外文本。",
-                "llm.generate"))
+            output_contract = json_object_contract()
 
+        contract_task_data = ([StructuredTaskData(
+            "unparsed_json_schema_reference", invalid_schema_data, "text/plain")]
+            if invalid_schema_data else [])
         assembly = assemble_prompt(
             sources,
             task_data=([StructuredTaskData("context", ctx_text, "text/plain")]
-                       if ctx_text else []),
-            output_contract_id=("user-json-schema" if output_schema else output_mode))
+                       if ctx_text else []) + contract_task_data,
+            output_contract=output_contract)
         system = assembly.system
-        if ctx_text:
+        if assembly.task_data:
             context_msg = task_message(assembly)
             messages.insert(max(0, len(messages) - 1), context_msg)
 
@@ -184,8 +188,7 @@ class APS_LLMGenerate:
             top_p=prof.top_p,
             frequency_penalty=prof.frequency_penalty,
             presence_penalty=prof.presence_penalty,
-            json_mode=json_mode,
-            output_schema=output_schema,
+            output_contract=assembly.output_contract,
             assembly_report=report_payload(assembly),
             attachments=att_list,
             stop_event=stop_event,
@@ -208,7 +211,8 @@ class APS_LLMGenerate:
 
         # JSON 输出校验
         warnings = list(file_warnings) + list(result.warnings) + schema_warnings
-        if json_mode and result.text.strip():
+        if output_contract is not None and output_contract.wants_json \
+                and result.text.strip():
             try:
                 json.loads(result.text)
             except ValueError:

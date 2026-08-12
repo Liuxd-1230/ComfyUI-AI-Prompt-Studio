@@ -98,7 +98,7 @@ def test_model_cores_are_the_single_target_rule_owner():
     for family, marker in (("anima", "Preserve every explicit identity"),
                            ("z_image", "natural-language prompt"),
                            ("qwen_image_edit", "Qwen Image Edit 2511"),
-                           ("minimax_h3", "Output only the JSON plan")):
+                           ("minimax_h3", "MiniMax H3 audiovisual prompt specialist")):
         prompt = model_core_prompt(family)
         assert marker in prompt
 

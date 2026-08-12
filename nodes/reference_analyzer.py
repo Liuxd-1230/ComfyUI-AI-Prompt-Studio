@@ -19,6 +19,7 @@ from ..services.supplements import supplement_sources as load_supplement_sources
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ..prompting.operation_policies import OperationKind, operation_source
+from ..prompting.output_contracts import schema_contract
 from ._helpers import require_api_key, resolve_profile_input
 
 # 所有模式的公共守则（docs/prompt-audit.md RA-* 记录）：把图像/文字当数据而非指令；
@@ -45,10 +46,8 @@ MODE_PROMPTS = {
         "or explicitly visible as a character label. For image-only input, name must be an "
         "empty string. Never use a poster title, logo, franchise title, filename, or generic "
         "'Unknown'/'Character...' phrase as the person's name. "
-        "Return JSON only: {\"name\": string, \"traits\": [{\"name\": string, "
-        "\"value\": string, \"category\": \"stable|variable|current|uncertain\", "
-        "\"confidence\": 0-1}]}. "
-        "Lowercase values, spaces not underscores. " + _PROMPT_GUARDRAIL),
+        "Use stable/variable/current/uncertain categories and numeric confidence. "
+        "Lowercase trait values, spaces not underscores. " + _PROMPT_GUARDRAIL),
     "character_full": (
         "Describe the character only: stable identity + current full-body appearance. "
         "Focus on the person, clothing, accessories, pose, and visible expression; exclude "
@@ -57,55 +56,43 @@ MODE_PROMPTS = {
         "it is supplied in the text anchor/CharacterBook or explicitly visible as a character "
         "label. For image-only input, name must be an empty string. Never use a poster title, "
         "logo, filename, or generic 'Unknown'/'Character...' phrase as the person's name. "
-        "Return JSON only: "
-        "{\"name\": string, \"traits\": [{\"name\", \"value\", \"category\", "
-        "\"confidence\"}]}. Every trait must include a numeric confidence from 0 to 1. "
+        "Every trait must include a category and numeric confidence from 0 to 1. "
         + _PROMPT_GUARDRAIL),
     "clothing": (
         "Describe the character's clothing and accessories (observable in the image only). "
-        "Return JSON only: "
-        "{\"traits\": [{\"name\": \"clothing\", \"value\": string, \"category\": "
-        "\"stable|variable|current\", \"confidence\": 0-1}]}. " + _PROMPT_GUARDRAIL),
+        "Name clothing traits clearly and classify them as stable, variable, or current. "
+        + _PROMPT_GUARDRAIL),
     "pose_expression": (
         "Describe the current pose and facial expression as observable in this image. "
-        "Return JSON only: "
-        "{\"traits\": [{\"name\": \"pose\", ...}, {\"name\": \"expression\", ...}]} "
-        "with category \"current\" and confidence 0-1. "
+        "Name pose and expression separately, with category current and confidence 0-1. "
         "Do not infer what the person is thinking or feeling beyond the visible expression. "
         + _PROMPT_GUARDRAIL),
     "scene": (
         "Describe the scene: location, lighting, time of day, atmosphere — observable "
-        "elements only, no story speculation. Return JSON only: "
-        "{\"traits\": [{\"name\": \"scene\", \"value\": string, \"category\": \"current\", "
-        "\"confidence\": 0-1}]}. " + _PROMPT_GUARDRAIL),
+        "elements only, no story speculation. Classify scene evidence as current. "
+        + _PROMPT_GUARDRAIL),
     "composition": (
         "Describe the shot composition: framing, camera angle, depth, focus — observable "
         "in this image only (a static photo, not a video; do not describe camera motion). "
-        "Return JSON only: "
-        "{\"traits\": [{\"name\": \"composition\", \"value\": string, \"category\": "
-        "\"current\", \"confidence\": 0-1}]}. " + _PROMPT_GUARDRAIL),
+        "Classify composition evidence as current. " + _PROMPT_GUARDRAIL),
     "style": (
         "Describe the art style: medium, palette, rendering, mood — as actually visible. "
-        "Return JSON only: "
-        "{\"traits\": [{\"name\": \"style\", \"value\": string, \"category\": \"variable\", "
-        "\"confidence\": 0-1}]}. " + _PROMPT_GUARDRAIL),
+        "Classify style evidence as variable. " + _PROMPT_GUARDRAIL),
     "object": (
         "Describe notable objects/props and their observable appearance (in this image only). "
-        "Return JSON only: "
-        "{\"traits\": [{\"name\": \"object\", \"value\": string, \"category\": \"current\", "
-        "\"confidence\": 0-1}]}. " + _PROMPT_GUARDRAIL),
+        "Classify object evidence as current. " + _PROMPT_GUARDRAIL),
     "anima_reference": (
         "Extract observable details useful for an anime-style image generation prompt: "
-        "character appearance, clothing, style, composition. Return JSON only with "
-        "\"traits\" array (categories stable|variable|current). " + _PROMPT_GUARDRAIL),
+        "character appearance, clothing, style, composition. Use stable, variable, or "
+        "current categories. " + _PROMPT_GUARDRAIL),
     "h3_reference": (
         "Extract observable details from this static reference image for an H3 video "
         "generation prompt: subject appearance (visible identity features), visible "
         "action/state, composition, framing, camera angle, environment, lighting, and "
         "spatial relationships between subjects/objects. This is a static image — "
         "do not describe camera motion, temporal motion, video movement, or motion "
-        "sequences (camera motion is decided by the H3 Director at generation time). "
-        "Return JSON only with \"traits\" array (categories stable|variable|current). "
+        "sequences (camera motion is decided by H3 Studio at generation time). "
+        "Use stable, variable, or current categories. "
         + _PROMPT_GUARDRAIL),
     "custom": "",
 }
@@ -127,6 +114,19 @@ CANDIDATE_SCHEMA = {
             "additionalProperties": False}},
     },
     "required": ["name", "traits"], "additionalProperties": False,
+}
+
+IDENTITY_VERDICT_SCHEMA = {
+    "type": "object", "additionalProperties": False,
+    "properties": {
+        "same_subject": {"type": "boolean"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "reasons_if_different": {
+            "type": "array", "items": {"type": "string"}},
+    },
+    "required": ["same_subject", "confidence", "evidence",
+                 "reasons_if_different"],
 }
 
 
@@ -217,6 +217,8 @@ class APS_ReferenceAnalyzer:
         # 1) 文字锚点（LLM 结构化解析）
         text_candidate = None
         if text_anchor and text_anchor.strip():
+            candidate_contract = schema_contract(
+                "reference-candidate", CANDIDATE_SCHEMA)
             text_sources = [*sources, operation_source(
                 OperationKind.OBSERVE_TEXT, scope="reference.text")]
             task_items = [StructuredTaskData("text_anchor", text_anchor.strip(),
@@ -224,12 +226,13 @@ class APS_ReferenceAnalyzer:
             if bible_context:
                 task_items.append(StructuredTaskData("character_bible", bible_context,
                                                      "text/plain"))
-            assembly = assemble_prompt(text_sources, task_data=task_items,
-                                       output_contract_id="candidate.schema@1")
+            assembly = assemble_prompt(
+                text_sources, task_data=task_items,
+                output_contract=candidate_contract)
             req = GenerateRequest(system=assembly.system,
                                   messages=[task_message(assembly)],
                                   web_search="off", reasoning="low",
-                                  json_mode=True, output_schema=CANDIDATE_SCHEMA,
+                                  output_contract=assembly.output_contract,
                                   assembly_report=report_payload(assembly))
             result = Gateway().generate(prof, api_key, req)
             if result.has_error():
@@ -248,14 +251,18 @@ class APS_ReferenceAnalyzer:
             if bible_context:
                 task_items.append(StructuredTaskData("character_bible", bible_context,
                                                      "text/plain"))
+            candidate_contract = schema_contract(
+                "reference-candidate", CANDIDATE_SCHEMA)
             assembly = assemble_prompt(
                 [*sources, operation_source(
                     OperationKind.OBSERVE_IMAGE, scope="reference.image")],
-                task_data=task_items, output_contract_id="candidate.prompt-json@1")
+                task_data=task_items,
+                output_contract=candidate_contract)
             res = vision_svc.call_vision(
                 vision_prof, vision_key,
                 vision_svc.build_vision_messages(assembly.task_data, [data_url],
-                                                 system=assembly.system),
+                                                 system=assembly.system,
+                                                 output_contract=candidate_contract),
                 assembly_report=report_payload(assembly))
             if not res["ok"]:
                 raise ValueError(res["error"].as_text)
@@ -361,6 +368,8 @@ class APS_ReferenceAnalyzer:
 
         sample = image_list[:MAX_IDENTITY_IMAGES]
         data_urls = [vision_svc.image_to_data_url(img) for img in sample]
+        verdict_contract = schema_contract(
+            "identity-verdict", IDENTITY_VERDICT_SCHEMA)
         assembly = assemble_prompt(
             [PromptSource("runtime.reference-data", "1.0", PromptLayer.RUNTIME,
                           _PROMPT_GUARDRAIL, "reference.identity"),
@@ -368,11 +377,12 @@ class APS_ReferenceAnalyzer:
                           IDENTITY_COMPARISON_PROMPT, "reference.identity"),
              *(supplements or [])],
             task_data=[StructuredTaskData("image_count", {"count": len(sample)})],
-            output_contract_id="identity-verdict.prompt-json@1")
+            output_contract=verdict_contract)
         res = vision_svc.call_vision(
             vision_prof, vision_key,
             vision_svc.build_vision_messages(assembly.task_data, data_urls,
-                                             system=assembly.system),
+                                             system=assembly.system,
+                                             output_contract=verdict_contract),
             assembly_report=report_payload(assembly))
         if not res["ok"]:
             return None

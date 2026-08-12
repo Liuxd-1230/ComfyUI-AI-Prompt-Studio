@@ -146,7 +146,7 @@ framing / camera angle / environment / lighting / spatial relationships / refere
 
 ### COMP-1h / H3 结构化输出偏好（P1-17）
 
-- `H3_SCHEMA` / `STORYBOARD_SCHEMA` 作为 `GenerateRequest.output_schema`：
+- `H3_SCHEMA` / `STORYBOARD_SCHEMA` 由 `GenerateRequest.output_contract` 持有：
   Provider 支持原生 Structured Output → 协议层 schema（不再 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复）；
   不支持 → Gateway 使用版本化 Operation Policy 与节点输出契约进行一次协议重试，不保留手写 JSON 模板；
 - 通用 LLM 路径 `structured_output` 能力按协议区分（responses / chat，见 docs/research.md §8.1）。

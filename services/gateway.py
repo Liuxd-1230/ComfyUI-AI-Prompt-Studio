@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional
 from ..schemas.profile import AIProfile
 from ..schemas.results import ChatMessage, LLMResult, make_error
 from ..server.config_store import ConfigStore
+from ..prompting.output_contracts import OutputContract
 from . import attachments as attachments_svc
 from . import capability_probe, search, tools as tools_svc
 from .adapters.base import ProtocolUnsupported
@@ -48,8 +49,7 @@ class GenerateRequest:
     top_p: Optional[float] = None
     frequency_penalty: Optional[float] = None
     presence_penalty: Optional[float] = None
-    json_mode: bool = False
-    output_schema: Optional[Dict[str, Any]] = None   # JSON Schema dict（结构化输出）
+    output_contract: Optional[OutputContract] = None
     assembly_report: Optional[Dict[str, Any]] = None  # Prompt 来源/边界/哈希审计
     attachments: List = field(default_factory=list)   # List[Attachment]（已过能力门槛）
     tools: bool = False             # 启用函数工具（P1；上限 MAX_TOOL_ROUNDS 不暴露到 UI）
@@ -74,25 +74,35 @@ class Gateway:
         return self._store
 
     # ------------------------------------------------------------ 结构化输出策略
-    def _structured_output_for(self, profile: AIProfile, req: GenerateRequest,
-                               protocol: str, caps: dict) -> Optional[Dict[str, Any]]:
-        """按当前协议应用结构化输出策略，返回应发给 adapter 的 output_schema。
+    def _output_request_for(
+            self, profile: AIProfile, req: GenerateRequest,
+            protocol: str, caps: dict,
+            ) -> tuple[GenerateRequest, Optional[Dict[str, Any]]]:
+        """Resolve one machine-owned contract for the selected provider protocol.
 
         协议原生支持（supports_native_structured_output）→ 保留 schema；
-        否则 → 提示词约束 + json_mode 兜底，schema 置 None。
-        0.2.1a：每次切换协议（含降级）都重新计算；约束只注入一次（幂等）。
+        否则 → 从同一 schema 派生提示词约束，schema 置 None。
+        每次切换协议都从原始 request 重新计算，避免 fallback 污染原生路径。
         """
-        output_schema = req.output_schema
-        if output_schema and not capability_probe.supports_native_structured_output(
-                profile, caps, protocol):
-            if "[输出约束]" not in (req.system or ""):
-                schema_text = json.dumps(output_schema, ensure_ascii=False)
-                req.system = (req.system or "") + (
-                    "\n\n[输出约束]\n必须输出合法的 JSON 对象，"
-                    f"严格符合以下 JSON Schema：\n{schema_text}")
-                req.json_mode = True
-            output_schema = None
-        return output_schema
+        contract = req.output_contract
+        if contract is None:
+            return req, None
+        output_schema = contract.native_schema()
+        native = bool(
+            output_schema
+            and capability_probe.supports_native_structured_output(
+                profile, caps, protocol)
+        )
+        if native:
+            return req, output_schema
+        fallback = contract.fallback_instruction()
+        if fallback:
+            req = dataclasses.replace(
+                req,
+                system=(req.system or "") +
+                f"\n\n[OUTPUT_CONTRACT_FALLBACK:{contract.identifier}]\n{fallback}",
+            )
+        return req, None
 
     # ------------------------------------------------------------ 协议选择
     def _select_protocol(self, profile: AIProfile,
@@ -194,13 +204,14 @@ class Gateway:
         # 每次切换协议（含 ProtocolUnsupported 降级）都重新计算，绝不把
         # 某协议不支持的 schema 继续发给另一协议（0.2.1a 修复）。
         caps = self._capabilities(profile)
-        output_schema = self._structured_output_for(profile, req, protocol, caps)
+        protocol_req, output_schema = self._output_request_for(
+            profile, req, protocol, caps)
 
         tool_defs = tools_svc.tool_definitions() if req.tools else []
 
         try:
             result = self._call_with_tools(
-                profile, api_key, protocol, req, web_search=web_search,
+                profile, api_key, protocol, protocol_req, web_search=web_search,
                 output_schema=output_schema, tool_defs=tool_defs)
         except ProtocolUnsupported as exc:
             # 仅「协议/参数不支持」降级到另一协议；其余异常已在 adapter 内归一化
@@ -215,9 +226,11 @@ class Gateway:
                         warnings.append(ext["warning"])
                     fallback_web_search = False
                 # 0.2.1a：降级后按新协议重新计算结构化输出策略
-                output_schema = self._structured_output_for(profile, req, other, caps)
+                fallback_req, output_schema = self._output_request_for(
+                    profile, req, other, caps)
                 result = self._call_with_tools(
-                    profile, api_key, other, req, web_search=fallback_web_search,
+                    profile, api_key, other, fallback_req,
+                    web_search=fallback_web_search,
                     output_schema=output_schema, tool_defs=tool_defs)
             except ProtocolUnsupported as exc2:
                 result = LLMResult(
@@ -356,6 +369,7 @@ class Gateway:
             max_tokens=req.max_tokens, temperature=req.temperature,
             top_p=req.top_p, frequency_penalty=req.frequency_penalty,
             presence_penalty=req.presence_penalty,
-            json_mode=req.json_mode, attachments=req.attachments,
+            json_mode=bool(req.output_contract and req.output_contract.wants_json),
+            attachments=req.attachments,
             output_schema=output_schema, tool_defs=tool_defs,
             stop_event=req.stop_event, timeout=req.timeout)

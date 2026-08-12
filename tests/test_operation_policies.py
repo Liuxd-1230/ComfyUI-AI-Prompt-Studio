@@ -49,3 +49,14 @@ def test_production_does_not_construct_private_operation_sources() -> None:
         for path in (ROOT / folder).rglob("*.py"):
             source = path.read_text(encoding="utf-8")
             assert 'PromptSource("operation.' not in source, path
+
+
+def test_production_requests_use_output_contract_instead_of_schema_flags() -> None:
+    for folder in ("nodes", "services"):
+        for path in (ROOT / folder).rglob("*.py"):
+            if "adapters" in path.parts or path.name == "gateway.py":
+                continue
+            source = path.read_text(encoding="utf-8")
+            assert "output_schema=" not in source, path
+            assert "json_mode=" not in source, path
+            assert "output_contract_id=" not in source, path

@@ -10,7 +10,7 @@ Prompt content has one authoritative owner per semantic layer. Rendered request 
 | Operation Policy | `prompting/operation_policies.py` | create, refine, format repair, protocol retry, text/image observation | duplicated model rules or current plan data |
 | Supplemental Guidance | versioned supplement references | optional project/team guidance | silent overrides of higher layers |
 | Structured Task Data | typed context builder | current plan, books, manifest, history, user request, validation issues | executable system instructions |
-| Output Contract | schema/transport owner | machine-readable JSON Schema and compatibility fallback | hand-maintained duplicate schemas |
+| Output Contract | `prompting/output_contracts.py` | machine-readable JSON Schema, tagged envelope, JSON intent, derived provider fallback | hand-maintained duplicate schemas or model rules |
 
 ## Domain State Ownership
 

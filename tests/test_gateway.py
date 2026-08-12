@@ -216,6 +216,15 @@ def test_web_search_offline_degraded_warns(store):
 
 # ------------------------------------------------------------------ 结构化输出
 
+def _schema_request(schema=None):
+    from aps.prompting.output_contracts import schema_contract
+
+    return GenerateRequest(
+        messages=[],
+        output_contract=schema_contract(
+            "test-schema", schema or {"type": "object"}),
+    )
+
 def test_gateway_deepseek_schema_falls_back_to_prompt_constraint(store):
     """DeepSeek Chat 未文档化 json_schema → 不发送协议层 schema，改为提示词约束。"""
     store.create_profile({"profile_id": "p1"})  # provider=deepseek
@@ -226,13 +235,13 @@ def test_gateway_deepseek_schema_falls_back_to_prompt_constraint(store):
     gw = Gateway(store=store)
     r = FakeAdapter("chat")
     gw._chat = r
-    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    req = _schema_request()
     gw.generate(store.get_profile("p1"), "k", req)
     assert r.calls
     kw = r.calls[0]
     assert "output_schema" not in kw or kw.get("output_schema") is None
-    assert "JSON Schema" in req.system      # 约束已注入 system
-    assert req.json_mode is True
+    assert "JSON Schema" in kw["system"]
+    assert kw["json_mode"] is True
 
 
 def test_gateway_openai_compatible_schema_reaches_adapter(store):
@@ -244,7 +253,7 @@ def test_gateway_openai_compatible_schema_reaches_adapter(store):
     gw = Gateway(store=store)
     r = FakeAdapter("responses")
     gw._responses = r
-    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    req = _schema_request()
     gw.generate(store.get_profile("p1"), "k", req)
     kw = r.calls[0]
     assert kw["output_schema"] == {"type": "object"}
@@ -260,7 +269,7 @@ def test_gateway_openai_chat_structured_output_reaches_adapter(store):
     gw = Gateway(store=store)
     r = FakeAdapter("chat")
     gw._chat = r
-    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    req = _schema_request()
     gw.generate(store.get_profile("p1"), "k", req)
     kw = r.calls[0]
     assert kw["output_schema"] == {"type": "object"}
@@ -277,8 +286,7 @@ def test_deepseek_flash_responses_structured_output(store):
     gw = Gateway(store=store)
     r = FakeAdapter("responses")
     gw._responses = r
-    req = GenerateRequest(messages=[], output_schema={"type": "object",
-                                                     "properties": {}})
+    req = _schema_request({"type": "object", "properties": {}})
     gw.generate(store.get_profile("p1"), "k", req)
     kw = r.calls[0]
     assert kw["output_schema"] == {"type": "object", "properties": {}}
@@ -295,11 +303,11 @@ def test_deepseek_chat_schema_fallback(store):
     gw = Gateway(store=store)
     r = FakeAdapter("chat")
     gw._chat = r
-    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    req = _schema_request()
     gw.generate(store.get_profile("p1"), "k", req)
     kw = r.calls[0]
     assert "output_schema" not in kw or kw.get("output_schema") is None
-    assert "JSON Schema" in req.system
+    assert "JSON Schema" in kw["system"]
 
 
 def test_generic_openai_structured_output(store):
@@ -311,7 +319,7 @@ def test_generic_openai_structured_output(store):
     gw = Gateway(store=store)
     r = FakeAdapter("responses")
     gw._responses = r
-    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    req = _schema_request()
     gw.generate(store.get_profile("p1"), "k", req)
     assert r.calls[0]["output_schema"] == {"type": "object"}
 
@@ -335,11 +343,11 @@ def test_gateway_fallback_recomputes_structured_output_for_new_protocol(store):
     gw = Gateway(store=store)
     gw._responses = r
     gw._chat = c
-    req = GenerateRequest(messages=[], output_schema={"type": "object"})
+    req = _schema_request()
     result = gw.generate(store.get_profile("p1"), "k", req)
     assert result.text == "from-chat_completions"   # 降级成功
     assert any("降级" in w for w in result.warnings)
     # Chat 收到的是 None（提示词约束），不是 responses 的 schema
     kw = c.calls[0]
     assert "output_schema" not in kw or kw.get("output_schema") is None
-    assert "JSON Schema" in req.system
+    assert "JSON Schema" in kw["system"]

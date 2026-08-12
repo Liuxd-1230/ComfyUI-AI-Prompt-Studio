@@ -140,8 +140,8 @@ def test_llm_generate_json_schema_sets_output_schema(monkeypatch, store):
                   context="", session=None,
                   history_mode="off", output_mode="json_schema",
                   json_schema='{"type":"object"}')
-    assert fake.req.output_schema == {"type": "object"}
-    assert fake.req.json_mode is True
+    assert fake.req.output_contract.native_schema() == {"type": "object"}
+    assert fake.req.output_contract.wants_json is True
     assert "JSON Schema" not in fake.req.system
 
 
@@ -156,8 +156,9 @@ def test_llm_generate_json_schema_invalid_falls_back_to_constraint(monkeypatch, 
         AI_PROFILE=payload, system_prompt="sys", user_prompt="问", context="",
         session=None, history_mode="off", output_mode="json_schema",
         json_schema='not-json')
-    assert fake.req.output_schema is None
-    assert "JSON Schema" in fake.req.system
+    assert fake.req.output_contract.native_schema() is None
+    assert any("unparsed_json_schema_reference" in message.content
+               for message in fake.req.messages)
     assert "不是合法 JSON 对象" in warnings
 
 

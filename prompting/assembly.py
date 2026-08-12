@@ -5,7 +5,10 @@ import dataclasses
 import hashlib
 import json
 from enum import IntEnum
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
+
+if TYPE_CHECKING:
+    from .output_contracts import OutputContract
 
 
 class PromptLayer(IntEnum):
@@ -14,6 +17,7 @@ class PromptLayer(IntEnum):
     MODEL_CORE = 30
     OPERATION = 40
     SUPPLEMENT = 50
+    OUTPUT_CONTRACT = 60
 
 
 @dataclasses.dataclass(frozen=True)
@@ -57,6 +61,7 @@ class PromptAssembly:
     system: str
     task_data: str
     report: PromptAssemblyReport
+    output_contract: OutputContract | None = None
 
 
 class PromptAssembler:

@@ -7,8 +7,8 @@ from typing import Any
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ..prompting.operation_policies import OperationKind, operation_source
+from ..prompting.output_contracts import LENIENT_PROMPT_CONTRACT, schema_contract
 from ..prompting.studio_policies import (
-    LENIENT_OUTPUT_CONTRACT,
     UNTRUSTED_TASK_DATA_POLICY,
     h3_target_policy,
 )
@@ -319,7 +319,7 @@ class APS_H3PromptStudio:
 
         sources = [
             PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
-                         LENIENT_OUTPUT_CONTRACT + "\n\n" + UNTRUSTED_TASK_DATA_POLICY,
+                         UNTRUSTED_TASK_DATA_POLICY,
                          "h3-studio"),
             PromptSource("model.minimax-h3", "1.0", PromptLayer.MODEL_CORE,
                          h3_target_policy(mode, duration), "h3-studio"),
@@ -335,10 +335,11 @@ class APS_H3PromptStudio:
         task_data.extend(_h3_task_sources(storyboard, bible, book, manifest))
         assembly = assemble_prompt(
             sources, task_data=task_data,
-            output_contract_id="lenient-tagged-h3-prompt@1")
+            output_contract=LENIENT_PROMPT_CONTRACT)
         req = GenerateRequest(
             system=assembly.system, messages=[task_message(assembly)], web_search="off",
             reasoning=profile.reasoning, max_tokens=8192, timeout=profile.timeout,
+            output_contract=assembly.output_contract,
             assembly_report=report_payload(assembly))
         result = Gateway().generate(profile, api_key, req)
         if result.has_error():
@@ -350,7 +351,7 @@ class APS_H3PromptStudio:
                         supplements: list[PromptSource] | None = None) -> str:
         assembly = assemble_prompt(
             [PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
-                          LENIENT_OUTPUT_CONTRACT + "\n\n" + UNTRUSTED_TASK_DATA_POLICY,
+                          UNTRUSTED_TASK_DATA_POLICY,
                           "h3-studio"),
              PromptSource("model.minimax-h3", "1.0", PromptLayer.MODEL_CORE,
                           h3_target_policy(mode, duration), "h3-studio"),
@@ -359,10 +360,11 @@ class APS_H3PromptStudio:
              *(supplements or [])],
             task_data=[StructuredTaskData("rejected_output", raw, "text/plain"),
                        StructuredTaskData("concrete_issues", issues)],
-            output_contract_id="lenient-tagged-h3-prompt@1")
+            output_contract=LENIENT_PROMPT_CONTRACT)
         req = GenerateRequest(
             system=assembly.system, messages=[task_message(assembly)], web_search="off",
             reasoning="low", max_tokens=8192, timeout=profile.timeout,
+            output_contract=assembly.output_contract,
             assembly_report=report_payload(assembly))
         result = Gateway().generate(profile, api_key, req)
         if result.has_error():
@@ -380,6 +382,7 @@ class APS_H3PromptStudio:
             instruction, mode, duration, storyboard=storyboard, bible=bible,
             book=book, manifest=manifest, image_count=image_count)
         raw, issues = "", []
+        contract = schema_contract("h3-plan", H3_SCHEMA)
         for attempt in range(2):
             data = [StructuredTaskData("h3_plan_request", task)]
             if attempt:
@@ -396,11 +399,13 @@ class APS_H3PromptStudio:
                      else OperationKind.CREATE,
                      scope="h3-studio"),
                  *(supplements or [])],
-                task_data=data, output_contract_id="h3-plan.schema@1")
+                task_data=data,
+                output_contract=contract)
             req = GenerateRequest(
                 system=assembly.system, messages=[task_message(assembly)],
                 web_search="off", reasoning=profile.reasoning, max_tokens=8192,
-                timeout=profile.timeout, json_mode=True, output_schema=H3_SCHEMA,
+                timeout=profile.timeout,
+                output_contract=assembly.output_contract,
                 assembly_report=report_payload(assembly))
             result = Gateway().generate(profile, api_key, req)
             if result.has_error():

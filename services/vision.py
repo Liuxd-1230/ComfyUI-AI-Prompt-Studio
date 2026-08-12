@@ -15,6 +15,7 @@ import requests
 
 from ..schemas.profile import AIProfile
 from ..schemas.results import make_error
+from ..prompting.output_contracts import OutputContract
 from .adapters.base import is_protocol_unsupported, map_http_error
 
 logger = logging.getLogger("ai_prompt_studio.vision")
@@ -74,8 +75,14 @@ def image_to_data_url(image, max_side: int = MAX_IMAGE_SIDE) -> str:
 
 
 def build_vision_messages(prompt: str, data_urls: List[str], *,
-                          system: str = "") -> List[Dict[str, Any]]:
+                          system: str = "",
+                          output_contract: OutputContract | None = None
+                          ) -> List[Dict[str, Any]]:
     """构造多模态 user 消息（文本 + 图片 content parts）。"""
+    if output_contract is not None:
+        fallback = output_contract.fallback_instruction()
+        if fallback:
+            system = (system + "\n\n" + fallback).strip()
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     for url in data_urls:
         content.append({"type": "image_url",

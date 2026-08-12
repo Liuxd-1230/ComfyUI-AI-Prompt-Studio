@@ -11,7 +11,7 @@ from .reference import extract_json_object
 from .json_schema import make_strict_schema
 
 # 0.2.1 P1-17：分镜输出的原生 Structured Output JSON Schema。
-# Provider 支持 → output_schema 走协议层；不支持 → 提示词模板兜底。
+# OutputContract 根据 provider 能力选择原生 Schema 或从同一 Schema 派生 fallback。
 STORYBOARD_SCHEMA = {
     "type": "object",
     "properties": {

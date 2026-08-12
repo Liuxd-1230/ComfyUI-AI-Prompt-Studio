@@ -198,10 +198,7 @@ IDENTITY_COMPARISON_PROMPT = (
     "features: face proportions, hairline, eye shape, nose/mouth geometry, distinctive "
     "visible marks (moles, scars, birthmarks, tattoos), and stable body proportions. "
     "Clothing, background, pose, and lighting are NOT identity evidence — at most weak "
-    "auxiliary signals. Return JSON only: "
-    '{"same_subject": true, "confidence": 0.92, '
-    '"evidence": ["same facial proportions", "same mole below left eye", "same hairline"], '
-    '"reasons_if_different": []}'
+    "auxiliary signals. Give concrete observable evidence for the verdict."
 )
 
 

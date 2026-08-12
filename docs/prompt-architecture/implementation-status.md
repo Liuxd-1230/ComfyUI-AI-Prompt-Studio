@@ -7,11 +7,14 @@
 - PH5 Operation Policy Migration is complete: all creative production nodes use
   `prompting/operation_policies.py`; obsolete operation enums and disconnected
   prompt constructors/registries are removed.
+- PH6 Schema Contract Cleanup is complete: callers select one `OutputContract`;
+  machine schema, prompt summary, provenance, JSON mode, and provider fallback no
+  longer drift as separate request flags or copied examples.
 - Runtime YAML Prompt Skill loading, CRUD, node injection, settings UI, tests, and `/skills` routes are removed.
 - Markdown supplements are implemented end to end: safe local storage, explicit/target/node selection, enable/disable, hash fingerprints, Prompt Assembly provenance, settings UI, and node inputs for LLM, Reference Analyzer, Storyboard Builder, Image Studio, and H3 Studio.
 
 ## Deliberately open
 
-- PH6 output-contract migration and later research/UX work remain separate. No
-  placeholder operation or Skill compatibility path is retained.
+- PH7 prompt-observability and later research/UX work remain separate. No placeholder
+  operation, output-contract, or Skill compatibility path is retained.
 - Markdown supplements do not become a second policy language; adding a new hard rule requires a Model Core/code/test change.

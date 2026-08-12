@@ -126,7 +126,7 @@
 
 ## D21. 结构化输出（2026-08-07）
 
-- Gateway `output_schema`：对应协议的主动探测 `structured_output_responses/chat=True` → 协议层 schema（Responses `text.format` / Chat `response_format.json_schema`）；否则降级为提示词约束 + 解析校验。第三方端点不再按 provider 名猜测。
+- Gateway `OutputContract`：对应协议的主动探测 `structured_output_responses/chat=True` → 发送契约机器 schema（Responses `text.format` / Chat `response_format.json_schema`）；否则从同一契约派生提示词约束 + 解析校验。第三方端点不再按 provider 名猜测。
 
 ## D22. Batch C：共享运行时服务层 / 外部搜索 / 工具循环 / 卸载策略（2026-08-07）
 
@@ -151,7 +151,7 @@
 - **LM Studio v1 优先 + instance_id 卸载**：探测顺序 v1 → v0 → unavailable；unload 请求体 `{"instance_id": ...}`（用户只传 model 时从 load 响应或 `loaded_instances` 解析）。
 - **附件文档解析一致性（方案 A 实现）**：PDF/DOCX 在 Provider 无 file 能力时本地提取文本（pypdf/python-docx，可选依赖）→ `Attachment(kind=text)` + warning「已本地提取文本发送」；扫描件无文本层/非 PDF/DOCX/依赖缺失 → 明确报错，不 OCR、不假装识别。PPTX/XLSX 不在本轮（文档明确只支持 PDF/DOCX 本地提取）。
 - **多图身份判断增加一次 VLM 整体判断**：`batch_identity_check`（最多 6 张代表图；"Do these images show the same visual subject?"，只比较可观察身份特征，服装/背景/姿势为弱辅助）；VLM 失败回退 deterministic heuristic；身份判断提示词禁止以「衣服/背景/姿势相同」为主要依据。
-- **H3/Storyboard 原生 Structured Output**：`H3_SCHEMA` / `STORYBOARD_SCHEMA` 作为 `GenerateRequest.output_schema`（Provider 支持时走协议层，否则自动降级提示词约束），避免 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复。
+- **H3/Storyboard 原生 Structured Output**：`H3_SCHEMA` / `STORYBOARD_SCHEMA` 由 `OutputContract` 持有（Provider 支持时走协议层，否则从同一 schema 自动派生约束），避免 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复。
 - **Schema.from_json 接受 JSON 字符串**：ComfyUI 自定义类型输入可能以 JSON 字符串到达（之前对 str 直接抛 SchemaError 导致自定义类型无法接线）；现在字符串先解析为 dict 再反序列化，保持输入容错。
 
 ## D25. 0.2.1a 小补丁决策（2026-08-07）

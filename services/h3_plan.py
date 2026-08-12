@@ -37,8 +37,7 @@ RETENTION_MARKERS = ["fully_preserved", "partially_preserved", "attribute_transf
                      "weak_reference", "fully_copy", "partially_copy", "reference"]
 
 # 0.2.1 P1-17：H3 计划的原生 Structured Output JSON Schema。
-# Provider 支持（structured_output_responses/chat）→ GenerateRequest.output_schema 走协议层；
-# 不支持时由统一 Operation Policy 与节点输出契约约束重试。
+# OutputContract 根据 provider 能力选择原生 Schema 或从同一 Schema 派生 fallback。
 H3_SCHEMA = {
     "type": "object",
     "properties": {
