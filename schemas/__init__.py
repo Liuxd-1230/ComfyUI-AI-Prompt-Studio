@@ -15,7 +15,6 @@ from .character import (
 )
 from .h3 import (
     H3_MODES,
-    H3_OPERATIONS,
     R2V_SECTIONS,
     THREE_FIELDS,
     H3Asset,
@@ -39,7 +38,6 @@ from .profile import (
 )
 from .prompt_plan import (
     ANIMA_VARIANTS,
-    COMPOSER_OPERATIONS,
     PROMPT_MODES,
     TARGET_FAMILIES,
     GenerationProfile,
@@ -126,7 +124,7 @@ __all__ = [
     "ContinuityNote", "SPLIT_MODES", "SELECT_MODES",
     # prompt_plan
     "PromptPlan", "GenerationProfile", "ValidationReport", "ValidationIssue",
-    "empty_validation", "TARGET_FAMILIES", "ANIMA_VARIANTS", "PROMPT_MODES", "COMPOSER_OPERATIONS",
+    "empty_validation", "TARGET_FAMILIES", "ANIMA_VARIANTS", "PROMPT_MODES",
     "PromptSession", "PromptRevision", "SessionFingerprints",
     "PromptSupplement",
     "MAX_PROMPT_SUPPLEMENT_BYTES",
@@ -134,5 +132,5 @@ __all__ = [
     # h3
     "H3PromptPlan", "H3Shot", "H3Speaker", "H3Subject", "H3Asset",
     "H3Dialogue", "H3Retention", "H3AudioField",
-    "H3_MODES", "H3_OPERATIONS", "R2V_SECTIONS", "THREE_FIELDS",
+    "H3_MODES", "R2V_SECTIONS", "THREE_FIELDS",
 ]

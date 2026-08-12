@@ -8,7 +8,6 @@
 契约破坏即失败，防止提示词语义回归。
 """
 import aps.nodes.reference_analyzer as ra_mod
-import aps.services.h3_plan as h3_plan
 import aps.services.storyboard as sb_svc
 from aps.schemas.character import CharacterBible
 from aps.schemas.references import ReferenceManifest
@@ -49,23 +48,14 @@ def test_reference_full_excludes_poster_text_and_requires_confidence():
 
 # ---------------------------------------------------------------- H3
 
-def test_h3_system_prompt_protocol_layer():
+def test_h3_model_core_protocol_layer():
     """H3-S-1：协议规则在 system 层；含官方规则与数据守则。"""
-    sys = h3_plan.h3_system_prompt()
+    sys = model_core_prompt("minimax_h3")
     for marker in ("integrated_multimodal_description", "strictly increasing",
                    "[Shot N] At MM:SS.mmm", "<d>[Language]", "English",
                    "fully_preserved", "task data", "subject_definitions"):
         assert marker in sys, f"H3 system 缺少 {marker!r}"
     assert "never invent" in sys.lower()  # 禁止自造 S 号
-
-
-def test_h3_plan_prompt_user_message_has_no_role_duplication():
-    """H3-S-2：用户消息不重复角色设定（职责分层）。"""
-    p = h3_plan.build_plan_prompt("A girl enters.", "T2VA", 10.0)
-    assert "专家" not in p
-    assert "[模式]" in p and "[目标时长]" in p and "[输入]" in p
-
-
 # ---------------------------------------------------------------- Storyboard
 
 def test_storyboard_prompt_boundaries():

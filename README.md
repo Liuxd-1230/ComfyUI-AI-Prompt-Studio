@@ -22,6 +22,7 @@
 - **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
 - **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、本地运行时和 Markdown 补充资料管理。
 - **Model Core + Markdown 参考**：目标模型的硬规则由仓库内不可编辑 Model Core 持有；用户 Markdown 只能通过节点 `prompt_supplements` 显式选择（`auto` 仅用于目标节点），作为带来源/hash 的低优先级参考，不能覆盖协议、Schema、锁定事实或 validator。单份资料最多 256 KiB，每次最多 8 份、总上下文最多 128 KiB。
+- **统一操作策略**：CREATE、REFINE、格式修复、协议重试和参考观察由同一版本化 Operation Policy 接口提供。REFINE 只表达本轮增量并保留无关内容；修复只处理明确问题且最多一次。旧 generate/expand/rewrite/translate/audit/convert 下拉与持久化状态已删除；`set/delete/insert` 仅是严格模式内部 ChangeSet 操作。
 - **前端入口（0.2.1c）**：不占用 ComfyUI Sidebar；入口放在 ComfyUI 原生 **Settings** 页面中的 `AI Prompt Studio > General > Settings Workbench`。选择「Open Settings Workbench」打开大型设置工作台；语言也在同一组设置中切换。API Key 不进原生 Settings，仍由工作台填写并只存服务端。
 
 ## 安装

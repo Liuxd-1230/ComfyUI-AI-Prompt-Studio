@@ -1,4 +1,4 @@
-"""H3 计划服务：LLM 指令构造、输出 JSON 容错解析、分镜转换、manifest 映射。
+"""H3 计划服务：结构化任务数据、输出解析与 manifest 映射。
 
 LLM 负责「内容决策」（画面/声音/对白），Python renderer 负责「格式拼装」
 （docs/adr/0004-deterministic-h3-rendering.md）。
@@ -11,7 +11,6 @@ from typing import List, Optional
 from ..schemas.character import CharacterBible, CharacterBook
 from ..schemas.h3 import (
     H3Asset,
-    H3AudioField,
     H3Dialogue,
     H3PromptPlan,
     H3Retention,
@@ -23,8 +22,6 @@ from ..schemas.references import ReferenceManifest
 from ..schemas.storyboard import Storyboard
 from .reference import extract_json_object
 from .json_schema import make_strict_schema
-from ..prompting.model_cores import model_core_prompt
-from ..prompting.studio_policies import H3_CAMERA_VOCABULARY, H3_SHOT_COUNT_POLICY
 
 MODE_HINTS = {
     "T2VA": "纯文本转视频：从零构建完整视听时间线，无参考图。",
@@ -35,20 +32,13 @@ MODE_HINTS = {
     "R2V": "全参考重写（旧名称，等同 Ref2VA）：六段固定结构。",
 }
 
-# 内部系统提示词层（docs/prompt-audit.md H3-S-1）：协议规则固定在这一层，
-# 用户消息只放任务上下文与请求，避免把规则与内容字符串拼接。
-# 规则依据官方手册（docs/sources/minimax_h3_FL2V手册.html / r2v手册.html）。
-def h3_system_prompt() -> str:
-    """Return the immutable H3 Model Core for compatibility callers."""
-    return model_core_prompt("minimax_h3")
-
 DIALOGUE_KINDS = ["speech", "singing", "voiceover"]
 RETENTION_MARKERS = ["fully_preserved", "partially_preserved", "attribute_transfer",
                      "weak_reference", "fully_copy", "partially_copy", "reference"]
 
 # 0.2.1 P1-17：H3 计划的原生 Structured Output JSON Schema。
 # Provider 支持（structured_output_responses/chat）→ GenerateRequest.output_schema 走协议层；
-# 不支持 → 保留 build_plan_prompt 里的 JSON 模板提示词（不三重重复）。
+# 不支持时由统一 Operation Policy 与节点输出契约约束重试。
 H3_SCHEMA = {
     "type": "object",
     "properties": {
@@ -108,70 +98,6 @@ H3_SCHEMA = {
 
 
 H3_SCHEMA = make_strict_schema(H3_SCHEMA)
-
-
-def build_plan_prompt(
-    text: str,
-    mode: str,
-    duration: float,
-    *,
-    storyboard: Optional[Storyboard] = None,
-    bible: Optional[CharacterBible] = None,
-    book: Optional[CharacterBook] = None,
-    manifest: Optional[ReferenceManifest] = None,
-    image_count: int = 0,
-    repair_issues: str = "",
-) -> str:
-    """构造 H3 计划生成指令（要求输出 H3PromptPlan 对应的 JSON）。"""
-    ctx = []
-    if book is not None and book.characters:
-        ctx.append(f"[角色表（Speaker ID 必须沿用，禁止自行发明 S 号）]\n{book.context_text()}")
-    elif bible is not None and bible.character_prompt():
-        ctx.append(f"[人物设定] {bible.character_prompt()}")
-    if image_count:
-        ctx.append(f"[参考图] 本模式提供 {image_count} 张参考图，按 <Picture 1..{image_count}> 引用。")
-    if manifest is not None and manifest.to_json():
-        ctx.append(f"[参考资产] 见以下清单：\n{_manifest_summary(manifest)}")
-    if storyboard is not None and storyboard.scenes:
-        ctx.append(f"[分镜] {_storyboard_summary(storyboard)}")
-    ctx_text = ("\n".join(ctx) + "\n") if ctx else ""
-
-    repair = (f"[需修复的校验问题]\n{repair_issues}\n" if repair_issues else "")
-
-    return (
-        "Build the H3 prompt plan for the task below. Output only the JSON object.\n"
-        f"[模式] {mode}：{MODE_HINTS.get(mode, '')}\n"
-        f"[目标时长] {duration:.2f} 秒\n"
-        f"{ctx_text}{repair}"
-        "[对白] 原文语言/标点逐字保留在 <d>[Language] ...</d>；说话人用稳定 S1/S2。\n"
-        "[镜头] Shot 1 无时间戳；后续镜头 start_time 秒（严格递增且 < 目标时长）。\n"
-        "[JSON 结构]\n"
-        '{\n'
-        '  "style_opening": "R2V 风格开场（1-2 句，其他模式可空）",\n'
-        '  "summary": "R2V summary 段全文（以 [任务类型] 前缀开头，其他模式可空）",\n'
-        '  "speakers": [{"speaker_id": "S1", "name": "", "description": "身份/音色描述"}],\n'
-        '  "subjects": [{"label": "Subject 1", "kind": "character", '
-        '"definition": "定义句（含 <Picture N> 来源引用）"}],\n'
-        '  "assets": [{"label": "Picture 1", "kind": "picture", "source": "1", '
-        '"alignment_time": 0.0}, {"label": "Audio 1", "kind": "audio", '
-        '"source": "", "note": "音轨说明"}],\n'
-        '  "retention": [{"label": "Subject 1", "marker": "fully_preserved", '
-        '"notes": "保留说明", "shot_refs": ["Shot 1", "Shot 2"]}],\n'
-        '  "soundscape": "overall_soundscape 全文（1-4 句，不重复对白）",\n'
-        '  "non_diegetic_music": "non_diegetic_music 全文（1-3 句，无抽象情绪词；无则 N/A）",\n'
-        '  "explicit_silence": false,\n'
-        '  "shots": [{"index": 1, "start_time": null, '
-        '"description": ["画面/动作英文描述句"], "camera": "兼容自由运镜句", '
-        '"camera_motion": "push_in", "camera_amplitude": "small", '
-        '"camera_speed": "slow", "camera_target": "the subject", '
-        '"characters": ["S1"], "audio_notes": "", '
-        '"dialogues": [{"language": "English", "text": "原文", '
-        '"speaker_ids": ["S1"], "kind": "speech", "prefix_marker": "", '
-        '"suffix_marker": "", "lips_closed": false}], "references": [], '
-        '"on_screen_text": []}]\n'
-        '}\n'
-        f"[输入]\n{text}"
-    )
 
 
 def build_plan_task_data(
@@ -312,100 +238,6 @@ def parse_plan_json(raw: str, mode: str, duration: float,
     return plan
 
 
-# ---------------------------------------------------------------- 转换
-
-def convert_storyboard(sb: Storyboard, mode: str, duration: float,
-                       manifest: Optional[ReferenceManifest] = None,
-                       book: Optional[CharacterBook] = None) -> H3PromptPlan:
-    """把模型无关分镜转为 H3PromptPlan（结构映射；画面描述留给后续 LLM）。
-
-    Speaker ID：有 CharacterBook 时沿用其稳定 ID（char→Sx 映射），
-    否则按人物出现顺序自动 S1..Sn。
-    """
-    plan = H3PromptPlan(mode=mode, duration_seconds=duration,
-                        storyboard_id=sb.story_id)
-    plan.summary = f"[reference generation] {sb.summary or sb.title or ''}".strip()
-    plan.style_opening = sb.style or ""
-
-    # 镜头时间分布：按分镜时长均摊
-    total_shots = sum(len(sc.shots) if sc.shots else 1 for sc in sb.scenes) or 1
-    step = duration / total_shots
-    shot_no = 0
-    for sc in sb.scenes:
-        shots = sc.shots or [_empty_shot()]
-        for sh in shots:
-            shot_no += 1
-            start = None if shot_no == 1 else min(round(step * (shot_no - 1), 3),
-                                                  max(duration - 0.001, 0))
-            audio = [str(item).strip() for item in sh.audio if str(item).strip()]
-            audio.extend(str(item).strip() for beat in sh.beats for item in beat.audio
-                         if str(item).strip())
-            plan.shots.append(H3Shot(
-                index=shot_no, start_time=start,
-                description=[_clean(sh.summary or sh.action or sc.title or "")],
-                camera=_clean(sh.camera),
-                characters=list(sh.characters),
-                audio_notes="; ".join(dict.fromkeys(audio))))
-
-    # 人物 → 说话人（优先沿用 CharacterBook 的稳定 Speaker ID）
-    auto_no = 0
-    for i, cid in enumerate(sb.all_character_ids(), start=1):
-        speaker_id = book.speaker_id_for(cid) if book is not None else ""
-        if not speaker_id:
-            auto_no += 1
-            speaker_id = f"S{auto_no}"
-        book_character = book.get_character(cid) if book is not None else None
-        storyboard_character = next(
-            (item for item in sb.character_definitions if item.character_id == cid), None)
-        name = (book_character.name if book_character is not None and book_character.name
-                else storyboard_character.name if storyboard_character is not None
-                else cid)
-        plan.speakers.append(H3Speaker(speaker_id=speaker_id, character_id=cid,
-                                       name=name))
-
-    # manifest → subjects/assets/retention
-    if manifest is not None:
-        for i, subj in enumerate(manifest.subjects, start=1):
-            plan.subjects.append(H3Subject(label=f"Subject {i}",
-                                           kind=subj.kind,
-                                           definition=_clean(subj.definition),
-                                           source_assets=list(subj.source_assets)))
-        # 图片/视频/音频按各自类型独立编号（官方规则）
-        kind_counter = {"picture": 0, "video": 0, "audio": 0}
-        for asset in manifest.assets:
-            kind = "picture" if asset.asset_type == "image" else asset.asset_type
-            if kind not in kind_counter:
-                kind = "picture"
-            kind_counter[kind] += 1
-            plan.assets.append(H3Asset(label=f"{kind.capitalize()} {kind_counter[kind]}",
-                                       kind=kind,
-                                       source=asset.asset_id or asset.path_or_ref or "",
-                                       note=asset.note))
-        for i, subj in enumerate(manifest.subjects, start=1):
-            plan.retention.append(H3Retention(
-                label=f"Subject {i}", marker="fully_preserved",
-                notes="沿用参考定义与特征", shot_refs=[f"Shot {j}" for j in range(1, len(plan.shots) + 1)]))
-        # 离线结构映射没有模型替我们决定“参考在哪一镜生效”。保守地把每个
-        # 已连接定义显式应用到所有镜头；用户可在导演工作台进一步收窄。
-        for asset in plan.assets:
-            marker = "reference" if asset.kind == "audio" else "fully_preserved"
-            plan.retention.append(H3Retention(
-                label=asset.label, marker=marker, notes="连接的参考资产",
-                shot_refs=[f"Shot {j}" for j in range(1, len(plan.shots) + 1)]))
-        labels = [subject.label for subject in plan.subjects] + [asset.label for asset in plan.assets]
-        for shot in plan.shots:
-            shot.references = list(dict.fromkeys([*shot.references, *labels]))
-    sound_notes = [shot.audio_notes for shot in plan.shots if shot.audio_notes]
-    if sound_notes:
-        plan.soundscape = "; ".join(dict.fromkeys(sound_notes))
-    else:
-        plan.soundscape = ("Only natural environmental and physical action sounds directly "
-                           "implied by each shot; no added dialogue or music.")
-        plan.warnings.append("分镜没有声音说明；已使用仅限画面直接暗示声音的保守声景占位，请在生成前确认")
-    plan.non_diegetic_music = "N/A"
-    return plan
-
-
 def map_image_assets(plan: H3PromptPlan, image_count: int, mode: str) -> List[str]:
     """把输入图片映射为 Picture 资产（I2VA 首帧 / FL2VA 首尾 / L2VA 尾帧）。
 
@@ -536,29 +368,6 @@ def normalize_media_labels(plan: H3PromptPlan) -> None:
 
 
 # ---------------------------------------------------------------- 工具
-
-def _manifest_summary(manifest: ReferenceManifest) -> str:
-    lines = []
-    for a in manifest.assets:
-        lines.append(f"- {a.asset_id} ({a.asset_type}): {a.path_or_ref or a.note}")
-    for s in manifest.subjects:
-        lines.append(f"- {s.subject_id} ({s.kind}): {s.definition}")
-    return "\n".join(lines) or "（无）"
-
-
-def _storyboard_summary(sb: Storyboard) -> str:
-    lines = []
-    for sc in sb.scenes:
-        for sh in (sc.shots or []):
-            lines.append(f"- {sh.summary or sh.action} [camera: {sh.camera or '未指定'}]")
-    return "\n".join(lines)
-
-
-def _empty_shot():
-    from ..schemas.storyboard import Shot
-
-    return Shot(summary="")
-
 
 def _clean(text: str) -> str:
     """去除首尾空白。不做假装翻译（R2V 英文由 LLM/修复循环负责）。"""

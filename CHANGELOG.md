@@ -1,5 +1,7 @@
 # Changelog
 
+- **PH5 Operation Policy Migration**：新增唯一的版本化 `prompting/operation_policies.py` 接口，Image/H3 Studio、Storyboard Builder、Reference Analyzer 与语义 ChangeSet 统一从这里取得 CREATE、REFINE、FORMAT_REPAIR、PROTOCOL_RETRY 和文字/图片观察职责。删除旧 `COMPOSER_OPERATIONS`/`H3_OPERATIONS` 状态、断开的 PromptSource registry、H3 `build_plan_prompt()` 手写 JSON 模板与无生产调用的 `convert_storyboard()`；ChangeSet 的 `set/delete/insert` 仍是内部事务操作，不是用户工作模式。
+
 - **Model Core / Markdown supplement migration**：移除运行时 YAML Prompt Skill、`services/skills.py`、`skills/` 文件和 `/skills` CRUD；ANIMA、Z-Image、Qwen Image Edit、Generic Image、MiniMax H3 硬规则集中到不可编辑 `prompting/model_cores.py`。新增安全本地 Markdown 资料注册表、hash/范围/启停管理、`/supplements` 路由和设置页编辑器；LLM、Reference Analyzer、Storyboard Builder、Image Studio、H3 Studio 均可接收显式补充资料。资料只作为低优先级参考，不能覆盖 Model Core、协议、Schema、validator、Diff Guard 或锁定事实。新增端到端 supplement 路由、安全和 session fingerprint 测试。
 
 - 历史 Skill 注入边界实现已被 P6 的 Model Core/Markdown supplement 迁移替代；旧记录仅保留版本历史，不代表当前运行时仍加载 Skill。

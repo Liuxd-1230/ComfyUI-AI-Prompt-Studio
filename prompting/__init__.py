@@ -2,7 +2,13 @@
 
 from .assembly import (PromptAssembler, PromptAssembly, PromptAssemblyReport,
                        PromptSource, StructuredTaskData)
-from .registry import PromptSourceRegistry
+from .operation_policies import (
+    OperationKind,
+    OperationPolicy,
+    operation_policy,
+    operation_source,
+)
 
 __all__ = ["PromptAssembler", "PromptAssembly", "PromptAssemblyReport",
-           "PromptSource", "StructuredTaskData", "PromptSourceRegistry"]
+           "PromptSource", "StructuredTaskData", "OperationKind",
+           "OperationPolicy", "operation_policy", "operation_source"]

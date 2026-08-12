@@ -4,13 +4,13 @@ Prompt content has one authoritative owner per semantic layer. Rendered request 
 
 | Layer | Owner | May contain | Must not contain |
 |---|---|---|---|
-| Runtime Policy | prompt assembly runtime registry | injection boundary, language/response defaults, protocol-independent safety | target-model syntax, story facts |
-| Node/Domain Core | node-domain registry | stable role and domain duties such as storyboard continuity | provider syntax, mutable user data |
-| Target Model Core | model-core registry | officially verified ANIMA, Z-Image, Qwen Edit, or H3 rules | operation-specific repair/rewrite instructions |
-| Operation Policy | operation registry | create, refine, audit, repair, translate behavior | duplicated model rules or current plan data |
+| Runtime Policy | production request assembler | injection boundary, language/response defaults, protocol-independent safety | target-model syntax, story facts |
+| Node/Domain Core | production node/service | stable role and domain duties such as storyboard continuity | provider syntax, mutable user data |
+| Target Model Core | `prompting/model_cores.py` | officially verified ANIMA, Z-Image, Qwen Edit, or H3 rules | operation-specific turn behavior |
+| Operation Policy | `prompting/operation_policies.py` | create, refine, format repair, protocol retry, text/image observation | duplicated model rules or current plan data |
 | Supplemental Guidance | versioned supplement references | optional project/team guidance | silent overrides of higher layers |
 | Structured Task Data | typed context builder | current plan, books, manifest, history, user request, validation issues | executable system instructions |
-| Output Contract | schema registry | machine-readable JSON Schema and compatibility fallback | hand-maintained duplicate schemas |
+| Output Contract | schema/transport owner | machine-readable JSON Schema and compatibility fallback | hand-maintained duplicate schemas |
 
 ## Domain State Ownership
 

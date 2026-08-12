@@ -15,6 +15,7 @@ from ..services.gateway import Gateway, GenerateRequest
 from ..prompting.assembly import (PromptAssembly, PromptLayer, PromptSource,
                                    StructuredTaskData)
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
+from ..prompting.operation_policies import OperationKind, operation_source
 from ..services.storyboard import (
     STORYBOARD_SCHEMA,
     build_continuity,
@@ -112,22 +113,15 @@ class APS_StoryboardBuilder:
                 "as shot or beat audio arrays; do not invent audio. Return only the JSON "
                 "object required by the storyboard schema, with no Markdown or explanation.",
                 "storyboard.create"),
-            PromptSource(
-                "operation.create", "1.0", PromptLayer.OPERATION,
-                "Return one complete storyboard that satisfies the supplied limits.",
-                "storyboard.create"),
+            operation_source(OperationKind.CREATE, scope="storyboard.create"),
             *supplement_sources,
         ]
 
         def make_request(retry: bool = False) -> tuple[PromptAssembly, GenerateRequest]:
             sources = list(prompt_sources)
             if retry:
-                sources.append(PromptSource(
-                    "operation.retry", "1.0", PromptLayer.OPERATION,
-                    "The previous response did not satisfy the JSON contract. Retry once: "
-                    "output exactly one raw JSON object matching the schema; do not emit "
-                    "``` fences, commentary, or a partial response. Preserve every story "
-                    "fact and use the supplied CharacterBook IDs.", "storyboard.create"))
+                sources.append(operation_source(
+                    OperationKind.PROTOCOL_RETRY, scope="storyboard.create"))
             assembly = assemble_prompt(
                 sources,
                 task_data=[StructuredTaskData("storyboard_request", task_payload)],

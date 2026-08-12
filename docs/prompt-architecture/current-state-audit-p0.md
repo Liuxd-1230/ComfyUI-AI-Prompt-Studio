@@ -16,7 +16,7 @@ The repository has working one-shot generation, reference analysis, storyboard, 
 | Composer/H3 hidden session widgets | retain for compatibility | removing or reordering them would corrupt serialized workflows |
 | Composer/H3 create/refine branches | refactor behind PlanAdapters | one-shot nodes remain facades; future Studio nodes own stateful interaction |
 | `revert_previous()` destructive rollback | contain as debt | immutable revision/revert semantics belong to a later phase |
-| `CREATE_POLICY`/`REFINE_POLICY` strings | migrate to operation registry | lifecycle rules need versioned, observable ownership |
+| `CREATE_POLICY`/`REFINE_POLICY` strings | completed in PH5 | one versioned Operation Policy interface now owns lifecycle rules |
 
 ## P0 Decisions
 

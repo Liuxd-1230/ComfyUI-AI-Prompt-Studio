@@ -1,28 +1,15 @@
-"""H3 计划服务测试：LLM 指令构造、JSON 容错解析、分镜转换、图片映射。"""
+"""H3 计划服务测试：任务数据、JSON 容错解析与图片映射。"""
 import json
 
 import pytest
 
 from aps.schemas.h3 import H3PromptPlan
 from aps.schemas.references import AssetRef, ReferenceManifest, SubjectRef
-from aps.schemas.storyboard import Scene, Shot, StoryCharacter, Storyboard
 from aps.services.h3_plan import (
-    build_plan_prompt,
-    convert_storyboard,
     map_image_assets,
     parse_plan_json,
     sync_manifest_assets,
 )
-
-# ---------------------------------------------------------------- 指令构造
-
-def test_build_plan_prompt_contains_mode_duration_and_input():
-    p = build_plan_prompt("少女走进咖啡店。", "I2VA", 8.0)
-    assert "[模式] I2VA" in p
-    assert "8.00 秒" in p
-    assert "non_diegetic_music" in p
-    assert "少女走进咖啡店。" in p
-
 
 def test_sync_manifest_preserves_media_and_subject_sources():
     manifest = ReferenceManifest(
@@ -36,22 +23,6 @@ def test_sync_manifest_preserves_media_and_subject_sources():
     sync_manifest_assets(plan, manifest)
     assert [a.label for a in plan.assets] == ["Picture 1", "Video 1"]
     assert plan.subjects[0].source_assets == ["Picture 1", "Video 1"]
-
-
-def test_build_plan_prompt_reference_images_and_repair():
-    p = build_plan_prompt("x", "FL2VA", 5.0, image_count=2,
-                          repair_issues="[error] h3_fl2va_2dp: 两位小数")
-    assert "<Picture 1..2>" in p
-    assert "[需修复的校验问题]" in p
-    assert "h3_fl2va_2dp" in p
-
-
-def test_build_plan_prompt_with_storyboard_and_bible():
-    sb = Storyboard(title="t", characters=["c1"],
-                    scenes=[Scene(title="s1", shots=[Shot(summary="walk in")])])
-    p = build_plan_prompt("x", "T2VA", 5.0, storyboard=sb)
-    assert "[分镜]" in p
-    assert "walk in" in p
 
 
 # ---------------------------------------------------------------- 解析
@@ -136,72 +107,6 @@ def test_parse_plan_json_clamps_marker():
     raw = '{"retention": [{"label": "Subject 1", "marker": "nope"}], "shots": []}'
     plan = parse_plan_json(raw, "R2V", 10.0)
     assert plan.retention[0].marker == "fully_preserved"
-
-
-# ---------------------------------------------------------------- 分镜转换
-
-def make_storyboard():
-    return Storyboard(
-        title="咖啡店", summary="少女走进咖啡店", style="Cinematic",
-        characters=["c1"],
-        scenes=[Scene(scene_id="s1", title="进门", characters=["c1"],
-                      shots=[Shot(shot_id="s1sh1", summary="推门全景",
-                                  action="少女推门", camera="wide shot",
-                                  duration=3.0, characters=["c1"]),
-                             Shot(shot_id="s1sh2", summary="落座特写",
-                                  action="少女坐下", camera="close-up",
-                                  duration=7.0, characters=["c1"])])])
-
-
-def make_manifest():
-    return ReferenceManifest(
-        assets=[AssetRef(asset_id="img1", asset_type="image",
-                         path_or_ref="E:/refs/girl.png", h3_labels=["Picture 1"])],
-        subjects=[SubjectRef(subject_id="Subject 1", kind="character",
-                             definition="the girl from the reference image",
-                             source_assets=["img1"])])
-
-
-def test_convert_storyboard_maps_structure():
-    sb = make_storyboard()
-    plan = convert_storyboard(sb, "T2VA", 10.0, manifest=make_manifest())
-    assert plan.soundscape
-    assert plan.non_diegetic_music == "N/A"
-    assert all(shot.references for shot in plan.shots)
-    assert {item.label for item in plan.retention} >= set(plan.all_reference_labels())
-    assert plan.mode == "T2VA"
-    assert plan.storyboard_id == sb.story_id
-    assert len(plan.shots) == 2
-    assert plan.shots[0].start_time is None
-    assert plan.shots[1].start_time == 5.0   # 10s / 2 镜头
-    assert plan.shots[0].description[0] == "推门全景"
-    assert [s.speaker_id for s in plan.speakers] == ["S1"]
-    assert plan.speakers[0].character_id == "c1"
-    assert plan.subjects[0].label == "Subject 1"
-    assert plan.assets[0].label == "Picture 1"
-    assert plan.assets[0].kind == "picture"
-    assert plan.retention[0].marker == "fully_preserved"
-    assert plan.summary.startswith("[reference generation]")
-    assert plan.style_opening == "Cinematic"
-
-
-def test_convert_storyboard_uses_new_character_definition_name():
-    sb = Storyboard(
-        characters=["c2"],
-        character_definitions=[StoryCharacter(character_id="c2", name="阿岚")],
-        scenes=[Scene(scene_id="s1", characters=["c2"],
-                      shots=[Shot(shot_id="sh1", characters=["c2"])])])
-    plan = convert_storyboard(sb, "T2VA", 6.0)
-    assert plan.speakers[0].name == "阿岚"
-
-
-def test_convert_storyboard_audio_asset_kind():
-    sb = make_storyboard()
-    manifest = ReferenceManifest(
-        assets=[AssetRef(asset_id="a1", asset_type="audio", path_or_ref="bgm.wav")])
-    plan = convert_storyboard(sb, "R2V", 10.0, manifest=manifest)
-    assert plan.assets[0].kind == "audio"
-    assert plan.assets[0].label == "Audio 1"
 
 
 # ---------------------------------------------------------------- 图片映射

@@ -14,7 +14,6 @@ from .prompt_plan import ValidationReport, empty_validation
 H3_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA", "R2V"]
 # R2V is accepted only when loading legacy workflows. New node UIs expose Ref2VA.
 H3_UI_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA"]
-H3_OPERATIONS = ["generate", "rewrite", "convert_storyboard", "audit", "repair"]
 
 # R2V 六段固定顺序
 R2V_SECTIONS = [
@@ -123,7 +122,6 @@ class H3PromptPlan(Schema):
 
     plan_id: str = ""
     mode: str = "T2VA"               # T2VA | I2VA | FL2VA | L2VA | Ref2VA（R2V 兼容）
-    operation: str = "generate"
     duration_seconds: float = 0.0    # 有效视频时长 S.SS（两位小数）
     style_opening: str = ""          # R2V 在 [Shot 1] 之前的风格开场（1-2 句）
     shots: List[H3Shot] = dataclasses.field(default_factory=list)

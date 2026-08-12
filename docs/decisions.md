@@ -90,7 +90,7 @@
 - **畸形时间戳独立检测**：`SHOT_RE` 只捕获合法 `MM:SS.mmm`，格式错误的 `At XX:XX:XXX` 会被当成「缺失时间戳」；新增 `AT_RE` 单独捕获并报 `h3_ts_format`。
 - **`<d>` 语言标注独立检测**：`DIALOGUE_RE` 需要 `[Language]` 才匹配，缺失语言标注的对白匹配不上；改为对每个 `<d>` 直接检查其后是否紧跟 `[`。
 - **H3 Model Core + Markdown 参考**：`prompting/model_cores.py` 保存不可编辑的协议/内容硬规则；用户 Markdown 只能作为带来源的低优先级参考。renderer/validator 中不可变的格式协议仍由代码强制。repair 把校验问题回灌给 LLM，一次修复后重新渲染并复验。
-- **convert_storyboard 回退链**：LLM 计划解析失败或空镜头时，回退为 `convert_storyboard` 的结构映射（镜头时间分布、说话人 S1..、manifest→subjects/assets/retention），描述沿用分镜文本并记 warning。
+- **历史决定（已由 PH5 取代）**：旧 H3 Director 曾以 `convert_storyboard` 做离线回退；当前 H3 Studio 要求模型成功产生可校验 Plan，协议只允许一次保真重试，失败不提交。
 - **图片映射**：`map_image_assets` 按模式把输入图映射为 Picture 资产——I2VA 首帧（0.00s）、FL2VA 首尾（0.00s / 有效时长）、L2VA 尾帧（有效时长）；已存在的标签跳过不重复。
 
 ## D16. ANIMA 默认自然语言（2026-08-07）
@@ -145,7 +145,7 @@
 ## D24. 0.2.1 Hardening 关键决策（2026-08-07）
 
 - **ANIMA Safety 标签产品决策（补充 P0）**：官方 safety 标签全集 `safe/sensitive/nsfw/explicit`；`safe` 只是官方示例默认，不是所有 Prompt 的强制项。节点参数 `content_tier` 重新设计为 `safety_tag ∈ none/safe/sensitive/nsfw/explicit`，**默认 none = 不注入任何 Safety 标签**（Composer 不在用户未要求时给提示词增加内容语义）。旧工作流 `content_tier=safe/sensitive` 自动迁移到 `safety_tag`。三种 prompt_mode（natural/tags/hybrid）统一尊重；用户节点参数优先级 > Prompt Plan 建议 > 无标签（`none` 时即使 LLM Plan 输出 safe 也不插入）；Composer 只按用户选择渲染，不做内容审查、不自动改等级；Validator 只查格式（最多一个 safety 标签、位于官方 safety 段），`nsfw/explicit` 不是语法错误。
-- **职责解耦：只有 LLM 路径才 require_api_key**：Prompt Composer 的 audit / convert / generate(tags)（Python renderer 确定性路径）与 ANIMA audit 完全离线；H3 Director 的 audit 完全离线，`convert_storyboard` 支持无 API 的纯 Python 确定性转换（有 API 时 LLM 增强）。
+- **历史决定（已由 ADR 0007 / PH5 取代）**：旧 Composer/Director 的 audit、convert 与 tags 分支已经删除。当前 Studio 只提供 Session 推断的 CREATE/REFINE；确定性 validator 不作为用户 operation 暴露。
 - **DeepSeek 结构化输出按协议判定**：Responses 路径 `structured_output_responses=True`（flash，官方 `text.format` 支持）→ 原生 `{"text":{"format":{"type":"json_schema",...}}}`；Chat 路径未文档化 json_schema → 提示词约束+解析修复。旧 `structured_output` 字段保留为协议级能力的聚合（设置面板展示）。
 - **Responses call_id 以模型返回为准**：SSE 参数 delta 按 `item_id` 累积，`call_id` 取 function_call 输出项的权威值；续轮 `function_call_output` 逐字沿用，绝不伪造 `call_N`。
 - **LM Studio v1 优先 + instance_id 卸载**：探测顺序 v1 → v0 → unavailable；unload 请求体 `{"instance_id": ...}`（用户只传 model 时从 load 响应或 `loaded_instances` 解析）。

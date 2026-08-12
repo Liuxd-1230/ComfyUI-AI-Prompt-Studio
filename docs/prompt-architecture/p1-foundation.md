@@ -21,7 +21,11 @@ P1 establishes executable boundaries without changing public node widgets or wor
 
 `prompting/` implements ordered, versioned prompt sources for Runtime, Node Core, Model Core, Operation, and Supplemental layers. `StructuredTaskData` is rendered into labelled data blocks and cannot enter the compiled system string. `PromptAssemblyReport` records every source ID, version, scope, SHA-256 content hash, task-data ID, output-contract ID, and final assembly hash.
 
-The core registry now owns the runtime untrusted-data boundary, storyboard domain role, and create/repair operation policies. Target Model Cores are registered only after primary-source research; user-authored Markdown supplements are optional guidance and there is no legacy runtime Skill compatibility path.
+Prompt Assembly consumes explicit versioned sources. PH5 replaced the disconnected
+core registry with the `operation_policies.py` interface; runtime boundaries and
+node-domain roles stay with their production callers. Target Model Cores are added
+only after primary-source research; user-authored Markdown supplements are optional
+guidance and there is no legacy runtime Skill compatibility path.
 
 ## Compatibility
 

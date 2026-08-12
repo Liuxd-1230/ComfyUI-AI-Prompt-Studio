@@ -230,8 +230,8 @@ def test_strict_create_and_refine_use_structured_plan_and_one_call_each(
     assert refined["result"][4] == "Changed the lighting."
     assert len(SequenceGateway.requests) == 2
     create_system = SequenceGateway.requests[0].system
-    assert "scene_description owns only residual scene prose" in create_system
-    assert "Usually leave creative_notes and all tag arrays empty" in create_system
+    assert "Residual prose and notes must not repeat structured facts" in create_system
+    assert "[OPERATION:operation.create@1.0]" in create_system
     properties = SequenceGateway.requests[0].output_schema["properties"]["content"]["properties"]
     assert "Usually return an empty string" in properties["scene_description"]["description"]
     assert "Return []" in properties["control_tags"]["description"]

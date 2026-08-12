@@ -120,7 +120,8 @@ def test_storyboard_builder_retries_once_after_invalid_json(monkeypatch, store):
         target_duration=6.0, max_scenes=2, style="", retry_on_invalid=True)
 
     assert len(requests) == 2
-    assert "previous response did not satisfy" in requests[1].system
+    assert "previous response failed the declared output contract" in requests[1].system
+    assert "[OPERATION:operation.protocol_retry@1.0]" in requests[1].system
     assert result[0]["scenes"][0]["shots"][0]["audio"] == ["雨声"]
     continuity = json.loads(result[2])
     assert any("重试 1 次并成功" in item["note"] for item in continuity)

@@ -7,11 +7,9 @@ from typing import Any
 
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
+from ..prompting.operation_policies import OperationKind, operation_source
 from ..prompting.studio_policies import (
-    FORMAT_REPAIR_POLICY,
-    LENIENT_CREATE_POLICY,
     LENIENT_OUTPUT_CONTRACT,
-    LENIENT_REFINE_POLICY,
     UNTRUSTED_TASK_DATA_POLICY,
     image_target_policy,
 )
@@ -271,15 +269,15 @@ class APS_PromptStudio:
             instruction: str, current_prompt: str, bible: CharacterBible | None,
             book: CharacterBook | None, manifest: ReferenceManifest,
             supplements: list[PromptSource] | None = None) -> str:
-        operation = LENIENT_REFINE_POLICY if current_prompt else LENIENT_CREATE_POLICY
         sources = [
             PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
                          LENIENT_OUTPUT_CONTRACT + "\n\n" + UNTRUSTED_TASK_DATA_POLICY,
                          "prompt-studio"),
             PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                          image_target_policy(family, variant), "prompt-studio"),
-            PromptSource("operation.refine" if current_prompt else "operation.create",
-                         "1.0", PromptLayer.OPERATION, operation, "prompt-studio"),
+            operation_source(
+                OperationKind.REFINE if current_prompt else OperationKind.CREATE,
+                scope="prompt-studio"),
         ]
         sources.extend(supplements or [])
         task_data = [StructuredTaskData("latest_instruction", instruction,
@@ -311,8 +309,8 @@ class APS_PromptStudio:
                           "prompt-studio"),
              PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                           image_target_policy(family, variant), "prompt-studio"),
-             PromptSource("operation.format-repair", "1.0", PromptLayer.OPERATION,
-                          FORMAT_REPAIR_POLICY, "prompt-studio"),
+             operation_source(OperationKind.FORMAT_REPAIR,
+                              scope="prompt-studio"),
              *(supplements or [])],
             task_data=[StructuredTaskData("rejected_output", raw, "text/plain"),
                        StructuredTaskData("concrete_issues", issues)],
@@ -443,20 +441,6 @@ class APS_PromptStudio:
         raw = ""
         issues: list[str] = []
         for attempt in range(2):
-            operation = (
-                "Create a normalized semantic image plan. Put each fact in exactly "
-                "one field. For ANIMA: characters[].required_traits owns stable visible "
-                "appearance; action owns behavior; position owns frame placement; "
-                "environment owns location/weather/physical setting; lighting owns light; "
-                "composition owns framing/camera/layout; style owns rendering style. "
-                "scene_description owns only residual scene prose that belongs to none of "
-                "those fields. Usually leave creative_notes and all tag arrays empty; use "
-                "them only for a unique fact absent from every other field. Never repeat a "
-                "word, phrase, or paraphrased fact across prose, traits, tags, or notes. "
-                "Return only the schema object; never return rendered prose."
-                if attempt == 0 else
-                "Correct only the listed JSON/schema protocol defects. Preserve all "
-                "usable facts from the rejected output; do not redesign the request.")
             retry_data = list(task_data)
             if attempt:
                 retry_data.extend([
@@ -469,8 +453,19 @@ class APS_PromptStudio:
                               UNTRUSTED_TASK_DATA_POLICY, "prompt-studio"),
                  PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                               image_target_policy(family, variant), "prompt-studio"),
-                 PromptSource("operation.strict-create", "1.0",
-                              PromptLayer.OPERATION, operation, "prompt-studio"),
+                 PromptSource(
+                     "node.image-plan-normal-form", "1.0", PromptLayer.NODE_CORE,
+                     "Create a normalized semantic image plan. Put each fact in exactly "
+                     "one schema field. Stable appearance belongs to character traits; "
+                     "behavior to action; placement to position; physical setting to "
+                     "environment; light to lighting; framing and camera to composition; "
+                     "rendering medium to style. Residual prose and notes must not repeat "
+                     "structured facts. Return the schema object, never rendered prose.",
+                     "prompt-studio"),
+                 operation_source(
+                     OperationKind.PROTOCOL_RETRY if attempt
+                     else OperationKind.CREATE,
+                     scope="prompt-studio"),
                  *(supplements or [])],
                 task_data=retry_data,
                 output_contract_id="image-semantic-plan.schema@1")

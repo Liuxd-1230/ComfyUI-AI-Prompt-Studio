@@ -94,7 +94,7 @@ def apply_changeset(session: PromptSession, changeset: ChangeSet, *,
         elif (not isinstance(duration_change.value, (int, float))
               or float(duration_change.value) != float(duration)):
             raise ValueError("ChangeSet duration_seconds 与节点 duration 输入冲突")
-    locked = ["mode", "operation", "storyboard_id", "plan_id", "created_at",
+    locked = ["mode", "storyboard_id", "plan_id", "created_at",
               "validation", "raw"]
     locked.extend(resolve_locked_paths(session))
 
@@ -104,7 +104,7 @@ def apply_changeset(session: PromptSession, changeset: ChangeSet, *,
     payload = adapter.dump(current)
     allowed = [key for key in payload if key not in {
         "schema_version", "plan_id", "created_at", "validation", "raw",
-        "warnings", "operation", "storyboard_id"}]
+        "warnings", "storyboard_id"}]
     result = SemanticTransaction(adapter).execute(
         current, changeset, current_revision=session.revision,
         impact_analyzer=analyze_h3_impacts, allowed_roots=allowed,

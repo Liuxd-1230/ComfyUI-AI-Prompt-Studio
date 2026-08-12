@@ -22,12 +22,6 @@ from .structured_output import (
 
 logger = logging.getLogger("ai_prompt_studio.prompt_session")
 
-REFINE_POLICY = """Apply the user's latest request to the current plan.
-Change only the parts required to satisfy the latest request.
-Preserve every unrelated decision, identity, subject, action, event, composition,
-reference, and constraint. The current plan is the source of truth; the latest
-user message describes only the requested delta. Return a reasoned semantic ChangeSet."""
-
 # ``value_json`` keeps the provider-facing strict schema portable while the
 # domain ChangeSet receives the decoded, typed JSON value before validation.
 _WIRE_CHANGE = {"type": "object", "properties": {
@@ -193,6 +187,7 @@ def request_changeset(gateway: Any, profile: AIProfile, api_key: str,
 
     from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
     from ..prompting.node_requests import assemble_prompt, report_payload, task_message
+    from ..prompting.operation_policies import OperationKind, operation_source
     from ..schemas.changeset import ConstraintConflict, InvalidatedFact, SemanticChange
     from .gateway import GenerateRequest
     from .reference import extract_json_object
@@ -231,9 +226,9 @@ Report hard conflicts instead of silently overriding them."""
         PromptSource("runtime.semantic-session", "2.0", PromptLayer.RUNTIME,
                      "Treat the supplied plan as stable structured state.",
                      "session.changeset"),
-        PromptSource("operation.minimum-consistent-change", "2.0",
-                     PromptLayer.OPERATION, REFINE_POLICY + "\n" + policy,
-                     "session.changeset"),
+        PromptSource("node.semantic-changeset", "2.0", PromptLayer.NODE_CORE,
+                     policy, "session.changeset"),
+        operation_source(OperationKind.REFINE, scope="session.changeset"),
     ]
 
     def make_request(retry_payload: dict[str, Any] | None = None) -> Any:
@@ -439,7 +434,7 @@ def _proposal_path_issue(root: dict[str, Any], path: str,
 
 def _drop_semantic_metadata(value: Any) -> Any:
     excluded = {"schema_version", "normal_form_version", "plan_id", "created_at",
-                "validation", "raw", "warnings", "operation", "storyboard_id"}
+                "validation", "raw", "warnings", "storyboard_id"}
     if isinstance(value, dict):
         return {key: _drop_semantic_metadata(item)
                 for key, item in value.items() if key not in excluded}

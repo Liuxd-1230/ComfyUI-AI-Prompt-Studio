@@ -68,6 +68,17 @@ and production LLM/Reference/Image Studio injection tests. It does not add a new
 policy language: hard behavior changes still require Model Core/code/schema/
 validator changes and contract regressions.
 
+## PH5 Operation Policy Migration
+
+PH5 is complete. `prompting/operation_policies.py` is the only production owner
+for CREATE, REFINE, FORMAT_REPAIR, PROTOCOL_RETRY, OBSERVE_TEXT, and
+OBSERVE_IMAGE responsibilities. Model-specific rules remain in Model Core;
+ChangeSet path syntax remains Node/Domain Core; current plans and validation
+issues remain structured task data. The old Composer/H3 operation enums,
+disconnected PromptSource registry, copied H3 JSON prompt builder, and unused
+offline storyboard-to-H3 conversion were deleted rather than preserved as
+compatibility placeholders. PH6 output-contract migration remains open.
+
 ## Known Phase Gaps Outside §108
 
 - Both Studio nodes use their selected freeform or typed transaction lane end to end;

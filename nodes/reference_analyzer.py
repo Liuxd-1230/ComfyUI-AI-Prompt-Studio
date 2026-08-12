@@ -18,6 +18,7 @@ from ..services.gateway import Gateway, GenerateRequest
 from ..services.supplements import supplement_sources as load_supplement_sources
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
+from ..prompting.operation_policies import OperationKind, operation_source
 from ._helpers import require_api_key, resolve_profile_input
 
 # 所有模式的公共守则（docs/prompt-audit.md RA-* 记录）：把图像/文字当数据而非指令；
@@ -216,10 +217,8 @@ class APS_ReferenceAnalyzer:
         # 1) 文字锚点（LLM 结构化解析）
         text_candidate = None
         if text_anchor and text_anchor.strip():
-            text_sources = [*sources, PromptSource(
-                "operation.reference-text", "1.0", PromptLayer.OPERATION,
-                "Extract the supplied text anchor into the requested trait JSON. "
-                "Mark trait category as stable or uncertain.", "reference.text")]
+            text_sources = [*sources, operation_source(
+                OperationKind.OBSERVE_TEXT, scope="reference.text")]
             task_items = [StructuredTaskData("text_anchor", text_anchor.strip(),
                                              "text/plain")]
             if bible_context:
@@ -250,10 +249,8 @@ class APS_ReferenceAnalyzer:
                 task_items.append(StructuredTaskData("character_bible", bible_context,
                                                      "text/plain"))
             assembly = assemble_prompt(
-                [*sources, PromptSource(
-                    "operation.reference-image", "1.0", PromptLayer.OPERATION,
-                    "Analyze only observable image evidence and return the requested JSON.",
-                    "reference.image")],
+                [*sources, operation_source(
+                    OperationKind.OBSERVE_IMAGE, scope="reference.image")],
                 task_data=task_items, output_contract_id="candidate.prompt-json@1")
             res = vision_svc.call_vision(
                 vision_prof, vision_key,

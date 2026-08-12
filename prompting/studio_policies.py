@@ -19,34 +19,6 @@ one short factual summary of what you created or changed
 Do not return JSON, Markdown fences, schema explanations, analysis, or alternatives.
 The PROMPT block must be complete and directly usable by the target model."""
 
-LENIENT_CREATE_POLICY = """Create one complete target-ready prompt from the latest
-request and supplied reference data. Preserve every explicit identity, count,
-relationship, action, composition, and reference requirement. Do not invent facts
-that contradict supplied data."""
-
-LENIENT_REFINE_POLICY = """Edit the supplied current prompt according to only the
-latest user instruction. Return the complete updated prompt. Preserve every
-unmentioned identity, subject, action, composition, relationship, and reference."""
-
-FORMAT_REPAIR_POLICY = """Reformat the supplied rejected model output into the
-required PROMPT/SUMMARY envelope. Preserve its usable prompt content and meaning.
-Do not add new creative details. When a target-language issue is listed, translate
-only the required visual/audiovisual prose into English while retaining names, proper
-nouns, reference labels, dialogue, lyrics, and quoted on-screen text."""
-
-H3_CAMERA_VOCABULARY = """Camera terminology is binding, not stylistic:
-- pan left/right rotates the camera from a fixed position (Chinese: 左右摇摄/摇镜).
-- truck left/right translates the whole camera sideways (Chinese: 向左/向右横移).
-- tilt rotates vertically; pedestal raises/lowers the whole camera.
-- zoom changes focal length; push in/pull out physically moves the camera.
-Distinguish zoom from push, pan from truck, and tilt from pedestal.
-Never translate 横移 as pan, 推近 as zoom, or 升降移动 as tilt."""
-
-H3_SHOT_COUNT_POLICY = """Shot-count instructions are binding. When the user asks
-for a single shot, one continuous shot, or 一镜到底/单镜头, output exactly [Shot 1]
-and never add [Shot 2] or a cut/transition."""
-
-
 def image_target_policy(family: str, variant: str) -> str:
     """Compatibility wrapper for callers that need a target core prompt."""
     from .model_cores import model_core_prompt
