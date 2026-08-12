@@ -40,7 +40,7 @@ surface is not complete; it must not be described as finished functionality.
 | 108.21 Target Compatible Switch | done | lenient target changes warn and continue; strict changes require a successful new lineage |
 | 108.22 Target Incompatible Switch | done | strict mode creates a replacement lineage only after successful CREATE |
 | 108.23 Long Conversation | done | explicit conversation/revision caps in `test_prompt_session.py` |
-| 108.24 Workflow Size | partial | bounded Session payload; no repository-wide size budget regression yet |
+| 108.24 Workflow Size | done | Session history remains capped at 10 revisions/40 messages and the serialized hidden workflow envelope is hard-capped at 4 MiB; load and pre-commit regressions prove oversized state never replaces the stable revision |
 | 108.25 Prompt Injection in Storyboard | done | external context is task data, not executable instruction; prompt inventory tests |
 | 108.26 Prompt Injection in Skill | partial | source ownership/assembly boundaries exist; dedicated hostile-Skill regression remains |
 | 108.27 ZIP Path Traversal | done | attachment traversal regression in `test_attachments.py` |

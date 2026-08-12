@@ -2,6 +2,7 @@
 
 - Reference Analyzer：人物锚点 `caption` 现在输出可直接查看的分组摘要（稳定特征、可变特征、当前状态、不确定项、来源）；图片-only 视觉分析会过滤海报标题、Logo、文件名和 `Unknown` 等伪姓名，避免污染 Character Bible。
 - H3 严格模式删除中间镜头后，计划适配器会按当前顺序重新编号镜头；新增生产节点回归，确保成品从 `[Shot 1]` 连续到 `[Shot 2]`，不会遗留 `[Shot 3]`。
+- PromptSession 增加 4 MiB 序列化工作流上限；超大隐藏会话在加载或提交前明确拒绝，Recovery Journal 和稳定 revision 均保持不变。
 
 - Storyboard Builder 增加 `retry_on_invalid` 开关（默认开启）：仅在模型返回不可解析 JSON/空场景时追加一次带定向格式约束的请求；第二次仍失败才进入无损单镜头回退，并在 `continuity` 标明重试结果。鉴权、网络和模型错误不盲目重试。
 - Storyboard/CharacterBook 实用性补强：角色表现在把 stable/variable/current 状态、Speaker ID 和来源证据分层传给分镜，默认不把 uncertain 推断当成事实；Storyboard 新增 `character_definitions` 声明故事中新人物，H3 转换会使用其显示名并以 CharacterBook 身份为准。分镜 JSON 现在完整消费镜头/节拍 `audio`；模型返回后确定性收敛 `max_scenes`、全片 `target_duration`、重复/缺失场景-镜头-节拍 ID、空场景和人物引用，所有截断/修复写入 `continuity`。Storyboard Select 的 scene/shot 文本带概述、动作、机位、时长、声音和节拍。全库测试与真实 ComfyUI + LM Studio 9B 分镜链路已验证。

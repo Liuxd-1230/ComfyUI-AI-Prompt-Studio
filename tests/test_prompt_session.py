@@ -5,6 +5,7 @@ import pytest
 
 from aps.schemas.prompt_session import (
     MAX_CONVERSATION_MESSAGES,
+    MAX_SESSION_SERIALIZED_BYTES,
     MAX_REVISIONS,
     PromptSession,
     SessionFingerprints,
@@ -217,6 +218,29 @@ def test_session_history_is_bounded_without_mutating_retained_snapshots():
     })
     assert len(restored.revisions) == MAX_REVISIONS
     assert len(restored.conversation) == MAX_CONVERSATION_MESSAGES
+
+
+def test_session_serialized_workflow_size_is_bounded_before_commit():
+    session = PromptSession(target_family="anima")
+    session.commit({"scene": "rain"}, "rain", VALID, "create", "v1",
+                   expected_revision=0)
+    stable = session.to_json_string()
+    oversized = "x" * (MAX_SESSION_SERIALIZED_BYTES + 1)
+    with pytest.raises(ValueError, match="序列化大小"):
+        session.commit({"scene": oversized}, oversized, VALID,
+                       "oversized", "must not commit",
+                       expected_revision=session.revision)
+    assert session.to_json_string() == stable
+
+
+def test_oversized_workflow_session_is_rejected_on_load():
+    oversized = "x" * (MAX_SESSION_SERIALIZED_BYTES + 1)
+    with pytest.raises(SchemaError, match="序列化大小"):
+        PromptSession.from_json({
+            "schema_version": "3.1", "id": "too-large",
+            "current_payload_kind": "freeform", "current_prompt": oversized,
+            "revision": 1, "validation": VALID,
+        })
 
 
 def test_legacy_v1_session_resets_to_empty_v3_state():

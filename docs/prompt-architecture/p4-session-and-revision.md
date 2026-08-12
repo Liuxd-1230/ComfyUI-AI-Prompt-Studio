@@ -23,7 +23,9 @@ source hashes. V3 adds execution mode, payload kind, and observed context change
 P4.1 also records `transaction_id` and the actual bounded
 `repair_count`/`repair_attempted`. Its fields and nested mapping/list snapshots are frozen after
 construction; Plan and validation inputs are deep-copied before the atomic swap.
-History is bounded to 10 revisions and chat display to 40 messages.
+History is bounded to 10 revisions and chat display to 40 messages. The serialized
+hidden workflow envelope is additionally capped at 4 MiB; oversized state is rejected
+before the stable Session or Recovery Journal is changed.
 
 Restore never removes history. The legacy `previous` action resolves the preceding
 snapshot and commits it as a new revision whose parent points to the restored version.
@@ -52,9 +54,9 @@ later-phase operations rather than being disguised as chat refinement.
 
 ## Recovery Journal Seam
 
-`PromptSession.commit()` may publish its fully staged next state through a
+`PromptSession.commit()` publishes its fully staged next state through a
 `RecoveryJournal` before swapping the stable in-memory Session. Journal entries are
 keyed by Session and node instance and carry transaction/base/result revision IDs;
 stale branches are rejected. A journal write failure leaves the stable Session
-byte-for-byte unchanged. `MemoryRecoveryJournal` proves this contract but is not a
-durable workflow backend. Durable crash recovery and frontend writeback remain P5.
+byte-for-byte unchanged; the durable ComfyUI user-directory adapter and frontend
+writeback are covered by the P5 real acceptance record.

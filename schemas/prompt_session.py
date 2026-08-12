@@ -1,6 +1,7 @@
 """Versioned Prompt Studio session and immutable revision snapshots."""
 import copy
 import dataclasses
+import json
 import time
 import uuid
 from typing import TYPE_CHECKING, Any, ClassVar, Dict, List
@@ -14,6 +15,14 @@ if TYPE_CHECKING:
 
 MAX_REVISIONS = 10
 MAX_CONVERSATION_MESSAGES = 40
+# The hidden prompt_session widget is serialized into every ComfyUI workflow.
+# Keep the durable envelope bounded so repeated full-plan revisions cannot make
+# the workflow unusable or freeze the frontend on load.
+MAX_SESSION_SERIALIZED_BYTES = 4 * 1024 * 1024
+
+
+def _serialized_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
 
 class _FrozenDict(dict):
@@ -222,6 +231,10 @@ class PromptSession(Schema):
             self.created_at = now
         if not self.updated_at:
             self.updated_at = now
+        if _serialized_size(self.to_json()) > MAX_SESSION_SERIALIZED_BYTES:
+            raise SchemaError(
+                f"PromptSession 序列化大小超过 {MAX_SESSION_SERIALIZED_BYTES // (1024 * 1024)} MiB；"
+                "请开始新会话或减少单轮提示词/历史内容")
 
     @classmethod
     def from_json(cls, data: Any) -> "PromptSession":
@@ -335,6 +348,10 @@ class PromptSession(Schema):
         staged.fingerprint_state = "bound"
         staged.locked_constraints = next_locks
         staged.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        if _serialized_size(staged.to_json()) > MAX_SESSION_SERIALIZED_BYTES:
+            raise ValueError(
+                f"PromptSession 序列化大小超过 {MAX_SESSION_SERIALIZED_BYTES // (1024 * 1024)} MiB；"
+                "本轮未提交，请开始新会话或减少单轮提示词/历史内容")
         if recovery_journal is not None:
             from ..domain.recovery_journal import RecoveryJournalEntry
 
