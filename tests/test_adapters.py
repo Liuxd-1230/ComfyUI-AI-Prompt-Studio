@@ -96,6 +96,23 @@ def test_responses_stream_text_reasoning_usage(monkeypatch):
     assert body["tools"] == []
 
 
+def test_responses_output_item_snapshot_does_not_duplicate_streamed_text(monkeypatch):
+    """Responses 的 item.done 是最终快照，不能在 delta 后再次追加正文。"""
+    payload = '{"name":"未指定","traits":[]}'
+    events = [
+        {"type": "response.output_text.delta", "item_id": "msg_1",
+         "delta": payload},
+        {"type": "response.output_item.done", "output_index": 0,
+         "item": {"id": "msg_1", "type": "message", "status": "completed",
+                  "content": [{"type": "output_text", "text": payload}]}},
+    ]
+    make_post_fake(monkeypatch, lines=sse(events))
+    result = ResponsesAdapter().generate(
+        profile(), "sk", system="", messages=[], web_search=False,
+        reasoning="low", max_tokens=100, temperature=1.0)
+    assert result.text == payload
+
+
 def test_responses_native_web_search_tool_and_citations(monkeypatch):
     events = [
         {"type": "response.output_item.done",

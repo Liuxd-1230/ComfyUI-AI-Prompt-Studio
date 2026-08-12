@@ -93,7 +93,9 @@ class APS_CharacterBible:
         if candidate is not None:
             reference_svc.merge_candidate_into_bible(bible, candidate, merge_strategy)
 
-        if character_name and character_name.strip() and not bible.name:
+        # The explicit UI name is authoritative display identity. A model-inferred
+        # candidate name (including a plausible but wrong label) must not override it.
+        if character_name and character_name.strip():
             bible.name = character_name.strip()
         if not bible.name and candidate is not None and candidate.name:
             bible.name = candidate.name

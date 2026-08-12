@@ -7,8 +7,12 @@ import pytest
 
 import aps.nodes.prompt_studio as studio_mod
 from aps.domain.recovery_journal import DurableRecoveryJournal
+from aps.schemas.character import CharacterBible, CharacterTrait
 from aps.schemas.prompt_session import PromptSession
+from aps.schemas.prompt_plan import ValidationReport
+from aps.schemas.references import ReferenceManifest
 from aps.schemas.results import LLMResult
+from aps.services.prompt_protocol import LenientPromptOutput
 
 
 def _profile(store):
@@ -344,3 +348,33 @@ def test_strict_semantic_failure_does_not_request_creative_repair(
             AI_PROFILE=_profile(store), text="poster with watermark typography",
             target="anima_base", execution_mode="strict", message_nonce="conflict")
     assert len(SequenceGateway.requests) == 1
+
+
+def test_lenient_identity_anchor_accepts_natural_word_insertion():
+    bible = CharacterBible(
+        character_id="char_ref", name="参考人物",
+        traits=[CharacterTrait(
+            name="hair_style", value="shoulder-length with bangs",
+            category="stable", locked=True)])
+    parsed = LenientPromptOutput(
+        prompt="A girl with shoulder-length hair with soft bangs in the rain.",
+        summary="", kind="tagged")
+    report = studio_mod._validate_lenient_image(
+        parsed, "anima", "turbo", bible, None, ReferenceManifest())
+    assert report.valid
+
+
+def test_lenient_identity_anchor_still_rejects_missing_distinctive_token():
+    bible = CharacterBible(
+        character_id="char_ref", name="参考人物",
+        traits=[CharacterTrait(
+            name="hair_style", value="side ponytail visible on right side",
+            category="stable", locked=True)])
+    parsed = LenientPromptOutput(
+        prompt="A girl with a side ponytail visible on the left side.",
+        summary="", kind="tagged")
+    report = studio_mod._validate_lenient_image(
+        parsed, "anima", "turbo", bible, None, ReferenceManifest())
+    assert not report.valid
+    assert any(issue.code == "lenient_identity_anchor_missing"
+               for issue in report.issues)

@@ -16,6 +16,7 @@ from ..services import reference as reference_svc
 from ..services import vision as vision_svc
 from ..services.gateway import Gateway, GenerateRequest
 from ..services.supplements import supplement_sources as load_supplement_sources
+from ..services.structured_output import raw_excerpt
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ..prompting.operation_policies import OperationKind, operation_source
@@ -241,7 +242,9 @@ class APS_ReferenceAnalyzer:
             text_candidate = reference_svc.parse_candidate_json(
                 result.text, analysis_mode, ["text_anchor"])
             if reference_svc.extract_json_object(result.text) is None:
-                raise ValueError("文字锚点分析未返回合法 JSON；请重试或检查模型结构化输出能力")
+                raise ValueError(
+                    "文字锚点分析未返回合法 JSON；模型原文（已截断）："
+                    + raw_excerpt(result.text))
             analysis.raw = (analysis.raw + "\n[text]\n" + result.text).strip()
 
         # 2) 逐图视觉分析

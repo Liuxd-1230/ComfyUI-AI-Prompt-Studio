@@ -645,8 +645,8 @@ def _validate_lenient_image(
                    "；".join(parsed.issues) or "提示词为空")
         return report
     anchors = _identity_anchors(bible, book)
-    folded = parsed.prompt.casefold()
-    missing = [anchor for anchor in anchors if anchor.casefold() not in folded]
+    missing = [anchor for anchor in anchors
+               if not _identity_anchor_covered(anchor, parsed.prompt)]
     if missing:
         report.add("error", "lenient_identity_anchor_missing",
                    "提示词缺少锁定身份锚点：" + "、".join(missing))
@@ -675,12 +675,45 @@ def _identity_anchors(
     bibles = list(book.characters) if book is not None else ([bible] if bible else [])
     anchors: list[str] = []
     for item in bibles:
-        if item.name and item.name not in anchors:
+        # Generic UI labels identify the Bible entry but are not drawable identity
+        # facts and must not be copied into an English image prompt verbatim.
+        if (item.name and not _generic_character_label(item.name)
+                and item.name not in anchors):
             anchors.append(item.name)
         for trait in item.locked_traits():
             if trait.value and trait.value not in anchors:
                 anchors.append(trait.value)
     return anchors
+
+
+def _generic_character_label(value: str) -> bool:
+    normalized = re.sub(r"[\s_-]+", "", str(value or "")).casefold()
+    return normalized in {
+        "参考人物", "参考角色", "人物", "角色", "主体",
+        "referencecharacter", "referenceperson", "character", "person", "subject",
+    }
+
+
+def _identity_anchor_covered(anchor: str, prompt: str) -> bool:
+    """Require every meaningful anchor token while tolerating natural word insertion.
+
+    This is deliberately stricter than fuzzy similarity: colors, directions, lengths,
+    and distinctive nouns must still occur. It only removes punctuation/hyphen drift
+    and permits harmless words such as ``hair``/``soft`` between anchor tokens.
+    """
+    stopwords = {"a", "an", "the", "with", "and", "of", "in", "on", "for"}
+    anchor_tokens = [token for token in re.findall(r"[a-z0-9]+", anchor.casefold())
+                     if token not in stopwords]
+    if not anchor_tokens:
+        return anchor.casefold() in prompt.casefold()
+    prompt_tokens = re.findall(r"[a-z0-9]+", prompt.casefold())
+    cursor = 0
+    for wanted in anchor_tokens:
+        try:
+            cursor = prompt_tokens.index(wanted, cursor) + 1
+        except ValueError:
+            return False
+    return True
 
 
 def _negative_for(family: str, variant: str) -> str:

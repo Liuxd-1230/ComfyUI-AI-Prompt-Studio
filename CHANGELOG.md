@@ -1,5 +1,7 @@
 # Changelog
 
+- **Responses 流式正文去重与 Reference/ANIMA 锚点稳健性**：修复兼容端点同时发送 `output_text.delta` 与 `response.output_item.done` 完整快照时，Responses adapter 把同一正文拼接两次、导致单个结构化对象变成 `{...}{...}` 的问题。Reference JSON 提取改用 `JSONDecoder.raw_decode` 读取第一个完整对象，可处理代码围栏、前后说明、字符串花括号与连续快照；真正失败时错误会附带截断模型原文。中英文占位姓名不再污染 Character Bible，用户填写的 `character_name` 优先于模型猜测。ANIMA 宽松身份校验改为有序关键词覆盖：允许 `shoulder-length hair with soft bangs` 这类自然英文插词，但仍拒绝丢失发色、左右方向等关键身份事实，避免无效二次调用。
+
 - **PH9 Prompt Contract Regression**：新增 `scripts/verify_prompt_contracts.ps1` 单一发布门，顺序执行全量 unit/integration/mock Gateway/workflow/node-loader 测试、所有生产层 Python 编译、逐个前端 JS 语法检查及 diff whitespace 检查。新增验收矩阵，明确每项绑定合同的可执行证据，并注明 live provider 行为变化仍需独立实跑。
 
 - **PH8 Node UI Integration**：LLM Generate、Reference Analyzer、Storyboard Builder、Image Prompt Studio 与 H3 Prompt Studio 不再要求手填 `prompt_supplements` ID。新增默认收起的高级多选器，从后端读取资料并按 global/node/target scope 与启用状态展示；支持自动选择、显式多选、不使用、加载失败重试和旧工作流缺失 ID 提示。工作流仍只序列化稳定 ID，主操作区不增加常驻控件。

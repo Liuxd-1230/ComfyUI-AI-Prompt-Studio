@@ -50,15 +50,18 @@ def extract_json_object(raw: str) -> Optional[dict]:
         return data if isinstance(data, dict) else None
     except ValueError:
         pass
-    # 在 ```json ... ``` 或花括号块中找
-    m = re.search(r"\{.*\}", raw, re.S)
-    if not m:
-        return None
-    try:
-        data = json.loads(m.group(0))
-        return data if isinstance(data, dict) else None
-    except ValueError:
-        return None
+    # 从每个对象起点尝试 JSONDecoder.raw_decode。相比贪婪 ``{.*}``，这能
+    # 正确处理 fenced/prefixed JSON、字符串里的花括号，以及兼容端点偶发的
+    # ``{...}{...}`` 连续快照；只接受第一个完整对象，不猜测残缺 JSON。
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", raw):
+        try:
+            data, _ = decoder.raw_decode(raw[match.start():])
+        except ValueError:
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
 
 
 def _usable_character_name(value: str, *, allow_name: bool = True) -> str:
@@ -67,7 +70,9 @@ def _usable_character_name(value: str, *, allow_name: bool = True) -> str:
     if not allow_name or not name:
         return ""
     normalized = re.sub(r"\s+", " ", name).casefold()
-    if normalized in {"unknown", "unnamed", "none", "null", "n/a", "character", "person", "subject"}:
+    if normalized in {
+            "unknown", "unnamed", "none", "null", "n/a", "character", "person",
+            "subject", "未指定", "未知", "无名", "未命名", "人物", "角色", "主体"}:
         return ""
     if re.match(r"^(?:a |an |the )?(?:character|person|subject)\b", normalized):
         return ""

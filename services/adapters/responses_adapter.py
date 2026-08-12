@@ -103,13 +103,19 @@ class _StreamConsumer:
             return
         itype = item.get("type", "")
         if itype == "message":
-            for part in item.get("content") or []:
-                if isinstance(part, dict) and isinstance(part.get("text"), str):
-                    self.text_parts.append(part["text"])
+            # ``response.output_item.done`` carries the completed message snapshot.
+            # Providers commonly emit it after all output_text.delta events; appending
+            # both duplicates the complete answer (and turns one JSON object into
+            # ``{...}{...}``). Use the snapshot only as a non-streaming fallback.
+            if not self.text_parts:
+                for part in item.get("content") or []:
+                    if isinstance(part, dict) and isinstance(part.get("text"), str):
+                        self.text_parts.append(part["text"])
         elif itype == "reasoning":
-            for part in item.get("content") or []:
-                if isinstance(part, dict) and isinstance(part.get("text"), str):
-                    self.reasoning_parts.append(part["text"])
+            if not self.reasoning_parts:
+                for part in item.get("content") or []:
+                    if isinstance(part, dict) and isinstance(part.get("text"), str):
+                        self.reasoning_parts.append(part["text"])
         elif itype == "function_call":
             # 官方结构：{"type":"function_call","call_id":...,"id":...,"name":...,"arguments":...}
             cid = (item.get("call_id") or "").strip()

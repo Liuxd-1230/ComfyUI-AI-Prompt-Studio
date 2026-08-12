@@ -1,4 +1,6 @@
 """参考分析核心逻辑测试：解析 / 共识 / 合并策略 / Manifest。"""
+import json
+
 from aps.schemas.character import (
     CharacterBible,
     CharacterCandidate,
@@ -23,7 +25,17 @@ def test_extract_json_object():
     assert reference.extract_json_object('{"a": 1}') == {"a": 1}
     assert reference.extract_json_object('```json\n{"b": 2}\n```') == {"b": 2}
     assert reference.extract_json_object('前言 {"c": 3} 后记') == {"c": 3}
+    assert reference.extract_json_object('{"a": 1}{"a": 1}') == {"a": 1}
+    assert reference.extract_json_object('说明 {"text": "保留 { 花括号"} 尾注') == {
+        "text": "保留 { 花括号"}
     assert reference.extract_json_object("不是 JSON") is None
+
+
+def test_candidate_drops_english_and_chinese_placeholder_names():
+    for name in ("unknown", "unnamed", "未指定", "未知", "无名", "未命名"):
+        candidate = reference.parse_candidate_json(
+            '{"name": ' + json.dumps(name, ensure_ascii=False) + ', "traits": []}')
+        assert candidate.name == ""
 
 
 def test_parse_candidate_json():

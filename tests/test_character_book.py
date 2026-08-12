@@ -12,6 +12,18 @@ def make_bible(cid, name, speaker_id=""):
     return b
 
 
+def test_explicit_character_name_overrides_model_candidate_name():
+    node = cb_mod.APS_CharacterBible()
+    candidate = {
+        "name": "model guess", "analysis_mode": "character_full",
+        "traits": [], "sources": ["image_1"],
+    }
+    bible_json, _, _, _, _, _, _ = node.merge(
+        "image_priority", character_candidate=candidate,
+        character_name="参考人物")
+    assert bible_json["name"] == "参考人物"
+
+
 # ---------------------------------------------------------------- Speaker ID
 
 def test_assign_speaker_ids_sequential():
