@@ -6,6 +6,7 @@ import json
 import pytest
 
 import aps.nodes.h3_prompt_studio as studio_mod
+from aps.domain.recovery_journal import DurableRecoveryJournal
 from aps.schemas.character import CharacterBible, CharacterTrait
 from aps.schemas.prompt_session import PromptSession
 from aps.schemas.references import ReferenceManifest
@@ -76,6 +77,28 @@ def test_h3_studio_public_interface_removes_operation_and_plan_port() -> None:
     assert inputs["required"]["mode"][0] == [
         "T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA"]
     assert "R2V" not in inputs["required"]["mode"][0]
+    assert inputs["hidden"]["unique_id"] == "UNIQUE_ID"
+
+
+def test_h3_public_node_persists_recoverable_session(
+        monkeypatch, store, tmp_path) -> None:
+    journal_path = tmp_path / "recovery-journal.json"
+    journal = DurableRecoveryJournal(journal_path)
+    monkeypatch.setattr(studio_mod, "get_recovery_journal", lambda: journal)
+    SequenceGateway.responses = [
+        f"<PROMPT>{_valid_prompt()}</PROMPT><SUMMARY>Created.</SUMMARY>"]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+
+    result = studio_mod.APS_H3PromptStudio().run(
+        _profile(store), "woman waits for a train", "T2VA", 10.0,
+        "lenient", message_nonce="h-journal", unique_id="h3-8")
+    session = PromptSession.from_json(result["result"][1])
+    restored = DurableRecoveryJournal(journal_path).latest(session.id, "h3-8")
+
+    assert session.node_instance_id == "h3-8"
+    assert restored is not None
+    assert restored.session_snapshot["current_prompt"] == result["result"][0]
 
 
 def test_h3_lenient_create_and_refine_commit_freeform(monkeypatch, store) -> None:

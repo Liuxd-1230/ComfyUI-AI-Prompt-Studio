@@ -1,7 +1,7 @@
 # Persistent Contract Implementation Status
 
 > **ADR 0007 transition:** the 2026-08-11 dual-lane amendments are binding, but the
-> ADR 0007 runtime migration is implemented: PromptSession v3, the lenient protocol
+> ADR 0007 runtime migration is implemented: PromptSession v3.1, the lenient protocol
 > parser, `APS_PromptStudio`, and `APS_H3PromptStudio` are registered and tested.
 > The former Composer/Director implementations are removed. The 2026-08-11 real
 > ComfyUI/LM Studio prompt-only matrix passed for image/H3 lenient and strict
@@ -30,10 +30,10 @@ surface is not complete; it must not be described as finished functionality.
 | 108.11 Validator Failure | done | image/H3 Studio production failures do not commit or creatively repair |
 | 108.12 Repair Failure | done | one protocol-format retry maximum; failed retry leaves stable Session unchanged |
 | 108.13 No New Message | done | nonce/empty zero-call tests in both Studio nodes |
-| 108.14 Stale Concurrent Result | done | revision CAS plus node commit-spy tests; journal CAS in `test_recovery_journal.py` |
+| 108.14 Stale Concurrent Result | done | revision CAS, durable fresh-read journal CAS, node commit-spy tests, and real 9B stale-result rejection |
 | 108.15 Restore | done | immutable restore-as-new-revision tests in `test_prompt_session.py` |
-| 108.16 Workflow Reload | done | serialized v3 Session → new node instance → REFINE regression |
-| 108.17 Node Copy | partial | Session/node journal key seam exists; durable copied-node writeback is P5 |
+| 108.16 Workflow Reload | done | serialized v3.1 Session regression plus real ComfyUI journal recovery into a workflow widget |
+| 108.17 Node Copy | done | public node copy forks a distinct session ID/origin lineage while retaining the stable prompt and revision |
 | 108.18 Skill Changed | done | bound fingerprint mismatch tests |
 | 108.19 CharacterBible Changed | done | same-nonce mismatch-before-Gateway production test |
 | 108.20 Storyboard Major Change | done | source fingerprint comparison; finer compatibility/rebase is not implemented |
@@ -48,15 +48,17 @@ surface is not complete; it must not be described as finished functionality.
 | 108.29 Style Conflict | partial | deterministic renderer/validator checks remain; creative Critic was removed by ADR 0007 |
 | 108.30 Style Identity Lock | partial | stable fact locks exist; dedicated style/identity production regression remains |
 
-The Recovery Journal currently defines and proves the clean interface only.
-Durable workflow writeback, crash recovery, and copied-node branch UX remain P5
-work and are intentionally reported as unfinished.
+P5 durable recovery is implemented. Successful public-node commits publish an atomic,
+bounded snapshot to the ComfyUI user directory; workflow load offers an explicit
+recover/discard choice for a newer revision, and copied nodes fork independent lineage.
+Real ComfyUI/LM Studio evidence is recorded in
+`docs/prompt-architecture/p5-real-acceptance-2026-08-12.md`.
 
 ## Known Phase Gaps Outside §108
 
 - Both Studio nodes use their selected freeform or typed transaction lane end to end;
   neither calls an obsolete one-shot node.
-- Recovery Journal has a tested clean interface but is not connected to durable
-  backend storage or frontend recovery prompts.
+- Recovery Journal is local to one ComfyUI user directory; distributed multi-host
+  coordination remains outside the repository's current scope.
 - Automatic fingerprint Rebase/target migration is not implemented; mismatches
   preserve the stable revision and require New Session or an existing restore.

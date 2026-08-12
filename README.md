@@ -13,11 +13,11 @@
 - **Reference Analyzer**：文本锚点 / 图片特征反推，多图共识与冲突，人物来源证据，输出参考资产清单。
 - **Character Bible**：人物稳定身份（stable / variable / current / uncertain），5 种合并策略，字段锁定，冲突报告，H3 说话人 ID。
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式。
-- **Image Prompt Studio**：`APS_PromptStudio` 覆盖 ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 与 Generic Image。默认 `lenient` 直接维护完整提示词，适合本地小模型；`strict` 使用结构化 Plan、ChangeSet、Diff Guard 与原子 revision。两种模式都自动从 Session 判断 CREATE/REFINE，不再提供 operation 下拉。旧 v1/v2 Session 会重置为空 v3；最近保留 10 个成功版本。
+- **Image Prompt Studio**：`APS_PromptStudio` 覆盖 ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 与 Generic Image。默认 `lenient` 直接维护完整提示词，适合本地小模型；`strict` 使用结构化 Plan、ChangeSet、Diff Guard 与原子 revision。两种模式都自动从 Session 判断 CREATE/REFINE，不再提供 operation 下拉。旧 v1/v2 Session 会重置为空 v3.1；最近保留 10 个成功版本。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
 - **MiniMax H3 Prompt Studio**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（读取旧 R2V 值时归一化），支持图片、视频和音频参考。默认宽松模式直接维护完整官方文本；严格模式由结构化 Plan、ChangeSet、Python renderer 与规则校验驱动。
 - **结构化输出容错**：H3 CREATE Plan 或 Studio REFINE ChangeSet 首次出现非 JSON、重复路径或缺少授权范围时，会在不修改当前 revision 的前提下最多重试一次；仍失败会显示并记录截断的模型原始输出，便于区分 provider 降级、截断和格式漂移。
-- **P4.1 原子恢复接缝**：Session 提交携带 transaction/base/result revision，并可先写入按节点实例隔离的 Recovery Journal；当前提供线程安全内存参考实现，持久化工作流回写留给 P5。确定性影响分析会自动闭合 positive/negative 冲突和 H3 duration→镜头时间戳依赖，并把实际依赖与修复次数写入 revision。
+- **P5 持久会话恢复**：Session 提交先以 transaction/base/result revision 原子写入按节点实例隔离的 Recovery Journal，再回写工作流。异常退出后打开旧工作流时会明确询问是否恢复后端较新版本；复制节点会保留当前成品并建立独立 lineage，旧请求不能覆盖新 revision。日志位于 ComfyUI `user/ai_prompt_studio/recovery-journal.json`，最多保留最近 100 个节点会话。
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
 - **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
 - **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、运行时和 Prompt Skill 查看/新建/编辑。

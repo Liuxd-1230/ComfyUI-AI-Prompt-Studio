@@ -1,5 +1,6 @@
 # Changelog
 
+- P5 持久会话与并发恢复：`PromptSession` 升级到 v3.1 并绑定 ComfyUI 节点实例；复制 Image/H3 Studio 节点会保留稳定成品、建立独立 session/origin lineage。成功提交先原子写入 ComfyUI 用户目录下最近 100 条 Recovery Journal，跨 adapter fresh-read CAS 阻止旧请求覆盖新 revision；打开落后的工作流会明确询问恢复或丢弃后端版本，接受后写回隐藏 widget 并标记工作流需要保存。真实 ComfyUI + LM Studio 9B 已验证 CREATE、REFINE、复制分叉、旧结果拒绝和浏览器恢复流程。
 - H3 Studio 在节点内随下拉选择显示 T2VA/I2VA/FL2VA/L2VA/Ref2VA 的参考输入与用途说明，并解释宽松/严格执行模式；R2V 仅保留旧工作流读取兼容，不再出现在新节点下拉框。`message_nonce`、`session_action`、`prompt_session` 等内部状态现在真正隐藏，不再漏出在执行模式下方。
 - 修复 Prompt Studio DOM 工作台越过节点边框并留下大块空白：DOM widget 现在向 ComfyUI 声明固定的 min/max/current height，节点按原生端口高度加工作台高度自动扩展；面板使用有界网格和内部滚动，不再随节点剩余空间无限拉长。
 - 完成 P4.1 真实 ComfyUI/LM Studio 提示词验收记录：图像/H3 宽松与严格 CREATE/REFINE、连续两轮宽松修改、无标签输出、显式模式切换和历史恢复均已实跑；当前本地模型拒绝生成故意损坏的半截 JSON/tag，因此该环境依赖项如实保留为未现场诱发，不添加测试后门。

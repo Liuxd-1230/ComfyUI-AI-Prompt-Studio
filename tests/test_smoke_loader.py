@@ -125,6 +125,11 @@ def test_prompt_studio_frontend_persists_backend_session_in_widget():
     assert 'setWidget(node, "prompt_session", "")' not in new_action
     assert "旧会话会保留到新结果成功提交" in new_action
     assert "当前会话尚无可恢复的成功版本" in source
+    assert "recoverNewerJournal(node, root)" in source
+    assert "Recover v${diskRevision}?" in source
+    assert 'api.fetchApi(path, { method: "DELETE" })' in source
+    assert "markWorkflowDirty(node)" in source
+    assert "activeWorkflow?.changeTracker?.checkState?.()" in source
 
 
 def test_prompt_studio_dom_widget_has_bounded_layout_contract():

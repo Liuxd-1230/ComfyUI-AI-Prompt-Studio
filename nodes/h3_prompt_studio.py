@@ -38,6 +38,7 @@ from ..services.h3_studio_runtime import (
     render_validate,
 )
 from ..services.prompt_protocol import LenientPromptOutput, parse_lenient_output
+from ..services.recovery import get_recovery_journal
 from ..services.prompt_session import (
     assert_session_fingerprints,
     build_session_fingerprints,
@@ -83,7 +84,7 @@ class APS_H3PromptStudio:
             "audio_2": ("AUDIO",), "audio_3": ("AUDIO",),
             "prompt_session": ("STRING", {"default": "", "multiline": True}),
             "message_nonce": ("STRING", {"default": "", "multiline": False}),
-        }}
+        }, "hidden": {"unique_id": "UNIQUE_ID"}}
 
     RETURN_TYPES = ("STRING", types.PROMPT_SESSION, types.REFERENCE_MANIFEST,
                     "STRING", "STRING")
@@ -101,7 +102,7 @@ class APS_H3PromptStudio:
             images: Any = None, video_1: Any = None, video_2: Any = None,
             video_3: Any = None, audio_1: Any = None, audio_2: Any = None,
             audio_3: Any = None, prompt_session: str = "",
-            message_nonce: str = "") -> Any:
+            message_nonce: str = "", unique_id: Any = None) -> Any:
         mode = _normalize_mode(mode)
         if execution_mode not in EXECUTION_MODES:
             raise ValueError("execution_mode 必须是 lenient 或 strict")
@@ -139,11 +140,11 @@ class APS_H3PromptStudio:
             return self._run_lenient(
                 profile, api_key, text, mode, duration, session_action,
                 board, bible, book, source_bibles, manifest, image_count, prompt_session,
-                message_nonce, fingerprints)
+                message_nonce, fingerprints, unique_id)
         return self._run_strict(
             profile, api_key, text, mode, duration, session_action,
             board, bible, book, source_bibles, manifest, image_count, prompt_session,
-            message_nonce, fingerprints)
+            message_nonce, fingerprints, unique_id)
 
     def _run_lenient(
             self, profile: AIProfile, api_key: str, text: str, mode: str,
@@ -151,14 +152,21 @@ class APS_H3PromptStudio:
             bible: CharacterBible | None, book: CharacterBook | None,
             source_bibles: list[CharacterBible], manifest: ReferenceManifest,
             image_count: int, prompt_session: str,
-            message_nonce: str, fingerprints: Any) -> Any:
+            message_nonce: str, fingerprints: Any,
+            unique_id: Any = None) -> Any:
         session = PromptSession.from_json(prompt_session) if prompt_session else PromptSession()
+        node_id = str(unique_id or "").strip()
+        journal = get_recovery_journal() if node_id else None
+        if node_id:
+            session, _ = session.for_node(node_id)
         if session_action == "new" or (
                 session.has_current_state and session.execution_mode != "lenient"):
             session = PromptSession(target_family="minimax_h3", target_variant=mode,
-                                    execution_mode="lenient")
+                                    execution_mode="lenient",
+                                    node_instance_id=node_id)
         if session_action == "previous":
-            if not session.revert_previous():
+            if not session.revert_previous(
+                    node_instance_id=node_id, recovery_journal=journal):
                 raise ValueError("当前 H3 会话尚无可恢复的成功版本")
             return self._result(session, manifest, "已恢复上一版 H3 提示词。")
         instruction = str(text or "").strip()
@@ -208,7 +216,8 @@ class APS_H3PromptStudio:
             expected_revision=session.revision, message_id=message_id,
             fingerprints=fingerprints, execution_mode="lenient",
             payload_kind="freeform", repair_count=repair_count,
-            context_changes=context_changes)
+            context_changes=context_changes, node_instance_id=node_id,
+            recovery_journal=journal)
         return self._result(session, manifest, summary)
 
     def _run_strict(
@@ -217,16 +226,23 @@ class APS_H3PromptStudio:
             bible: CharacterBible | None, book: CharacterBook | None,
             source_bibles: list[CharacterBible], manifest: ReferenceManifest,
             image_count: int, prompt_session: str,
-            message_nonce: str, fingerprints: Any) -> Any:
+            message_nonce: str, fingerprints: Any,
+            unique_id: Any = None) -> Any:
         stable = PromptSession.from_json(prompt_session) if prompt_session else PromptSession()
+        node_id = str(unique_id or "").strip()
+        journal = get_recovery_journal() if node_id else None
+        if node_id:
+            stable, _ = stable.for_node(node_id)
         starts_new = session_action == "new" or (
             stable.has_current_state and stable.execution_mode != "strict")
         session = (PromptSession(target_family="minimax_h3", target_variant=mode,
-                                 execution_mode="strict")
+                                 execution_mode="strict",
+                                 node_instance_id=node_id)
                    if starts_new else stable)
         if session_action == "previous" and not starts_new:
             assert_session_fingerprints(session, fingerprints)
-            if not session.revert_previous():
+            if not session.revert_previous(
+                    node_instance_id=node_id, recovery_journal=journal):
                 raise ValueError("当前 H3 会话尚无可恢复的成功版本")
             return self._result(session, manifest, "已恢复上一版 H3 方案。")
         instruction = str(text or "").strip()
@@ -285,7 +301,8 @@ class APS_H3PromptStudio:
             invalidated_paths=([item.path for item in changeset.invalidated_facts]
                                if changeset else []),
             renderer_signature=fingerprints.model_core_hash,
-            locked_constraints=binding_locks(plan))
+            locked_constraints=binding_locks(plan), node_instance_id=node_id,
+            recovery_journal=journal)
         return self._result(session, manifest, summary)
 
     def _generate_lenient(

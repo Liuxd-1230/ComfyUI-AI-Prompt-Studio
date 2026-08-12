@@ -18,7 +18,7 @@ VALID = {"valid": True, "issues": [], "checks": ["non_empty"]}
 
 def test_v3_defaults_to_empty_lenient_session() -> None:
     session = PromptSession()
-    assert session.schema_version == "3.0"
+    assert session.schema_version == "3.1"
     assert session.execution_mode == "lenient"
     assert session.current_payload_kind == "empty"
     assert session.has_current_state is False
@@ -31,7 +31,7 @@ def test_v2_workflow_state_resets_instead_of_becoming_editable_v3() -> None:
         "current_plan": {"scene": "old"},
     }
     session = PromptSession.from_json(old)
-    assert session.schema_version == "3.0"
+    assert session.schema_version == "3.1"
     assert session.id != "old-session"
     assert session.revision == 0
     assert session.current_prompt == ""
@@ -231,7 +231,7 @@ def test_legacy_v1_session_resets_to_empty_v3_state():
                        "user_instruction": "create", "change_summary": "v1"}],
     }
     restored = PromptSession.from_json(legacy)
-    assert restored.schema_version == "3.0"
+    assert restored.schema_version == "3.1"
     assert restored.current_plan == {}
     assert restored.current_prompt == ""
     assert restored.revisions == []
@@ -250,4 +250,45 @@ def test_future_or_malformed_session_is_rejected_instead_of_silently_downgraded(
         PromptSession.from_json({"schema_version": "4.0", "current_plan": {}})
     with pytest.raises(SchemaError, match=r"revisions\[0\]"):
         PromptSession.from_json({
-            "schema_version": "3.0", "revisions": ["not a revision"]})
+            "schema_version": "3.1", "revisions": ["not a revision"]})
+
+
+def test_v30_session_migrates_without_losing_stable_state() -> None:
+    source = PromptSession(target_family="anima")
+    source.commit({"scene": "rain"}, "rain", VALID, "create", "created")
+    payload = source.to_json()
+    payload["schema_version"] = "3.0"
+
+    restored = PromptSession.from_json(payload)
+
+    assert restored.schema_version == "3.1"
+    assert restored.current_prompt == "rain"
+    assert restored.revision == 1
+    assert restored.node_instance_id == ""
+
+
+def test_copied_node_forks_session_identity_but_preserves_stable_snapshot() -> None:
+    source = PromptSession(target_family="anima", node_instance_id="node-original")
+    source.commit({"scene": "rain"}, "rain", VALID, "create", "created")
+
+    forked, did_fork = source.for_node("node-copy")
+
+    assert did_fork is True
+    assert forked.id != source.id
+    assert forked.origin_session_id == source.id
+    assert forked.node_instance_id == "node-copy"
+    assert forked.current_plan == source.current_plan
+    assert forked.current_prompt == source.current_prompt
+    assert forked.revision == source.revision
+    assert source.node_instance_id == "node-original"
+
+
+def test_unbound_session_adopts_first_node_without_forking() -> None:
+    source = PromptSession(target_family="anima")
+    source.commit({"scene": "rain"}, "rain", VALID, "create", "created")
+
+    bound, did_fork = source.for_node("node-original")
+
+    assert did_fork is False
+    assert bound.id == source.id
+    assert bound.node_instance_id == "node-original"

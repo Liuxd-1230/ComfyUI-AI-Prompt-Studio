@@ -6,6 +6,7 @@ import json
 import pytest
 
 import aps.nodes.prompt_studio as studio_mod
+from aps.domain.recovery_journal import DurableRecoveryJournal
 from aps.schemas.prompt_session import PromptSession
 from aps.schemas.results import LLMResult
 
@@ -73,6 +74,39 @@ def test_lenient_create_and_refine_commit_freeform_revisions(
     assert "A woman walks through blue-hour rain." in sent
     assert "Change her coat to red" in sent
     assert "Created the scene" not in sent
+
+
+def test_public_node_persists_journal_and_forks_copied_session(
+        monkeypatch, store, tmp_path) -> None:
+    journal_path = tmp_path / "recovery-journal.json"
+    journal = DurableRecoveryJournal(journal_path)
+    monkeypatch.setattr(studio_mod, "get_recovery_journal", lambda: journal)
+    SequenceGateway.responses = [
+        "<PROMPT>A woman in rain.</PROMPT><SUMMARY>Created.</SUMMARY>",
+        "<PROMPT>A woman in warm rain.</PROMPT><SUMMARY>Refined copy.</SUMMARY>",
+    ]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+    node = studio_mod.APS_PromptStudio()
+    original = node.run(
+        _profile(store), "woman in rain", "anima_base", "lenient",
+        message_nonce="m1", unique_id="42")
+    original_session = PromptSession.from_json(original["result"][2])
+
+    copied = node.run(
+        store.get_profile("studio").node_payload(), "make it warmer",
+        "anima_base", "lenient", prompt_session=original["result"][2],
+        message_nonce="m2", unique_id="99")
+    copied_session = PromptSession.from_json(copied["result"][2])
+
+    assert original_session.node_instance_id == "42"
+    assert copied_session.node_instance_id == "99"
+    assert copied_session.id != original_session.id
+    assert copied_session.origin_session_id == original_session.id
+    assert DurableRecoveryJournal(journal_path).latest(
+        original_session.id, "42").result_revision == 1
+    assert DurableRecoveryJournal(journal_path).latest(
+        copied_session.id, "99").result_revision == 2
 
 
 def test_lenient_untagged_prompt_commits_with_warning(monkeypatch, store) -> None:

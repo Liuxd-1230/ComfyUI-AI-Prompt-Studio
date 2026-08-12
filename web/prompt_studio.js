@@ -38,6 +38,14 @@ function setWidget(node, name, value) {
   app.graph?.setDirtyCanvas?.(true, true);
 }
 
+function markWorkflowDirty(node) {
+  node.graph?.change?.();
+  app.graph?.change?.();
+  app.extensionManager?.workflow?.activeWorkflow?.changeTracker?.checkState?.();
+  app.workflowManager?.activeWorkflow?.changeTracker?.checkState?.();
+  node.setDirtyCanvas?.(true, true);
+}
+
 function parseSession(node) {
   try {
     return JSON.parse(String(byName(node, "prompt_session")?.value || ""));
@@ -142,6 +150,47 @@ function renderSession(node, root, session = parseSession(node), message = null)
   summary.textContent = [change, validation].filter(Boolean).join("\n");
 }
 
+async function recoverNewerJournal(node, root) {
+  const session = parseSession(node);
+  const sessionId = String(session.id || "");
+  const nodeInstanceId = String(session.node_instance_id || "");
+  if (!sessionId || !nodeInstanceId) return;
+  const path = `/ai_prompt_studio/recovery/${encodeURIComponent(sessionId)}`
+    + `/${encodeURIComponent(nodeInstanceId)}`;
+  try {
+    const response = await api.fetchApi(path);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const candidate = await response.json();
+    const diskRevision = Number(candidate.result_revision || 0);
+    const workflowRevision = Number(session.revision || 0);
+    if (!candidate.found || diskRevision <= workflowRevision) return;
+    const shouldRecover = globalThis.confirm(
+      `Prompt Studio 检测到后端成功版本 v${diskRevision}，工作流仍是 v${workflowRevision}。\n`
+      + `Recover v${diskRevision}?（恢复后请保存工作流）`);
+    if (!shouldRecover) {
+      await api.fetchApi(path, { method: "DELETE" });
+      root.querySelector(".aps-studio-summary").textContent =
+        `已保留工作流 v${workflowRevision}，并忽略恢复候选 v${diskRevision}。`;
+      return;
+    }
+    const snapshot = candidate.session_snapshot;
+    if (!snapshot || snapshot.id !== sessionId
+        || Number(snapshot.revision || 0) !== diskRevision) {
+      throw new Error("恢复快照身份或 revision 不一致");
+    }
+    setWidget(node, "prompt_session", JSON.stringify(snapshot, null, 2));
+    setWidget(node, "session_action", "continue");
+    renderSession(node, root, snapshot);
+    root.querySelector(".aps-studio-summary").textContent =
+      `已恢复后端成功版本 v${diskRevision}；请保存工作流。`;
+    markWorkflowDirty(node);
+  } catch (error) {
+    const summary = root.querySelector(".aps-studio-summary");
+    summary.textContent = `恢复检查失败：${error?.message || error}`;
+    summary.classList.add("is-error");
+  }
+}
+
 function attachStudio(node) {
   ["operation", "text", "prompt_session", "session_action", "continue_previous",
     "message_nonce"].forEach(
@@ -169,6 +218,7 @@ function attachStudio(node) {
       setWidget(node, "session_action", "continue");
       setWidget(node, "text", "");
       root.querySelector(".aps-studio-input").value = "";
+      markWorkflowDirty(node);
     }
     renderSession(node, root, parseSession(node), message);
   };
@@ -180,6 +230,7 @@ function attachStudio(node) {
         String(byName(node, "text")?.value || "");
       renderSession(node, root);
       renderInlineHelp(node, root);
+      recoverNewerJournal(node, root);
     }, 0);
   };
   const onExecutionError = ({ detail }) => {

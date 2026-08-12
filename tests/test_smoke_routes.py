@@ -38,6 +38,8 @@ EXPECTED_ROUTE_PATHS = {
     ("PUT", "/ai_prompt_studio/skills/{skill_id}"),
     ("DELETE", "/ai_prompt_studio/skills/{skill_id}"),
     ("POST", "/ai_prompt_studio/skills/{skill_id}/enabled"),
+    ("GET", "/ai_prompt_studio/recovery/{session_id}/{node_instance_id}"),
+    ("DELETE", "/ai_prompt_studio/recovery/{session_id}/{node_instance_id}"),
 }
 
 
@@ -135,6 +137,33 @@ async def _http_roundtrip(table, store):
             assert resp.status == 400
         async with client.get(f"{base}/ai_prompt_studio/settings") as resp:
             assert (await resp.json())["settings"]["lang"] == "zh"
+
+        # Recovery Journal：浏览器只在磁盘 revision 更新时拿到候选快照。
+        from aps.services.recovery import get_recovery_journal
+        from aps.schemas.prompt_session import PromptSession
+        recovery_session = PromptSession(
+            target_family="anima", node_instance_id="node-42")
+        recovery_session.commit(
+            {"scene": "rain"}, "rain", {"valid": True, "issues": []},
+            "create", "created", expected_revision=0,
+            node_instance_id="node-42",
+            recovery_journal=get_recovery_journal(store.base_dir))
+        async with client.get(
+            f"{base}/ai_prompt_studio/recovery/{recovery_session.id}/node-42"
+        ) as resp:
+            assert resp.status == 200
+            recovery = await resp.json()
+            assert recovery["found"] is True
+            assert recovery["result_revision"] == 1
+            assert recovery["session_snapshot"]["current_prompt"] == "rain"
+        async with client.delete(
+            f"{base}/ai_prompt_studio/recovery/{recovery_session.id}/node-42"
+        ) as resp:
+            assert resp.status == 200
+        async with client.get(
+            f"{base}/ai_prompt_studio/recovery/{recovery_session.id}/node-42"
+        ) as resp:
+            assert (await resp.json())["found"] is False
 
         # Prompt Skill：列表（内置只读）→ 复制为自定义 → 修改 → 停用 → 删除
         from aps.services import skills as skills_svc

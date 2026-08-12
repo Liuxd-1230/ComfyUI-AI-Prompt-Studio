@@ -3,7 +3,7 @@
 > **2026-08-11 amendment:** ADR 0007 supersedes the mandatory single structured
 > execution path and v2 migration behavior. This document remains the lineage and
 > atomic-commit foundation for the strict lane; the default lenient lane persists a
-> prompt payload in PromptSession v3 without requiring a semantic Plan.
+> prompt payload in PromptSession v3.1 without requiring a semantic Plan.
 
 Prompt Composer and MiniMax H3 Director use `PromptSession` as the current-state fact source. Conversation explains why revisions changed; it is not replayed to reconstruct the current prompt.
 
@@ -21,7 +21,7 @@ current structured plan + latest instruction
 → atomic revision commit
 ```
 
-`PromptSession` v2 stores target family/variant, current plan and prompt, validation,
+`PromptSession` v3.1 stores target family/variant, current plan and prompt, validation,
 locked constraints, the last processed message nonce, target/source/model/Skill
 fingerprints, bounded conversation messages, and the latest ten synchronized
 plan/prompt revisions. A ChangeSet declares `base_revision`; stale updates, illegal
@@ -60,7 +60,17 @@ approved requested/dependent paths. Proposal paths are not mutation authority un
 this approval succeeds; Python-proven dependencies are recorded by deterministic
 Impact Analysis instead.
 
-The session is not held on a Python node instance. The node returns the latest serialized session through ComfyUI's `ui/result` envelope. `web/prompt_studio.js` writes that JSON into the node's hidden, serializable `prompt_session` widget. Queue #2 therefore receives Queue #1's plan, and saving/reopening the workflow restores the same state.
+The session is not held on a Python node instance. The node returns the latest serialized session through ComfyUI's `ui/result` envelope. `web/prompt_studio.js` writes that JSON into the node's hidden, serializable `prompt_session` widget and marks the workflow dirty. Queue #2 therefore receives Queue #1's plan, and saving/reopening the workflow restores the same state.
+
+P5 binds every serialized Session to ComfyUI's hidden `UNIQUE_ID`. Copying a node
+forks a new session ID and records the source in `origin_session_id`, preserving the
+stable prompt and revision without sharing future writes. Before swapping the stable
+Session, commit publishes an atomic snapshot to a bounded durable Recovery Journal
+keyed by `(session_id, node_instance_id)`. A second adapter rereads the file before
+every write and rejects stale `base_revision` values. On workflow load, the frontend
+offers an explicit recover/discard choice only when the journal revision is newer;
+accepting recovery writes the snapshot into the widget and requires the workflow to
+be saved.
 
 The frontend displays conversation, revision, and the exact `current_prompt`; it does not apply patches or validate plans. It writes a new `message_nonce` when the user edits the message. An empty message or an already processed nonce re-renders the stable output with zero LLM calls and no revision. `operation` remains serialized for old workflows but is hidden in the new UI. New work automatically selects CREATE when no valid plan exists and REFINE otherwise.
 
@@ -68,7 +78,8 @@ ANIMA retains its target-specific semantic plan. Prose-oriented Z-Image, Qwen Im
 
 ## Trade-offs
 
-Workflow JSON grows with up to ten revisions and forty chat messages. Commit-time CAS
-continues to reject stale base revisions. Frontend writeback recovery, node-copy
-identity and multi-client recovery journals remain P5 work; the v2 envelope preserves
-the hashes and lineage needed for those mechanisms.
+Workflow JSON grows with up to ten revisions and forty chat messages. The recovery
+journal adds at most 100 most-recent node/session snapshots under the ComfyUI user
+directory. Its process-local path lock and fresh-read CAS cover concurrent adapters in
+one ComfyUI process; the atomic replace prevents partial files after a crash. It is a
+local recovery mechanism, not a distributed multi-host database.

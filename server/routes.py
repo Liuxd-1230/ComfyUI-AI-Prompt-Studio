@@ -7,8 +7,10 @@ register_routes() 在 ComfyUI 内把处理器挂到 PromptServer.instance.routes
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
+import re
 from functools import partial
 from typing import Any, Callable, Dict, Optional
 
@@ -217,6 +219,37 @@ def handle_runtime(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any
     )
 
 
+def _recovery_identity(value: str, label: str) -> str:
+    clean = str(value or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", clean):
+        raise ValueError(f"{label} 非法")
+    return clean
+
+
+def handle_recovery_latest(
+        session_id: str, node_instance_id: str,
+        store: ConfigStore) -> Dict[str, Any]:
+    from ..services.recovery import get_recovery_journal
+
+    sid = _recovery_identity(session_id, "session_id")
+    nid = _recovery_identity(node_instance_id, "node_instance_id")
+    entry = get_recovery_journal(store.config_dir()).latest(sid, nid)
+    if entry is None:
+        return {"found": False, "session_id": sid, "node_instance_id": nid}
+    return {"found": True, **dataclasses.asdict(entry)}
+
+
+def handle_recovery_discard(
+        session_id: str, node_instance_id: str,
+        store: ConfigStore) -> Dict[str, Any]:
+    from ..services.recovery import get_recovery_journal
+
+    sid = _recovery_identity(session_id, "session_id")
+    nid = _recovery_identity(node_instance_id, "node_instance_id")
+    get_recovery_journal(store.config_dir()).discard(sid, nid)
+    return {"ok": True, "session_id": sid, "node_instance_id": nid}
+
+
 # ---------------------------------------------------------------- Prompt Skill 管理
 
 def handle_skills_list(store: ConfigStore) -> Dict[str, Any]:
@@ -380,6 +413,18 @@ def register_routes() -> None:
         sid = request.match_info["skill_id"]
         return await _run(request, lambda req, payload, st: handle_skill_set_enabled(sid, payload, st))
 
+    async def r_recovery_latest(request):
+        sid = request.match_info["session_id"]
+        nid = request.match_info["node_instance_id"]
+        return await _run(
+            request, lambda req, payload, st: handle_recovery_latest(sid, nid, st))
+
+    async def r_recovery_discard(request):
+        sid = request.match_info["session_id"]
+        nid = request.match_info["node_instance_id"]
+        return await _run(
+            request, lambda req, payload, st: handle_recovery_discard(sid, nid, st))
+
     routes.get(f"{API_PREFIX}/status")(r_status)
     routes.get(f"{API_PREFIX}/profiles")(r_profiles_list)
     routes.get(f"{API_PREFIX}/profiles/{{profile_id}}")(r_profiles_get)
@@ -401,5 +446,11 @@ def register_routes() -> None:
     routes.put(f"{API_PREFIX}/skills/{{skill_id}}")(r_skill_update)
     routes.delete(f"{API_PREFIX}/skills/{{skill_id}}")(r_skill_delete)
     routes.post(f"{API_PREFIX}/skills/{{skill_id}}/enabled")(r_skill_enable)
+    routes.get(
+        f"{API_PREFIX}/recovery/{{session_id}}/{{node_instance_id}}")(
+            r_recovery_latest)
+    routes.delete(
+        f"{API_PREFIX}/recovery/{{session_id}}/{{node_instance_id}}")(
+            r_recovery_discard)
 
     logger.info("AI Prompt Studio: 路由已注册（%s）", API_PREFIX)

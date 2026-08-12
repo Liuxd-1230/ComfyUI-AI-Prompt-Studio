@@ -32,6 +32,7 @@ from ..schemas.prompt_session import PromptSession, SessionFingerprints
 from ..schemas.references import ReferenceManifest
 from ..services.gateway import Gateway, GenerateRequest
 from ..services.prompt_protocol import LenientPromptOutput, parse_lenient_output
+from ..services.recovery import get_recovery_journal
 from ..services.prompt_session import (
     assert_session_fingerprints,
     build_session_fingerprints,
@@ -133,7 +134,7 @@ class APS_PromptStudio:
             "reference_manifest": (types.REFERENCE_MANIFEST,),
             "prompt_session": ("STRING", {"default": "", "multiline": True}),
             "message_nonce": ("STRING", {"default": "", "multiline": False}),
-        }}
+        }, "hidden": {"unique_id": "UNIQUE_ID"}}
 
     RETURN_TYPES = ("STRING", "STRING", types.PROMPT_SESSION, "STRING", "STRING")
     RETURN_NAMES = ("positive", "negative", "prompt_session", "validation",
@@ -147,24 +148,25 @@ class APS_PromptStudio:
             execution_mode: str = "lenient", session_action: str = "continue",
             story_item: Any = None, character_bible: Any = None,
             character_book: Any = None, reference_manifest: Any = None,
-            prompt_session: str = "", message_nonce: str = "") -> Any:
+            prompt_session: str = "", message_nonce: str = "",
+            unique_id: Any = None) -> Any:
         if execution_mode not in EXECUTION_MODES:
             raise ValueError("execution_mode 必须是 lenient 或 strict")
         if execution_mode == "strict":
             return self._run_strict(
                 AI_PROFILE, text, target, session_action, story_item,
                 character_bible, character_book, reference_manifest,
-                prompt_session, message_nonce)
+                prompt_session, message_nonce, unique_id)
         return self._run_lenient(
             AI_PROFILE, text, target, session_action, story_item,
             character_bible, character_book, reference_manifest,
-            prompt_session, message_nonce)
+            prompt_session, message_nonce, unique_id)
 
     def _run_lenient(
             self, AI_PROFILE: Any, text: str, target: str, session_action: str,
             story_item: Any, character_bible: Any, character_book: Any,
             reference_manifest: Any, prompt_session: str,
-            message_nonce: str) -> Any:
+            message_nonce: str, unique_id: Any = None) -> Any:
         incoming = AIProfile.from_json(AI_PROFILE or {})
         if not incoming.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
@@ -173,13 +175,18 @@ class APS_PromptStudio:
         family, variant = _split_target(target)
         session = (PromptSession.from_json(prompt_session)
                    if prompt_session else PromptSession())
+        node_id = str(unique_id or "").strip()
+        journal = get_recovery_journal() if node_id else None
+        if node_id:
+            session, _ = session.for_node(node_id)
         if session_action == "new" or (
                 session.has_current_state and session.execution_mode != "lenient"):
             session = PromptSession(
                 target_family=family, target_variant=variant,
-                execution_mode="lenient")
+                execution_mode="lenient", node_instance_id=node_id)
         if session_action == "previous":
-            if not session.revert_previous():
+            if not session.revert_previous(
+                    node_instance_id=node_id, recovery_journal=journal):
                 raise ValueError("当前会话尚无可恢复的成功版本；至少需要两个成功 revision")
             return self._freeform_result(session, "已恢复上一版提示词。")
         if not session.has_current_state:
@@ -240,7 +247,8 @@ class APS_PromptStudio:
             expected_revision=session.revision, message_id=message_id,
             fingerprints=fingerprints, repair_count=repair_count,
             execution_mode="lenient", payload_kind="freeform",
-            context_changes=context_changes)
+            context_changes=context_changes, node_instance_id=node_id,
+            recovery_journal=journal)
         negative = _negative_for(family, variant)
         result = (parsed.prompt, negative, session.to_json_string(),
                   report.as_text(), summary)
@@ -307,7 +315,7 @@ class APS_PromptStudio:
             self, AI_PROFILE: Any, text: str, target: str, session_action: str,
             story_item: Any, character_bible: Any, character_book: Any,
             reference_manifest: Any, prompt_session: str,
-            message_nonce: str) -> Any:
+            message_nonce: str, unique_id: Any = None) -> Any:
         incoming = AIProfile.from_json(AI_PROFILE or {})
         if not incoming.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
@@ -316,11 +324,16 @@ class APS_PromptStudio:
         family, variant = _split_target(target)
         stable = (PromptSession.from_json(prompt_session)
                   if prompt_session else PromptSession())
+        node_id = str(unique_id or "").strip()
+        journal = get_recovery_journal() if node_id else None
+        if node_id:
+            stable, _ = stable.for_node(node_id)
         starts_new = (session_action == "new" or
                       (stable.has_current_state
                        and stable.execution_mode != "strict"))
         session = (PromptSession(target_family=family, target_variant=variant,
-                                 execution_mode="strict")
+                                 execution_mode="strict",
+                                 node_instance_id=node_id)
                    if starts_new else stable)
         bible, book = _character_sources(character_bible, character_book)
         manifest = (ReferenceManifest.from_json(reference_manifest)
@@ -333,7 +346,8 @@ class APS_PromptStudio:
                      "character_book": book, "reference_manifest": manifest})
         if session_action == "previous" and not starts_new:
             assert_session_fingerprints(session, fingerprints)
-            if not session.revert_previous():
+            if not session.revert_previous(
+                    node_instance_id=node_id, recovery_journal=journal):
                 raise ValueError("当前会话尚无可恢复的成功版本；至少需要两个成功 revision")
             return self._strict_result(session, "已恢复上一版结构化提示词。")
         instruction = _input_text(text, story_item)
@@ -388,7 +402,8 @@ class APS_PromptStudio:
                              if changeset else []),
             invalidated_paths=([item.path for item in changeset.invalidated_facts]
                                if changeset else []),
-            renderer_signature=f"{family}:{variant}:strict")
+            renderer_signature=f"{family}:{variant}:strict",
+            node_instance_id=node_id, recovery_journal=journal)
         result = (positive, negative, session.to_json_string(),
                   report.as_text(), summary)
         return node_execution_result(

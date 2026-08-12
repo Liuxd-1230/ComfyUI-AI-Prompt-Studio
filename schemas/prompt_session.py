@@ -140,27 +140,38 @@ class PromptRevision(Schema):
         return self
 
 
-def _reset_legacy_session_to_v3(data: Dict[str, Any]) -> Dict[str, Any]:
+def _reset_legacy_session_to_v31(data: Dict[str, Any]) -> Dict[str, Any]:
     """Legacy state is intentionally not rebound to either ADR 0007 lane."""
     del data
     return {
-        "schema_version": "3.0", "execution_mode": "lenient",
+        "schema_version": "3.1", "execution_mode": "lenient",
         "current_payload_kind": "empty", "fingerprint_state": "bound",
     }
+
+
+def _migrate_v30_to_v31(data: Dict[str, Any]) -> Dict[str, Any]:
+    migrated = dict(data)
+    migrated["schema_version"] = "3.1"
+    migrated.setdefault("node_instance_id", "")
+    migrated.setdefault("origin_session_id", "")
+    return migrated
 
 
 @dataclasses.dataclass
 class PromptSession(Schema):
     """Source of truth for one persistent CREATE/REFINE lifecycle."""
 
-    CURRENT_SCHEMA_VERSION: ClassVar[str] = "3.0"
+    CURRENT_SCHEMA_VERSION: ClassVar[str] = "3.1"
     MIGRATIONS: ClassVar[Dict[str, Dict[str, Any]]] = {
-        "1.0": {"3.0": _reset_legacy_session_to_v3},
-        "2.0": {"3.0": _reset_legacy_session_to_v3},
+        "1.0": {"3.1": _reset_legacy_session_to_v31},
+        "2.0": {"3.1": _reset_legacy_session_to_v31},
+        "3.0": {"3.1": _migrate_v30_to_v31},
     }
 
-    schema_version: str = "3.0"
+    schema_version: str = "3.1"
     id: str = ""
+    node_instance_id: str = ""
+    origin_session_id: str = ""
     execution_mode: str = "lenient"
     current_payload_kind: str = "empty"
     target_family: str = ""
@@ -224,7 +235,7 @@ class PromptSession(Schema):
                 candidate = None
         if isinstance(candidate, dict):
             version = str(candidate.get("schema_version", "1.0"))
-            if version not in {"1.0", "2.0", cls.CURRENT_SCHEMA_VERSION}:
+            if version not in {"1.0", "2.0", "3.0", cls.CURRENT_SCHEMA_VERSION}:
                 raise SchemaError(
                     f"PromptSession future schema_version {version!r} 无法安全编辑")
         restored = super().from_json(data)
@@ -335,7 +346,9 @@ class PromptSession(Schema):
         # The stable object is swapped only after the complete next state exists.
         self.__dict__ = staged.__dict__
 
-    def restore_revision(self, revision: int) -> bool:
+    def restore_revision(
+            self, revision: int, *, node_instance_id: str = "",
+            recovery_journal: "RecoveryJournal | None" = None) -> bool:
         """Restore a historical snapshot by committing it as a new revision."""
         source = next((item for item in self.revisions
                        if item.revision == int(revision)), None)
@@ -352,14 +365,21 @@ class PromptSession(Schema):
             execution_mode=source.execution_mode,
             payload_kind=source.payload_kind,
             context_changes=list(source.context_changes),
-            locked_constraints=list(source.locked_constraints))
+            locked_constraints=list(source.locked_constraints),
+            node_instance_id=node_instance_id or self.node_instance_id,
+            recovery_journal=recovery_journal)
         return True
 
-    def revert_previous(self) -> bool:
+    def revert_previous(
+            self, *, node_instance_id: str = "",
+            recovery_journal: "RecoveryJournal | None" = None) -> bool:
         """Legacy UI action: restore the preceding snapshot without deleting history."""
         if len(self.revisions) < 2:
             return False
-        return self.restore_revision(self.revisions[-2].revision)
+        return self.restore_revision(
+            self.revisions[-2].revision,
+            node_instance_id=node_instance_id,
+            recovery_journal=recovery_journal)
 
     def has_processed_message(self, message_id: str) -> bool:
         return bool(message_id and message_id == self.last_processed_message_id)
@@ -370,6 +390,24 @@ class PromptSession(Schema):
             return ["legacy_unbound"]
         return self.fingerprints.mismatches(
             SessionFingerprints.from_json(fingerprints))
+
+    def for_node(self, node_instance_id: str) -> tuple["PromptSession", bool]:
+        """Bind an old snapshot once, or fork copied state for a different node."""
+        node_id = str(node_instance_id or "").strip()
+        if not node_id:
+            raise ValueError("Prompt Studio 缺少 node_instance_id")
+        prepared = copy.deepcopy(self)
+        if not prepared.node_instance_id:
+            prepared.node_instance_id = node_id
+            return prepared, False
+        if prepared.node_instance_id == node_id:
+            return prepared, False
+        parent_id = prepared.id
+        prepared.id = "psess_" + uuid.uuid4().hex[:12]
+        prepared.origin_session_id = parent_id
+        prepared.node_instance_id = node_id
+        prepared.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        return prepared, True
 
     def reset(self, target_family: str = "", target_variant: str = "") -> None:
         fresh = PromptSession(target_family=target_family or self.target_family,
