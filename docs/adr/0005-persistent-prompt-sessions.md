@@ -22,7 +22,7 @@ current structured plan + latest instruction
 ```
 
 `PromptSession` v3.1 stores target family/variant, current plan and prompt, validation,
-locked constraints, the last processed message nonce, target/source/model/Skill
+locked constraints, the last processed message nonce, target/source/model/Model Core and Markdown supplement
 fingerprints, bounded conversation messages, and the latest ten synchronized
 plan/prompt revisions. A ChangeSet declares `base_revision`; stale updates, illegal
 paths, list overflows, immutable fields, and locked paths are rejected before a copy

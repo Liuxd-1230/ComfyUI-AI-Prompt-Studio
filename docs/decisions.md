@@ -30,7 +30,7 @@
 - **环境复核（2026-08-08）**：`standalone-env` 本身不含 torch，但实际运行环境位于 `ComfyUI/.venv`。使用该解释器在 8388 端口成功启动 ComfyUI 0.31.1，并连续两次执行卸载节点缓存契约。
 - **替代冒烟（等价验证，已实现为 pytest 用例）**：
   1. `tests/test_smoke_loader.py`：复刻 ComfyUI `spec_from_file_location` 加载语义，验证扩展、`WEB_DIRECTORY` 与 11 个节点完整注册。
-  2. `tests/test_smoke_routes.py`：伪造 `server.PromptServer.instance.routes`（与用户 ComfyUI 一致的 `web.RouteTableDef()`），用真实 aiohttp 起临时 HTTP 服务做端到端往返（状态/档案 CRUD/密钥隔离/404/400/设置/Skill），验证全部 21 条路由注册与处理器接线。
+  2. `tests/test_smoke_routes.py`：伪造 `server.PromptServer.instance.routes`（与用户 ComfyUI 一致的 `web.RouteTableDef()`），用真实 aiohttp 起临时 HTTP 服务做端到端往返（状态/档案 CRUD/密钥隔离/404/400/设置/Markdown 补充资料），验证路由注册与处理器接线。
 - 结论：本扩展不依赖 ComfyUI 启动即可完整加载与验证；真实启动冒烟保留到用户补齐 torch 后（Phase 6 视环境情况执行或沿用替代冒烟）。
 
 ## D5. Schema 用 dataclass 而非 pydantic
@@ -89,7 +89,7 @@
 - **镜头检查只扫描描述字段/段**：`SHOT_RE` 会误匹配首行对齐指令里的 `(from [Shot 1])` 与 retention_analysis 段的 `[Shot N]` 引用，因此 `_check_shots` 只在 `integrated_multimodal_description`（四模式）或 `detailed_description`（R2V）内找镜头。
 - **畸形时间戳独立检测**：`SHOT_RE` 只捕获合法 `MM:SS.mmm`，格式错误的 `At XX:XX:XXX` 会被当成「缺失时间戳」；新增 `AT_RE` 单独捕获并报 `h3_ts_format`。
 - **`<d>` 语言标注独立检测**：`DIALOGUE_RE` 需要 `[Language]` 才匹配，缺失语言标注的对白匹配不上；改为对每个 `<d>` 直接检查其后是否紧跟 `[`。
-- **H3 复用统一 Skill 系统**：`skills/minimax_h3/director.yaml` 保存可查看、可复制的内容策略；renderer/validator 中不可变的格式协议仍由代码强制。repair 把校验问题回灌给 LLM，一次修复后重新渲染并复验。
+- **H3 Model Core + Markdown 参考**：`prompting/model_cores.py` 保存不可编辑的协议/内容硬规则；用户 Markdown 只能作为带来源的低优先级参考。renderer/validator 中不可变的格式协议仍由代码强制。repair 把校验问题回灌给 LLM，一次修复后重新渲染并复验。
 - **convert_storyboard 回退链**：LLM 计划解析失败或空镜头时，回退为 `convert_storyboard` 的结构映射（镜头时间分布、说话人 S1..、manifest→subjects/assets/retention），描述沿用分镜文本并记 warning。
 - **图片映射**：`map_image_assets` 按模式把输入图映射为 Picture 资产——I2VA 首帧（0.00s）、FL2VA 首尾（0.00s / 有效时长）、L2VA 尾帧（有效时长）；已存在的标签跳过不重复。
 
@@ -135,12 +135,12 @@
 - 函数工具循环：`MAX_TOOL_ROUNDS=4`（不暴露到节点 UI）；工具注册表（`now`/`search`）；执行失败把错误文本回给模型继续，不抛异常；达到上限仍有 tool_calls → 截断警告不静默丢弃。
 - 本地运行时卸载策略：`unload_policy` 仅对 `provider=local` 生效；`after_request`=请求结束即卸载（无论成败），`after_success`=仅成功时卸载；卸载失败只追加 warning，不影响请求结果。
 
-## D23. Batch D：多图身份判断 / 视觉文本 Profile 解耦 / Manifest 消费 / Skill 管理（2026-08-07）
+## D23. Batch D：多图身份判断 / 视觉文本 Profile 解耦 / Manifest 消费 / Markdown supplement 管理（2026-08-07）
 
 - 多图身份判断：`identity_agreement`（stable 特征名与值一致比例）→ `cluster_by_identity` 贪心聚类 → `judge_identity` 判定 `same_subject`；多主体时只合并最高一致度分组（防跨主体串绑），其余图记 `__subject_identity__` 冲突。
 - 视觉/文本 Profile 解耦：`AIProfile.vision_profile_id` 指向另一档案时，视觉分析默认直接使用目标档案的主 `base_url + model + key`（目标档案显式设置 `vision_*` 时优先）；留空才使用本档案的 `vision_base_url + vision_model + key`。设置页在关联状态停用会被忽略的本地视觉字段。文本生成始终使用原文本档案。
 - Storyboard 消费 Manifest：character 类 Subject 补成 `[角色表（来自参考清单）]` 并沿用真实 subject_id；已有 CharacterBook 时以 book 为准不重复注入；其余资产/主体进 `[可用参考资产]`。
-- Prompt Skill 管理：内置（仓库 skills/，只读）+ 自定义（用户配置目录 skills/，可增删改/启停/复制内置）；字段白名单 + renderer/family 枚举校验 + hash 审计；新增 `/skills` 路由（list/get/create/update/delete/enabled）。
+- Markdown supplement 管理：本地 `.md` 资料支持导入、查看、编辑、删除、启停与范围绑定；大小/UTF-8/路径/哈希校验；新增 `/supplements` 路由（list/get/create/update/delete/enabled）。
 
 ## D24. 0.2.1 Hardening 关键决策（2026-08-07）
 

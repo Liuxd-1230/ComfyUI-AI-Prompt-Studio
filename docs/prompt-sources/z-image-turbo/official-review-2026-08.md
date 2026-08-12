@@ -12,8 +12,8 @@ Primary source: [Tongyi-MAI Z-Image-Turbo model card](https://huggingface.co/Ton
 ## Local Diff
 
 - `unchanged`: `render_special_image` emits steps 9 and CFG 0, no independent negative prompt.
-- `unchanged`: the local Skill requests coherent, visible natural-language details rather than tag soup.
+- `unchanged`: the former local guidance requested coherent, visible natural-language details rather than tag soup; this rule now belongs to `prompting/model_cores.py`.
 - `new`: official evidence explicitly establishes bilingual visible-text strength; local guidance does not yet give visible-text quoting/preservation its own semantic field.
 - `unsupported local assumption`: the warning that prompts under 80 characters are inherently weak is not stated by the official source. Length should be judged by missing semantic content, not a character threshold.
 
-P3 records this unsupported heuristic; changing user-facing rules belongs to the subsequent Model Core migration.
+The unsupported heuristic remains historical research only; changing user-facing rules belongs in the versioned Model Core, not in a free-form supplement.

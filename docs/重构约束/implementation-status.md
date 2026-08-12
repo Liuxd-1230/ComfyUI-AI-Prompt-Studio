@@ -34,7 +34,7 @@ surface is not complete; it must not be described as finished functionality.
 | 108.15 Restore | done | immutable restore-as-new-revision tests in `test_prompt_session.py` |
 | 108.16 Workflow Reload | done | serialized v3.1 Session regression plus real ComfyUI journal recovery into a workflow widget |
 | 108.17 Node Copy | done | public node copy forks a distinct session ID/origin lineage while retaining the stable prompt and revision |
-| 108.18 Skill Changed | done | bound fingerprint mismatch tests |
+| 108.18 Supplement Changed | done | bound supplement fingerprint mismatch tests; Model Core hash remains separate |
 | 108.19 CharacterBible Changed | done | same-nonce mismatch-before-Gateway production test |
 | 108.20 Storyboard Major Change | done | source fingerprint comparison; finer compatibility/rebase is not implemented |
 | 108.21 Target Compatible Switch | done | lenient target changes warn and continue; strict changes require a successful new lineage |
@@ -42,9 +42,9 @@ surface is not complete; it must not be described as finished functionality.
 | 108.23 Long Conversation | done | explicit conversation/revision caps in `test_prompt_session.py` |
 | 108.24 Workflow Size | done | Session history remains capped at 10 revisions/40 messages and the serialized hidden workflow envelope is hard-capped at 4 MiB; load and pre-commit regressions prove oversized state never replaces the stable revision |
 | 108.25 Prompt Injection in Storyboard | done | external context is task data, not executable instruction; prompt inventory tests |
-| 108.26 Prompt Injection in Skill | done | Studio keeps editable Skill text in labelled task data; immutable Runtime/Model Core/output rules remain in system policy; hostile custom-Skill regressions cover Image and H3 public nodes |
+| 108.26 Prompt Injection in Markdown Supplement | done | local Markdown is labelled `SUPPLEMENT` guidance with explicit/target/node selection; immutable Runtime/Model Core/output rules remain in system policy; hostile Markdown and public-node injection regressions cover the boundary |
 | 108.27 ZIP Path Traversal | done | attachment traversal regression in `test_attachments.py` |
-| 108.28 Skill Scripts | done | YAML-only Skill validation; scripts are not executed |
+| 108.28 Supplement Scripts | done | only bounded UTF-8 Markdown is accepted; no YAML Skill/script loader remains |
 | 108.29 Style Conflict | partial | deterministic renderer/validator checks remain; creative Critic was removed by ADR 0007 |
 | 108.30 Style Identity Lock | partial | stable fact locks exist; dedicated style/identity production regression remains |
 
@@ -53,6 +53,20 @@ bounded snapshot to the ComfyUI user directory; workflow load offers an explicit
 recover/discard choice for a newer revision, and copied nodes fork independent lineage.
 Real ComfyUI/LM Studio evidence is recorded in
 `docs/prompt-architecture/p5-real-acceptance-2026-08-12.md`.
+
+## Model Core / Markdown supplement migration
+
+The former runtime YAML Prompt Skill registry, repository Skill files, `/skills`
+routes, settings editor, and Skill-only tests were intentionally removed because
+there are no user workflows to preserve. Target hard rules now have one immutable
+owner in `prompting/model_cores.py`. User-authored Markdown is a separate,
+lower-priority reference layer managed by `services/supplements.py`; it is stored
+locally, bounded to 256 KiB, path/UTF-8/hash checked, selectable by explicit ID (or
+target Studio `auto`), and included in every supported LLM node with provenance.
+The migration is covered by `tests/test_supplements.py`, route CRUD smoke tests,
+and production LLM/Reference/Image Studio injection tests. It does not add a new
+policy language: hard behavior changes still require Model Core/code/schema/
+validator changes and contract regressions.
 
 ## Known Phase Gaps Outside §108
 

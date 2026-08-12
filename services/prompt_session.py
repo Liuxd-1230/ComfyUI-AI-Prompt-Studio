@@ -161,7 +161,7 @@ def media_fingerprint(value: Any) -> str:
 def build_session_fingerprints(*, target_signature: str,
                                model_core_components: Iterable[Any],
                                sources: dict[str, Any] | None = None,
-                               skill_hashes: dict[str, str] | None = None
+                               supplement_hashes: dict[str, str] | None = None
                                ) -> SessionFingerprints:
     source_hashes = {
         key: digest for key, value in sorted((sources or {}).items())
@@ -171,7 +171,7 @@ def build_session_fingerprints(*, target_signature: str,
         target_signature=target_signature,
         model_core_hash=component_fingerprint(*model_core_components),
         source_hashes=source_hashes,
-        skill_hashes=dict(sorted((skill_hashes or {}).items())))
+        supplement_hashes=dict(sorted((supplement_hashes or {}).items())))
 
 
 def assert_session_fingerprints(session: PromptSession,

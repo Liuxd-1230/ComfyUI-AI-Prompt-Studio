@@ -16,6 +16,6 @@ Primary sources: [QwenLM/Qwen-Image](https://github.com/QwenLM/Qwen-Image) and i
 - `unchanged`: direct, specific edit action; object/position/count; quoted visible text; and explicit multi-image references.
 - `new`: task-type policies for inpaint/outpaint/colorize, subtle facial edits, style-transfer extraction, and explicit unchanged-content clauses.
 - `new`: the official code uses image understanding during rewrite. The current Composer only receives a manifest/text reference summary, so it cannot truthfully claim equivalent visual prompt enhancement.
-- `unsupported local assumption`: one generic Skill is currently reused for generate/expand/rewrite/translate/repair; official guidance distinguishes task types and minimum-change behavior.
+- `historical local assumption`: one generic Skill was reused for generate/expand/rewrite/translate/repair; runtime Skill loading has now been removed. Official guidance still distinguishes task types and minimum-change behavior, which belongs in typed code/Model Core work rather than a hidden YAML registry.
 
 These gaps require typed Qwen edit semantics and a true image-aware route in a later phase, not a larger monolithic system prompt.

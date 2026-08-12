@@ -1,6 +1,6 @@
 # MiniMax H3 官方 Prompt Skill 差距复核
 
-> 归档说明（2026-08-08）：这是修复前的差距快照，不代表当前实现。所列主问题已进入代码、校验器和回归测试；当前限制以 `docs/known-limitations.md` 为准。
+> 归档说明（2026-08-08，P6 更新）：这是迁移前的差距快照，不代表当前实现。所列主问题已进入 Model Core、代码、校验器和回归测试；本项目不再运行时加载 H3 Skill/YAML，当前限制以 `docs/known-limitations.md` 为准。
 
 复核日期：2026-08-08。官方基线固定为 MiniMax-AI/MiniMax-H3 提交 [`8d8824e`](https://github.com/MiniMax-AI/MiniMax-H3/tree/8d8824efaf94586c0cc9ac7ad8d0723d4d6420ea)。只采用 MiniMax 官方仓库及其中的官方 Skill、Prompt Guide 和示例；没有用社区教程推断规则。
 
@@ -8,7 +8,7 @@
 
 本仓库的总体架构方向正确：已经覆盖 T2VA、I2VA、FL2VA、L2VA 与全参考模式，并用结构化计划、确定性渲染、校验和一次修复实现了三字段/六段格式。首尾帧对齐句、镜头编号、三类媒体独立编号、稳定说话人、`<d>[Language]`、retention marker 和英语正文等主骨架与官方一致。
 
-但目前还不能称为完整实现官方 Skill。主要问题不是“少背了几句提示词”，而是 Ref2VA 参考关系和镜头内音频在结构化计划到最终文本的过程中会丢失或放错位置；其次是官方 Skill 没有成为可查看、可复制、可编辑的 Skill 资产。
+这份审计曾指出 Ref2VA 参考关系、镜头内音频和规则归属问题；P6 已把目标硬规则集中到不可编辑的 Model Core，并将用户可编辑内容改为受限 Markdown 补充资料。外部官方 Skill 链接仍作为可追溯研究依据，不是本项目运行时资产。
 
 ## P0：会产生错误或无效 H3 提示词
 

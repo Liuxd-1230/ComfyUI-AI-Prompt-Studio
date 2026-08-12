@@ -15,6 +15,7 @@ from ..schemas.references import ANALYSIS_MODES, AssetRef, ReferenceAnalysis, Re
 from ..services import reference as reference_svc
 from ..services import vision as vision_svc
 from ..services.gateway import Gateway, GenerateRequest
+from ..services.supplements import supplement_sources as load_supplement_sources
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ._helpers import require_api_key, resolve_profile_input
@@ -154,6 +155,8 @@ class APS_ReferenceAnalyzer:
             "character_bible": (types.CHARACTER_BIBLE,),
             "custom_prompt": ("STRING", {"default": "", "multiline": True,
                                          "tooltip": "analysis_mode=custom 时的自定义分析指令"}),
+            "prompt_supplements": ("STRING", {"default": "", "multiline": False,
+                                                 "tooltip": "可选 Markdown 分析参考资料 ID，多个用逗号"}),
         }}
 
     RETURN_TYPES = (types.REFERENCE_ANALYSIS, types.CHARACTER_CANDIDATE, types.REFERENCE_MANIFEST,
@@ -165,7 +168,8 @@ class APS_ReferenceAnalyzer:
     DESCRIPTION = "使用视觉模型分析图片/批次与文字锚点，反推结构化参考信息与人物候选（保留原始资产透传）。"
 
     def analyze(self, AI_PROFILE, analysis_mode, text_anchor,
-                images=None, character_bible=None, custom_prompt=""):
+                images=None, character_bible=None, custom_prompt="",
+                prompt_supplements: str = ""):
         profile = AIProfile.from_json(AI_PROFILE or {})
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
@@ -183,6 +187,9 @@ class APS_ReferenceAnalyzer:
         api_key = require_api_key(prof) if has_anchor else ""
         vision_prof = vision_svc.resolve_vision_profile(prof)
         vision_key = require_api_key(vision_prof) if has_images else ""
+        supplement_sources, _ = load_supplement_sources(
+            prompt_supplements, family="reference_analyzer",
+            node_id="reference.analyzer")
 
         analysis = ReferenceAnalysis(mode=analysis_mode, profile_id=prof.profile_id)
         base_prompt = MODE_PROMPTS.get(analysis_mode) or custom_prompt
@@ -203,6 +210,7 @@ class APS_ReferenceAnalyzer:
                          _PROMPT_GUARDRAIL, "reference"),
             PromptSource(f"node.reference.{analysis_mode}", "1.0",
                          PromptLayer.NODE_CORE, base_prompt, "reference"),
+            *supplement_sources,
         ]
 
         # 1) 文字锚点（LLM 结构化解析）
@@ -279,7 +287,7 @@ class APS_ReferenceAnalyzer:
             image_consensus = image_candidates[0]
         elif len(image_candidates) > 1:
             verdict = self._batch_identity_verdict(
-                vision_prof, vision_key, image_list)
+                vision_prof, vision_key, image_list, supplement_sources)
             if verdict is None:
                 # VLM 判断失败/未配置 → 回退 deterministic heuristic（0.2.1 P0-14）
                 fallback = reference_svc.judge_identity(image_candidates)
@@ -345,7 +353,7 @@ class APS_ReferenceAnalyzer:
 
     # ------------------------------------------------------------ VLM 整体身份判断
     def _batch_identity_verdict(self, vision_prof, vision_key,
-                                image_list) -> Any:
+                                image_list, supplements=None) -> Any:
         """一次 VLM 判断「这些图片是否同一主体」（0.2.1 P0-14）。
 
         - 最多取 MAX_IDENTITY_IMAGES 张代表图（防无限传图）；
@@ -360,7 +368,8 @@ class APS_ReferenceAnalyzer:
             [PromptSource("runtime.reference-data", "1.0", PromptLayer.RUNTIME,
                           _PROMPT_GUARDRAIL, "reference.identity"),
              PromptSource("node.reference.identity", "1.0", PromptLayer.NODE_CORE,
-                          IDENTITY_COMPARISON_PROMPT, "reference.identity")],
+                          IDENTITY_COMPARISON_PROMPT, "reference.identity"),
+             *(supplements or [])],
             task_data=[StructuredTaskData("image_count", {"count": len(sample)})],
             output_contract_id="identity-verdict.prompt-json@1")
         res = vision_svc.call_vision(

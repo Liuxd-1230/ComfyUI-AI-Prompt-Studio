@@ -147,7 +147,7 @@ def test_revision_snapshot_metadata_and_plan_are_stable_after_later_commits():
     fingerprints = SessionFingerprints(
         target_signature="anima:base", model_core_hash="core-v1",
         source_hashes={"character_bible": "book-v1"},
-        skill_hashes={"anima_expand": "skill-v1"})
+        supplement_hashes={"editorial": "supplement-v1"})
     first_plan = {"clothing": "red dress"}
     session.commit(
         first_plan, "red dress", VALID, "create", "v1",
@@ -165,7 +165,7 @@ def test_revision_snapshot_metadata_and_plan_are_stable_after_later_commits():
     assert first.message_id == "msg-1"
     assert first.renderer_signature == "anima-renderer@1"
     assert first.model_core_hash == "core-v1"
-    assert first.skill_hashes == {"anima_expand": "skill-v1"}
+    assert first.supplement_hashes == {"editorial": "supplement-v1"}
     assert session.revisions[1].requested_paths == ["characters/0/clothing"]
     with pytest.raises(TypeError, match="immutable"):
         first.plan["clothing"] = "history tampering"
@@ -193,9 +193,9 @@ def test_message_nonce_and_fingerprint_mismatch_are_explicit_session_state():
     changed_core = SessionFingerprints(
         target_signature="anima:base", model_core_hash="core-v2",
         source_hashes={"storyboard": "story-v1"},
-        skill_hashes={"editorial": "skill-v2"})
+        supplement_hashes={"editorial": "supplement-v2"})
     assert session.fingerprint_mismatches(changed_core) == [
-        "model_core", "skill:editorial"]
+        "model_core", "supplement:editorial"]
 
 
 def test_session_history_is_bounded_without_mutating_retained_snapshots():

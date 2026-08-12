@@ -168,9 +168,10 @@ def test_studio_session_widgets_follow_public_inputs(loaded):
     assert "operation" not in composer_inputs["required"] | composer_inputs["optional"]
     assert list(composer_inputs["required"])[-2:] == [
         "execution_mode", "session_action"]
-    assert list(composer_inputs["optional"])[-2:] == [
-        "prompt_session", "message_nonce"]
+    assert list(composer_inputs["optional"])[-3:] == [
+        "prompt_session", "message_nonce", "prompt_supplements"]
     h3_inputs = module.NODE_CLASS_MAPPINGS["APS_H3PromptStudio"].INPUT_TYPES()
     assert "operation" not in h3_inputs["required"] | h3_inputs["optional"]
     assert list(h3_inputs["required"])[-2:] == ["execution_mode", "session_action"]
-    assert list(h3_inputs["optional"])[-2:] == ["prompt_session", "message_nonce"]
+    assert list(h3_inputs["optional"])[-3:] == [
+        "prompt_session", "message_nonce", "prompt_supplements"]

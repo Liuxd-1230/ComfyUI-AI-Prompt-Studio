@@ -13,7 +13,7 @@ from aps.schemas.anima import (AnimaCharacter, AnimaMigrationConflict,
                                AnimaPromptPlan)
 from aps.schemas.base import SchemaError
 from aps.schemas.h3 import H3PromptPlan, H3Shot
-from aps.services.skills import get_skill
+from aps.prompting.model_cores import model_core_prompt
 
 
 def test_renderer_reexports_formal_anima_schema() -> None:
@@ -200,14 +200,12 @@ def test_anima_v1_description_conflicts_with_existing_creative_notes() -> None:
         })
 
 
-def test_anima_target_skill_is_operation_neutral() -> None:
-    skill = get_skill("prompt_studio_anima")
-
-    assert skill is not None
-    assert "Preserve every explicit identity" in skill.system_prompt
-    assert "repair" not in skill.system_prompt.lower()
-    assert "rewrite" not in skill.system_prompt.lower()
-    assert "translate" not in skill.system_prompt.lower()
+def test_anima_model_core_is_operation_neutral() -> None:
+    prompt = model_core_prompt("anima")
+    assert "Preserve every explicit identity" in prompt
+    assert "repair" not in prompt.lower()
+    assert "rewrite" not in prompt.lower()
+    assert "translate" not in prompt.lower()
 
 
 def test_h3_llm_context_excludes_execution_metadata() -> None:

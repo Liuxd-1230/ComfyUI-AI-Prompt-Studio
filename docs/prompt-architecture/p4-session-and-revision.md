@@ -18,7 +18,7 @@ remain hard schema errors.
 
 Every successful commit creates a fresh `PromptRevision` containing `revision_id`,
 `parent_revision`, `base_revision`, Plan/prompt snapshots, validation, user message,
-requested/dependent/invalidated paths, renderer signature, and Model Core, Skill and
+requested/dependent/invalidated paths, renderer signature, and Model Core, Markdown supplement and
 source hashes. V3 adds execution mode, payload kind, and observed context changes.
 P4.1 also records `transaction_id` and the actual bounded
 `repair_count`/`repair_attempted`. Its fields and nested mapping/list snapshots are frozen after
@@ -40,7 +40,7 @@ processed nonce returns the current outputs without Gateway calls or a new revis
 legacy workflows without the widget use a deterministic message hash.
 
 Each successful transaction pins target, actual renderer/validator Model Core,
-active Skill, Character Bible/Book, Storyboard and Reference Manifest hashes. A
+active Markdown supplement, Character Bible/Book, Storyboard and Reference Manifest hashes. A
 connected H3 image/video/audio payload is hashed as content, not merely by slot or
 count. Bound sessions compare these fingerprints on every Queue, including an empty
 or repeated message, before taking the zero-call path. A changed authoritative

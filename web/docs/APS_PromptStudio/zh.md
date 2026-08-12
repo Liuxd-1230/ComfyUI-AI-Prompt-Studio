@@ -17,6 +17,7 @@
 - `story_item`：可选分镜条目，与 `text` 合并为本轮要求。
 - `character_bible` / `character_book`：可选人物身份与锁定特征。
 - `reference_manifest`：可选参考资产清单；Qwen 的 `Figure N` 必须真实存在。
+- `prompt_supplements`：可选 Markdown 补充资料 ID，多个用逗号；资料只作低优先级参考，不能覆盖 Model Core 或校验器。
 - `prompt_session`、`message_nonce`：工作台自动保存的状态和本轮消息编号，通常不要手改。
 
 成功执行后，工作台会把 Session 写回隐藏字段并把工作流标为未保存；请保存工作流。

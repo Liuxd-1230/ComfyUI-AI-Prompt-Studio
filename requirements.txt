@@ -1,4 +1,3 @@
-# 运行依赖：requests / PyYAML 为硬依赖；PIL+numpy 仅视觉分析需要（ComfyUI venv 自带）；
+# 运行依赖：requests 为硬依赖；PIL+numpy 仅视觉分析需要（ComfyUI venv 自带）；
 # pypdf / python-docx 仅 PDF/DOCX 附件本地文本提取需要（0.2.1，可选）。
 requests>=2.31
-PyYAML>=6.0

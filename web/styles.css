@@ -275,14 +275,14 @@
   color: #ff8b8b;
   white-space: pre-wrap;
 }
-.aps-skill-editor {
+.aps-supplement-editor {
   border: 1px solid #59636f;
   border-radius: 6px;
   padding: 10px;
   margin-bottom: 10px;
   background: #1b1c20;
 }
-.aps-skill-editor textarea {
+.aps-supplement-editor textarea {
   width: 100%;
   min-height: 180px;
   resize: vertical;

@@ -50,6 +50,31 @@ def test_analyzer_text_only(monkeypatch, store):
     assert manf.assets == []
 
 
+def test_analyzer_explicit_supplement_enters_text_assembly(monkeypatch, store, tmp_path):
+    from aps.services import supplements
+
+    monkeypatch.setattr(supplements, "supplements_dir",
+                        lambda: tmp_path / "prompt_supplements")
+    record = supplements.import_supplement({
+        "supplement_id": "vision-notes", "title": "Vision notes", "filename": "vision.md",
+        "scope": "node", "node_ids": ["reference.analyzer"],
+        "content": "Prefer observable clothing details.",
+    })
+    payload = setup_profile(store)
+    captured = {}
+
+    class FakeGateway:
+        def generate(self, profile, api_key, req):
+            captured["req"] = req
+            return LLMResult(text=anchor_json())
+
+    monkeypatch.setattr(ra_mod, "Gateway", lambda: FakeGateway())
+    ra_mod.APS_ReferenceAnalyzer().analyze(
+        AI_PROFILE=payload, analysis_mode="character_full", text_anchor="红发少女",
+        prompt_supplements=record.supplement_id)
+    assert "Prefer observable clothing details." in captured["req"].system
+
+
 def test_analyzer_images_consensus_and_passthrough(monkeypatch, store):
     payload = setup_profile(store)
     # 响应顺序：逐图分析（2 张）→ VLM 整体身份判断（0.2.1 P0-14：一次多图判断）

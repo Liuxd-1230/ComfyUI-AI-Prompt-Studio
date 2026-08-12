@@ -33,11 +33,11 @@
 - **提取截断（0.2.1a）**：本地提取文本按 UTF-8 **字节**截断并回退到有效字符边界（此前按字符数截断，中文长文档会超过 512 KB）。
 - **附件 warning 必达节点**（0.2.1）：路径越界 / 文件不存在 / 超限 / 被跳过 / 本地提取降级，全部出现在 LLM Generate 的 `warnings` 输出，不静默丢弃。
 
-## 5. Prompt Skill
+## 5. Markdown 补充资料
 
-- 内置技能（仓库 `skills/`）只读；要修改需「复制为自定义」后编辑。自定义技能存于用户配置目录 `skills/`。
-- 技能字段白名单校验（id/version/target_family/target_variant/renderer/system_prompt/validators/description）；renderer / target_family 限枚举；未知字段会拒绝保存，手工损坏的 YAML 会跳过并记录日志。
-- `enabled=false` 的自定义技能不会被 `get_skill` 返回，因此所有消费节点都会尊重停用状态。
+- 运行时不再加载 YAML Prompt Skill。目标硬规则由 `prompting/model_cores.py` 单独持有。
+- 设置工作台管理本地 `.md` 资料；每份资料限制 256 KiB，校验 UTF-8、路径、SHA-256 和适用范围。资料默认不自动进入请求，节点必须显式填写 ID；目标 Studio 的 `auto` 只选择当前目标的已启用资料。
+- 停用、改内容、改目标或删除资料会改变/移除 supplement fingerprint；已有绑定会话下一轮先报上下文变化。资料只能作为低优先级参考，不能覆盖协议、validator、锁定事实或最新用户请求。
 
 ## 6. 结构化输出 / 解析
 

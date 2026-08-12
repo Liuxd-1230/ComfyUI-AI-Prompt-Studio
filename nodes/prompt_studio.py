@@ -12,9 +12,7 @@ from ..prompting.studio_policies import (
     LENIENT_CREATE_POLICY,
     LENIENT_OUTPUT_CONTRACT,
     LENIENT_REFINE_POLICY,
-    EXTERNAL_SKILL_BOUNDARY,
-    external_skill_hashes,
-    external_skill_task_payload,
+    UNTRUSTED_TASK_DATA_POLICY,
     image_target_policy,
 )
 from ..renderers.anima import ANIMA_BASE_NEGATIVE, ANIMA_QUALITY_NEGATIVE
@@ -45,6 +43,7 @@ from ..services.prompt_session import (
 )
 from ..services.structured_output import raw_excerpt
 from ..services.reference import extract_json_object
+from ..services.supplements import supplement_sources as load_supplement_sources
 from ..validators.anima import anima_english_issue, validate_anima
 from ._helpers import require_api_key, resolve_profile_input
 
@@ -137,6 +136,8 @@ class APS_PromptStudio:
             "reference_manifest": (types.REFERENCE_MANIFEST,),
             "prompt_session": ("STRING", {"default": "", "multiline": True}),
             "message_nonce": ("STRING", {"default": "", "multiline": False}),
+            "prompt_supplements": ("STRING", {"default": "", "multiline": False,
+                                                 "tooltip": "可选 Markdown 补充资料 ID，多个用逗号；auto=加载当前目标适用的已启用资料"}),
         }, "hidden": {"unique_id": "UNIQUE_ID"}}
 
     RETURN_TYPES = ("STRING", "STRING", types.PROMPT_SESSION, "STRING", "STRING")
@@ -152,6 +153,7 @@ class APS_PromptStudio:
             story_item: Any = None, character_bible: Any = None,
             character_book: Any = None, reference_manifest: Any = None,
             prompt_session: str = "", message_nonce: str = "",
+            prompt_supplements: str = "",
             unique_id: Any = None) -> Any:
         if execution_mode not in EXECUTION_MODES:
             raise ValueError("execution_mode 必须是 lenient 或 strict")
@@ -159,23 +161,26 @@ class APS_PromptStudio:
             return self._run_strict(
                 AI_PROFILE, text, target, session_action, story_item,
                 character_bible, character_book, reference_manifest,
-                prompt_session, message_nonce, unique_id)
+                prompt_session, message_nonce, prompt_supplements, unique_id)
         return self._run_lenient(
             AI_PROFILE, text, target, session_action, story_item,
             character_bible, character_book, reference_manifest,
-            prompt_session, message_nonce, unique_id)
+            prompt_session, message_nonce, prompt_supplements, unique_id)
 
     def _run_lenient(
             self, AI_PROFILE: Any, text: str, target: str, session_action: str,
             story_item: Any, character_bible: Any, character_book: Any,
             reference_manifest: Any, prompt_session: str,
-            message_nonce: str, unique_id: Any = None) -> Any:
+            message_nonce: str, prompt_supplements: str = "",
+            unique_id: Any = None) -> Any:
         incoming = AIProfile.from_json(AI_PROFILE or {})
         if not incoming.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
         profile = resolve_profile_input(AI_PROFILE)
         api_key = require_api_key(profile)
         family, variant = _split_target(target)
+        supplement_sources, supplement_hashes = load_supplement_sources(
+            prompt_supplements, family=family, node_id=str(unique_id or "").strip())
         session = (PromptSession.from_json(prompt_session)
                    if prompt_session else PromptSession())
         node_id = str(unique_id or "").strip()
@@ -214,13 +219,13 @@ class APS_PromptStudio:
                                    image_target_policy(family, variant)),
             sources={"story_item": story_item, "character_bible": bible,
                      "character_book": book, "reference_manifest": manifest},
-            skill_hashes=external_skill_hashes(family, variant))
+            supplement_hashes=supplement_hashes)
         context_changes = (session.fingerprints.mismatches(fingerprints)
                            if session.has_current_state else [])
         current_prompt = session.current_prompt if session.has_current_state else ""
         raw = self._generate_lenient(
             profile, api_key, family, variant, instruction, current_prompt,
-            bible, book, manifest)
+            bible, book, manifest, supplement_sources)
         parsed = parse_lenient_output(raw)
         report = _validate_lenient_image(
             parsed, family, variant, bible, book, manifest)
@@ -229,7 +234,8 @@ class APS_PromptStudio:
             repair_count = 1
             raw = self._repair_lenient(
                 profile, api_key, family, variant, raw,
-                [*parsed.issues, *[issue.message for issue in report.issues]])
+                [*parsed.issues, *[issue.message for issue in report.issues]],
+                supplement_sources)
             parsed = parse_lenient_output(raw)
             report = _validate_lenient_image(
                 parsed, family, variant, bible, book, manifest)
@@ -263,22 +269,21 @@ class APS_PromptStudio:
     def _generate_lenient(
             self, profile: Any, api_key: str, family: str, variant: str,
             instruction: str, current_prompt: str, bible: CharacterBible | None,
-            book: CharacterBook | None, manifest: ReferenceManifest) -> str:
+            book: CharacterBook | None, manifest: ReferenceManifest,
+            supplements: list[PromptSource] | None = None) -> str:
         operation = LENIENT_REFINE_POLICY if current_prompt else LENIENT_CREATE_POLICY
         sources = [
             PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
-                         LENIENT_OUTPUT_CONTRACT + "\n\n" + EXTERNAL_SKILL_BOUNDARY,
+                         LENIENT_OUTPUT_CONTRACT + "\n\n" + UNTRUSTED_TASK_DATA_POLICY,
                          "prompt-studio"),
             PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                          image_target_policy(family, variant), "prompt-studio"),
             PromptSource("operation.refine" if current_prompt else "operation.create",
                          "1.0", PromptLayer.OPERATION, operation, "prompt-studio"),
         ]
+        sources.extend(supplements or [])
         task_data = [StructuredTaskData("latest_instruction", instruction,
                                         "text/plain")]
-        skill_data = external_skill_task_payload(family, variant)
-        if skill_data is not None:
-            task_data.append(StructuredTaskData("external_skill_guidance", skill_data))
         if current_prompt:
             task_data.append(StructuredTaskData(
                 "current_prompt", current_prompt, "text/plain"))
@@ -298,20 +303,19 @@ class APS_PromptStudio:
 
     def _repair_lenient(
             self, profile: Any, api_key: str, family: str, variant: str,
-            raw: str, issues: list[str]) -> str:
+            raw: str, issues: list[str],
+            supplements: list[PromptSource] | None = None) -> str:
         assembly = assemble_prompt(
             [PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
-                          LENIENT_OUTPUT_CONTRACT + "\n\n" + EXTERNAL_SKILL_BOUNDARY,
+                          LENIENT_OUTPUT_CONTRACT + "\n\n" + UNTRUSTED_TASK_DATA_POLICY,
                           "prompt-studio"),
              PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                           image_target_policy(family, variant), "prompt-studio"),
              PromptSource("operation.format-repair", "1.0", PromptLayer.OPERATION,
-                          FORMAT_REPAIR_POLICY, "prompt-studio")],
+                          FORMAT_REPAIR_POLICY, "prompt-studio"),
+             *(supplements or [])],
             task_data=[StructuredTaskData("rejected_output", raw, "text/plain"),
-                       StructuredTaskData("concrete_issues", issues),
-                       *([StructuredTaskData("external_skill_guidance", skill_data)]
-                         if (skill_data := external_skill_task_payload(family, variant))
-                         is not None else [])],
+                       StructuredTaskData("concrete_issues", issues)],
             output_contract_id="lenient-tagged-prompt@1")
         request = GenerateRequest(
             system=assembly.system, messages=[task_message(assembly)],
@@ -327,13 +331,16 @@ class APS_PromptStudio:
             self, AI_PROFILE: Any, text: str, target: str, session_action: str,
             story_item: Any, character_bible: Any, character_book: Any,
             reference_manifest: Any, prompt_session: str,
-            message_nonce: str, unique_id: Any = None) -> Any:
+            message_nonce: str, prompt_supplements: str = "",
+            unique_id: Any = None) -> Any:
         incoming = AIProfile.from_json(AI_PROFILE or {})
         if not incoming.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
         profile = resolve_profile_input(AI_PROFILE)
         api_key = require_api_key(profile)
         family, variant = _split_target(target)
+        supplement_sources, supplement_hashes = load_supplement_sources(
+            prompt_supplements, family=family, node_id=str(unique_id or "").strip())
         stable = (PromptSession.from_json(prompt_session)
                   if prompt_session else PromptSession())
         node_id = str(unique_id or "").strip()
@@ -356,7 +363,7 @@ class APS_PromptStudio:
                                    image_target_policy(family, variant)),
             sources={"story_item": story_item, "character_bible": bible,
                      "character_book": book, "reference_manifest": manifest},
-            skill_hashes=external_skill_hashes(family, variant))
+            supplement_hashes=supplement_hashes)
         if session_action == "previous" and not starts_new:
             assert_session_fingerprints(session, fingerprints)
             if not session.revert_previous(
@@ -379,7 +386,7 @@ class APS_PromptStudio:
             session.target_family, session.target_variant = family, variant
             plan, repair_count = self._create_strict_plan(
                 profile, api_key, family, variant, instruction,
-                bible, book, manifest)
+                bible, book, manifest, supplement_sources)
             summary = "已创建第一版严格结构化提示词。"
             changeset = None
         else:
@@ -427,13 +434,11 @@ class APS_PromptStudio:
             self, profile: Any, api_key: str, family: str, variant: str,
             instruction: str, bible: CharacterBible | None,
             book: CharacterBook | None,
-            manifest: ReferenceManifest) -> tuple[ImageSemanticPlan, int]:
+            manifest: ReferenceManifest,
+            supplements: list[PromptSource] | None = None) -> tuple[ImageSemanticPlan, int]:
         schema = _strict_image_schema(family)
         task_data = [StructuredTaskData("latest_instruction", instruction,
                                         "text/plain")]
-        skill_data = external_skill_task_payload(family, variant)
-        if skill_data is not None:
-            task_data.append(StructuredTaskData("external_skill_guidance", skill_data))
         task_data.extend(_source_task_data(bible, book, manifest))
         raw = ""
         issues: list[str] = []
@@ -461,11 +466,12 @@ class APS_PromptStudio:
             assembly = assemble_prompt(
                 [PromptSource("runtime.studio-strict", "1.0", PromptLayer.RUNTIME,
                               "Strict mode stores typed semantic state.\n\n" +
-                              EXTERNAL_SKILL_BOUNDARY, "prompt-studio"),
+                              UNTRUSTED_TASK_DATA_POLICY, "prompt-studio"),
                  PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                               image_target_policy(family, variant), "prompt-studio"),
                  PromptSource("operation.strict-create", "1.0",
-                              PromptLayer.OPERATION, operation, "prompt-studio")],
+                              PromptLayer.OPERATION, operation, "prompt-studio"),
+                 *(supplements or [])],
                 task_data=retry_data,
                 output_contract_id="image-semantic-plan.schema@1")
             request = GenerateRequest(

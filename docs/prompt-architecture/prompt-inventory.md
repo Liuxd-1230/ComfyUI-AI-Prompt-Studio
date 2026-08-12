@@ -26,11 +26,11 @@ This inventory is the P0 baseline for every path that can send instructions or t
 
 `services/gateway.py`, `services/adapters/chat_adapter.py`, and `services/adapters/responses_adapter.py` may add schema fallbacks, untrusted-search guards, tool results, and attachment content. They own protocol encoding only. They must not acquire target-model prompting rules.
 
-## Remaining Transition Boundaries
+## Model Core and supplement boundary
 
-- `services/h3_plan.py` and `skills/minimax_h3/director.yaml` still state overlapping H3 protocol guidance; the Model Core migration must leave one immutable owner.
-- ANIMA model rules and operation behavior are mixed across `skills/anima_*.yaml`, `renderers/anima.py`, and validators.
-- Some legacy Skill files still combine Model Core and operation policy in one `system_prompt`.
+- Target hard rules live in `prompting/model_cores.py`; `services/h3_plan.py` is a compatibility schema/task-data helper, not a second editable policy owner.
+- User-authored Markdown is selected through `services/supplements.py` and enters as `SUPPLEMENT` guidance with provenance. It never owns transport, schema, validation, locks, or semantic facts.
+- New target rules must update the Model Core, renderer/validator contract, inventory, and tests together. Do not add a YAML Skill compatibility path.
 
 ## Inventory Gate
 

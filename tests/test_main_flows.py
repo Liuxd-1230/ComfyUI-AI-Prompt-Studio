@@ -88,3 +88,30 @@ def test_reference_to_bible_to_strict_anima_studio(monkeypatch, store) -> None:
     assert "Rin" in created["result"][0]
     assert "long black hair" in created["result"][0]
     assert "通过" in created["result"][3]
+
+
+def test_image_studio_explicit_markdown_supplement_is_injected(monkeypatch, store, tmp_path):
+    from aps.services import supplements
+
+    monkeypatch.setattr(supplements, "supplements_dir",
+                        lambda: tmp_path / "prompt_supplements")
+    record = supplements.import_supplement({
+        "supplement_id": "anima-notes", "title": "ANIMA notes", "filename": "anima.md",
+        "scope": "target", "target_families": ["anima"],
+        "content": "Keep visual prose in clear English.",
+    })
+    captured = {}
+
+    class StudioGateway:
+        def generate(self, profile, api_key, request):
+            captured["request"] = request
+            return LLMResult(text="<PROMPT>A clear English anime portrait.</PROMPT><SUMMARY>ok</SUMMARY>")
+
+    monkeypatch.setattr(studio_mod, "Gateway", StudioGateway)
+    result = studio_mod.APS_PromptStudio().run(
+        _profile(store), "a portrait", "anima_base", "lenient",
+        prompt_supplements=record.supplement_id, message_nonce="supplement-flow")
+    assert "A clear English anime portrait." in result["result"][0]
+    assert "Keep visual prose in clear English." in captured["request"].system
+    assert any(item["source_id"] == "supplement.anima-notes"
+               for item in captured["request"].assembly_report["sources"])

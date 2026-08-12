@@ -15,6 +15,7 @@ H3 提示词，不连接视频生成模型也能完成调试。
 - `session_action`：`continue`、`previous` 或 `new`。新会话只在新 CREATE 成功后替换旧状态。
 - `storyboard`、`character_bible`、`character_book`：可选剧情和人物权威来源。
 - `reference_manifest`：可选已有资产清单。
+- `prompt_supplements`：可选 Markdown 补充资料 ID，多个用逗号；资料只作低优先级参考，不能覆盖 H3 协议或校验器。
 - `images`：I2VA/L2VA 连接 1 张，FL2VA 连接 2 张；Ref2VA 可连接图片批次。
 - `video_1` / `video_2` / `video_3`：Ref2VA 视频参考，单项及总时长受官方边界检查。
 - `audio_1` / `audio_2` / `audio_3`：Ref2VA 音频参考，不能作为唯一参考。

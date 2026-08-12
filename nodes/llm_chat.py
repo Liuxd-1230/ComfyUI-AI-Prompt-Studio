@@ -12,6 +12,7 @@ from ..schemas import types
 from ..schemas.profile import AIProfile
 from ..schemas.results import ChatMessage, ChatSession
 from ..services.gateway import Gateway, GenerateRequest
+from ..services.supplements import supplement_sources as load_supplement_sources
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ._helpers import require_api_key, resolve_profile_input
@@ -58,6 +59,8 @@ class APS_LLMGenerate:
             "attachments": (types.ATTACHMENT_LIST,),
             "attachment_files": ("STRING", {"default": "", "multiline": True,
                                             "tooltip": "本机附件文件路径（每行一个，相对 ComfyUI input 目录；文本/图片自动识别；越界或超限将被拒绝）"}),
+            "prompt_supplements": ("STRING", {"default": "", "multiline": False,
+                                                 "tooltip": "可选 Markdown 补充资料 ID（多个用逗号）；通用 LLM 只接受显式 ID，不自动加载"}),
         }}
 
     RETURN_TYPES = ("STRING", "STRING", types.CHAT_SESSION, types.LLM_RESULT, "STRING", "STRING", "STRING")
@@ -69,7 +72,8 @@ class APS_LLMGenerate:
     def generate(self, AI_PROFILE, system_prompt, user_prompt, context,
                  session=None, history_mode="append",
                  output_mode="text", json_schema="",
-                 attachments=None, attachment_files="", stop_event=None):
+                 attachments=None, attachment_files="", prompt_supplements: str = "",
+                 stop_event=None):
         profile = AIProfile.from_json(AI_PROFILE or {})
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点并选择档案")
@@ -105,11 +109,14 @@ class APS_LLMGenerate:
             raise ValueError("附件校验失败：" + "；".join(att_problems[:5]))
         # 内部守则 + 用户 system_prompt 合并（内部在前优先，用户指令不丢弃）
         user_system = system_prompt or DEFAULT_SYSTEM_PROMPT
+        supplement_sources, _ = load_supplement_sources(
+            prompt_supplements, family="generic_llm", node_id="llm.generate")
         sources = [
             PromptSource("runtime.llm-chat", "1.0", PromptLayer.RUNTIME,
                          INTERNAL_SYSTEM_PROMPT, "llm.generate"),
             PromptSource("user.system", "workflow", PromptLayer.SUPPLEMENT,
                          user_system, "llm.generate"),
+            *supplement_sources,
         ]
 
         sess = ChatSession.from_payload(session) if session else ChatSession(

@@ -10,7 +10,7 @@
 
 ## Context
 
-Prompt rules, operation policies, task data, schemas, semantic plans, and persisted revisions currently overlap across nodes, Skills, renderers, and validators. String concatenation makes the final request difficult to inspect, while root-level plan replacement cannot prove minimum consistent change.
+Prompt rules, operation policies, task data, schemas, semantic plans, and persisted revisions previously overlapped across nodes, editable Skills, renderers, and validators. String concatenation made the final request difficult to inspect, while root-level plan replacement could not prove minimum consistent change. Runtime Skill loading is now removed; Model Core and Markdown supplement ownership follows the six-layer assembly below.
 
 ## Decision
 

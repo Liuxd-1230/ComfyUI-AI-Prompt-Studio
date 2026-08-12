@@ -24,7 +24,7 @@ The repository has working one-shot generation, reference analysis, storyboard, 
 2. No official target rule is changed from memory; P3 records primary-source evidence first.
 3. Formal plans, source state, execution state, and rendered output remain separate.
 4. Prompt assembly must expose ordered sources, source versions/hashes, task-data labels, output contract, and final assembly hash.
-5. Legacy Skills remain readable during migration, but no new mixed-responsibility Skill is accepted as architecture-complete.
+5. Legacy runtime Skills have been removed; no new mixed-responsibility Skill is accepted. User Markdown supplements remain optional, lower-priority references only.
 
 ## Compatibility Checks
 

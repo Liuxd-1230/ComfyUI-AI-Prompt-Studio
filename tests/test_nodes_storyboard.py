@@ -4,6 +4,7 @@ import json
 import aps.nodes.storyboard_builder as storyboard_mod
 from aps.schemas.character import CharacterBible, CharacterBook, CharacterTrait
 from aps.schemas.results import LLMResult
+from aps.services import supplements
 
 
 def setup_profile(store):
@@ -143,3 +144,35 @@ def test_storyboard_builder_can_disable_invalid_json_retry(monkeypatch, store):
     assert result[0]["scenes"][0]["shots"][0]["summary"] == "保留原故事。"
     continuity = json.loads(result[2])
     assert any("未开启重试" in item["note"] for item in continuity)
+
+
+def test_storyboard_builder_injects_explicit_markdown_supplement(monkeypatch, store, tmp_path):
+    """Storyboard 的 Markdown 参考必须走真实 PromptAssembly，而非测试旁路。"""
+    payload = setup_profile(store)
+    monkeypatch.setattr(supplements, "supplements_dir",
+                        lambda: tmp_path / "prompt_supplements")
+    record = supplements.import_supplement({
+        "supplement_id": "storyboard-rules",
+        "title": "分镜规则",
+        "filename": "storyboard-rules.md",
+        "content": "每个镜头只保留一个明确动作，并继承上一镜的位置。",
+        "scope": "node",
+        "node_ids": ["storyboard.create"],
+    })
+    captured = {}
+
+    class FakeGateway:
+        def generate(self, profile, api_key, req):
+            captured["req"] = req
+            return LLMResult(text=valid_storyboard_text(), profile_id="p1")
+
+    monkeypatch.setattr(storyboard_mod, "Gateway", lambda: FakeGateway())
+    storyboard_mod.APS_StoryboardBuilder().build(
+        AI_PROFILE=payload, story_text="小凛在雨夜等候。", split_mode="shot",
+        target_duration=6.0, max_scenes=2, style="",
+        prompt_supplements=record.supplement_id)
+
+    request = captured["req"]
+    assert "每个镜头只保留一个明确动作" in request.system
+    assert any(item["source_id"] == "supplement.storyboard-rules"
+               for item in request.assembly_report["sources"])

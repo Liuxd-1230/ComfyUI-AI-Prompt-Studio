@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Python 3.10+ ComfyUI custom-node extension. The root `__init__.py` registers nodes and web assets. Put node implementations in `nodes/`, data contracts in `schemas/`, integrations in `services/`, prompt output in `renderers/`, and rule checks in `validators/`. Server routes and configuration belong in `server/`; the settings UI lives in `web/`. YAML prompt skills are under `skills/`, workflows under `examples/`, design records under `docs/adr/`, and tests under `tests/`.
+This is a Python 3.10+ ComfyUI custom-node extension. The root `__init__.py` registers nodes and web assets. Put node implementations in `nodes/`, data contracts in `schemas/`, integrations in `services/`, prompt output in `renderers/`, and rule checks in `validators/`. Server routes and configuration belong in `server/`; the settings UI lives in `web/`. Immutable target rules are in `prompting/model_cores.py`; optional user Markdown references are managed by `services/supplements.py`. Workflows live under `examples/`, design records under `docs/adr/`, and tests under `tests/`.
 
 ## Build, Test, and Development Commands
 
@@ -23,7 +23,7 @@ node --check web/prompt_studio.js
 
 ## Binding Refactor Contracts
 
-Before changing any LLM call, prompt assembly, semantic plan, session/revision behavior, Studio UI, model core, Skill/supplement system, renderer, validator, or related schema, read both files under `docs/重构约束/` completely at the current HEAD. `APS_Persistent_Semantic_Architecture_Agent_Prompt.md` and `APS_Whole_Library_Prompt_Architecture_Agent_Prompt.md` are binding architecture and completion contracts, not optional backlogs.
+Before changing any LLM call, prompt assembly, semantic plan, session/revision behavior, Studio UI, model core, Markdown supplement system, renderer, validator, or related schema, read both files under `docs/重构约束/` completely at the current HEAD. `APS_Persistent_Semantic_Architecture_Agent_Prompt.md` and `APS_Whole_Library_Prompt_Architecture_Agent_Prompt.md` are binding architecture and completion contracts, not optional backlogs.
 
 Start at the contract's applicable audit/phase and define its testable acceptance criteria before editing. A feature is incomplete when it uses placeholders, no-op branches, mock-only proof, disconnected UI, swallowed errors, or documentation claims without an executable end-to-end path. Before declaring each work unit complete, audit the diff against both contracts, run all required targeted and full checks, update affected documentation and CHANGELOG, commit the coherent unit, and push it to the configured GitHub remote. Report any unmet criterion as unfinished work instead of weakening or relabeling it.
 

@@ -23,6 +23,7 @@ from ..services.storyboard import (
     normalize_storyboard,
     parse_storyboard_json,
 )
+from ..services.supplements import supplement_sources as load_supplement_sources
 from ._helpers import require_api_key, resolve_profile_input
 
 
@@ -47,6 +48,8 @@ class APS_StoryboardBuilder:
             "character_bible": (types.CHARACTER_BIBLE,),
             "character_book": (types.CHARACTER_BOOK,),
             "reference_manifest": (types.REFERENCE_MANIFEST,),
+            "prompt_supplements": ("STRING", {"default": "", "multiline": False,
+                                                 "tooltip": "可选 Markdown 分镜参考资料 ID，多个用逗号"}),
         }}
 
     RETURN_TYPES = (types.STORYBOARD, "STRING", "STRING")
@@ -57,7 +60,7 @@ class APS_StoryboardBuilder:
 
     def build(self, AI_PROFILE, story_text, split_mode, target_duration, max_scenes, style,
               character_bible=None, character_book=None, reference_manifest=None,
-              retry_on_invalid=True):
+              retry_on_invalid=True, prompt_supplements: str = ""):
         profile = AIProfile.from_json(AI_PROFILE or {})
         if not profile.profile_id:
             raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
@@ -74,6 +77,8 @@ class APS_StoryboardBuilder:
         if book is None and bible is not None:
             book = CharacterBook.from_bible(bible)
         manifest = ReferenceManifest.from_json(reference_manifest) if reference_manifest else None
+        supplement_sources, _ = load_supplement_sources(
+            prompt_supplements, family="storyboard", node_id="storyboard.create")
         task_payload = {
             "story_text": story_text.strip(),
             "split_mode": split_mode,
@@ -111,6 +116,7 @@ class APS_StoryboardBuilder:
                 "operation.create", "1.0", PromptLayer.OPERATION,
                 "Return one complete storyboard that satisfies the supplied limits.",
                 "storyboard.create"),
+            *supplement_sources,
         ]
 
         def make_request(retry: bool = False) -> tuple[PromptAssembly, GenerateRequest]:

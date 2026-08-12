@@ -70,7 +70,7 @@ class SessionFingerprints(Schema):
     target_signature: str = ""
     model_core_hash: str = ""
     source_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
-    skill_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
+    supplement_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
 
     def mismatches(self, other: "SessionFingerprints") -> List[str]:
         mismatches: List[str] = []
@@ -84,10 +84,10 @@ class SessionFingerprints(Schema):
         mismatches.extend(
             f"source:{key}" for key in keys
             if self.source_hashes.get(key, "") != other.source_hashes.get(key, ""))
-        keys = sorted(set(self.skill_hashes) | set(other.skill_hashes))
+        keys = sorted(set(self.supplement_hashes) | set(other.supplement_hashes))
         mismatches.extend(
-            f"skill:{key}" for key in keys
-            if self.skill_hashes.get(key, "") != other.skill_hashes.get(key, ""))
+            f"supplement:{key}" for key in keys
+            if self.supplement_hashes.get(key, "") != other.supplement_hashes.get(key, ""))
         return mismatches
 
 
@@ -115,7 +115,7 @@ class PromptRevision(Schema):
     renderer_signature: str = ""
     model_core_hash: str = ""
     source_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
-    skill_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
+    supplement_hashes: Dict[str, str] = dataclasses.field(default_factory=dict)
     context_changes: List[str] = dataclasses.field(default_factory=list)
     locked_constraints: List[str] = dataclasses.field(default_factory=list)
     timestamp: str = ""
@@ -139,7 +139,7 @@ class PromptRevision(Schema):
         if self.payload_kind not in {"freeform", "structured"}:
             raise SchemaError("PromptRevision.payload_kind 非法")
         for name in ("plan", "validation", "requested_paths", "dependent_paths",
-                     "invalidated_paths", "source_hashes", "skill_hashes",
+                     "invalidated_paths", "source_hashes", "supplement_hashes",
                      "context_changes", "locked_constraints"):
             object.__setattr__(
                 self, name, _freeze_revision_value(getattr(self, name)))
@@ -221,7 +221,7 @@ class PromptSession(Schema):
                 and not (self.fingerprints.target_signature
                          or self.fingerprints.model_core_hash
                          or self.fingerprints.source_hashes
-                         or self.fingerprints.skill_hashes)):
+                         or self.fingerprints.supplement_hashes)):
             self.fingerprint_state = "legacy_unbound"
         self.revisions = self.revisions[-MAX_REVISIONS:]
         self.conversation = self.conversation[-MAX_CONVERSATION_MESSAGES:]
@@ -327,7 +327,7 @@ class PromptSession(Schema):
             renderer_signature=renderer_signature,
             model_core_hash=next_fingerprints.model_core_hash,
             source_hashes=copy.deepcopy(next_fingerprints.source_hashes),
-            skill_hashes=copy.deepcopy(next_fingerprints.skill_hashes),
+            supplement_hashes=copy.deepcopy(next_fingerprints.supplement_hashes),
             context_changes=list(context_changes or []),
             locked_constraints=next_locks)
         staged.current_plan = copy.deepcopy(snapshot.plan)

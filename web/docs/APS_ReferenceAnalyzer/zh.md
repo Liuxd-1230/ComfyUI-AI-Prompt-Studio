@@ -4,6 +4,8 @@
 
 `AI_PROFILE` 提供文字与视觉档案；`images` 接 IMAGE 批次；`text_anchor` 写已知事实；`character_bible` 提供已有身份；`custom_prompt` 仅 custom 模式使用。
 
+`prompt_supplements`：可选 Markdown 分析参考资料 ID，多个用逗号；资料只作参考，不会覆盖视觉观察守则和结构化输出契约。
+
 `analysis_mode` 模式：`character_identity` 只取稳定身份；`character_full` 全身设定；`clothing` 服装；`pose_expression` 姿势表情；`scene` 场景；`composition` 构图；`style` 媒介风格；`object` 物件；`anima_reference` 提取 ANIMA 可用词；`h3_reference` 建静态 H3 参考；`custom` 按自定义问题且禁止猜测。
 
 输出 `REFERENCE_ANALYSIS` 是本次完整分析；`CHARACTER_CANDIDATE` 接 Character Bible；`REFERENCE_MANIFEST` 接 Storyboard/Image Prompt Studio/H3 Prompt Studio；`caption` 是用户可直接查看或连接到文本节点的多行人物锚点摘要，按“稳定特征 / 可变特征 / 当前状态 / 不确定（请复核）/ 来源”分组；`confidence/raw` 用于人工复核；`IMAGES` 原样透传。图片-only 分析会留空未知姓名，不会把海报标题、Logo、文件名或 `Unknown` 当成人名。

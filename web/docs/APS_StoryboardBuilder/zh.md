@@ -4,4 +4,6 @@
 
 可接 `character_bible`、多人 `character_book` 和 `reference_manifest` 保持连续性。输出 `STORYBOARD` 接 Select/H3，`story_summary` 是摘要，`continuity` 显示人物、场景、时长与降级警告。
 
+`prompt_supplements`：可选 Markdown 分镜参考资料 ID，多个用逗号；资料只作为低优先级参考，不会改变故事事实或 JSON 输出契约。
+
 示例：`雨夜，铃冲进空车站寻找即将离开的朋友，在末班车关门前看见对方。`

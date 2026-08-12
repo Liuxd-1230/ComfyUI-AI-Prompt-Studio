@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 
 from .base import Schema
 
-TARGET_FAMILIES = ["anima", "z_image", "qwen_image_edit", "generic_image", "sdxl", "flux", "custom_skill"]
+TARGET_FAMILIES = ["anima", "z_image", "qwen_image_edit", "generic_image", "sdxl", "flux"]
 ANIMA_VARIANTS = ["base", "aesthetic", "turbo"]
 PROMPT_MODES = ["tags", "natural_language", "hybrid"]
 COMPOSER_OPERATIONS = ["generate", "expand", "rewrite", "translate", "audit", "repair", "convert"]
@@ -59,7 +59,7 @@ class PromptPlan(Schema):
     """面向目标图像模型的中间计划（正负提示词 + 绑定 + 校验）。"""
 
     plan_id: str = ""
-    target_family: str = "anima"    # anima | generic_image | sdxl | flux | custom_skill
+    target_family: str = "anima"    # anima | generic_image | sdxl | flux
     target_variant: str = "base"    # base | aesthetic | turbo（或自定义）
     operation: str = "generate"
     prompt_mode: str = "tags"       # tags | natural_language | hybrid

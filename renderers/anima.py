@@ -2,7 +2,7 @@
 
 产品决策（docs/decisions.md D16）：
 - 默认 prompt_mode = natural_language（ANIMA 以自然语言为核心）；
-- LLM（经 Skill）产出结构化 AnimaPromptPlan，Python renderer 确定性组织；
+- LLM（受 ANIMA Model Core 约束）产出结构化 AnimaPromptPlan，Python renderer 确定性组织；
 - 三种 renderer 消费同一个 Plan：Natural（自然正文）/ Tags（官方标签结构）/
   Hybrid（少量控制标签块 + 自然正文，绝不把正文再当标签追加一遍）；
 - Character Bible 通过 AnimaCharacter 绑定（required=锁定/稳定特征，

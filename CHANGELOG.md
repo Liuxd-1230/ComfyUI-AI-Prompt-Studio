@@ -1,6 +1,8 @@
 # Changelog
 
-- Prompt Skill 注入边界收口：Image/H3 Studio 不再把可编辑 Skill 拼入 Model Core system prompt；Skill 以带来源、版本和 hash 的 task-data 传入，并由不可编辑 Runtime boundary 明确限制其只能提供兼容的软指导。恶意自定义 Skill 的公开节点回归覆盖“不能改协议/validator/输出格式，且仍可正常提交”。
+- **Model Core / Markdown supplement migration**：移除运行时 YAML Prompt Skill、`services/skills.py`、`skills/` 文件和 `/skills` CRUD；ANIMA、Z-Image、Qwen Image Edit、Generic Image、MiniMax H3 硬规则集中到不可编辑 `prompting/model_cores.py`。新增安全本地 Markdown 资料注册表、hash/范围/启停管理、`/supplements` 路由和设置页编辑器；LLM、Reference Analyzer、Storyboard Builder、Image Studio、H3 Studio 均可接收显式补充资料。资料只作为低优先级参考，不能覆盖 Model Core、协议、Schema、validator、Diff Guard 或锁定事实。新增端到端 supplement 路由、安全和 session fingerprint 测试。
+
+- 历史 Skill 注入边界实现已被 P6 的 Model Core/Markdown supplement 迁移替代；旧记录仅保留版本历史，不代表当前运行时仍加载 Skill。
 - Reference Analyzer：人物锚点 `caption` 现在输出可直接查看的分组摘要（稳定特征、可变特征、当前状态、不确定项、来源）；图片-only 视觉分析会过滤海报标题、Logo、文件名和 `Unknown` 等伪姓名，避免污染 Character Bible。
 - H3 严格模式删除中间镜头后，计划适配器会按当前顺序重新编号镜头；新增生产节点回归，确保成品从 `[Shot 1]` 连续到 `[Shot 2]`，不会遗留 `[Shot 3]`。
 - PromptSession 增加 4 MiB 序列化工作流上限；超大隐藏会话在加载或提交前明确拒绝，Recovery Journal 和稳定 revision 均保持不变。

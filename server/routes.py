@@ -250,42 +250,55 @@ def handle_recovery_discard(
     return {"ok": True, "session_id": sid, "node_instance_id": nid}
 
 
-# ---------------------------------------------------------------- Prompt Skill 管理
+# ---------------------------------------------------------------- Markdown 补充资料管理
 
-def handle_skills_list(store: ConfigStore) -> Dict[str, Any]:
-    from ..services import skills as skills_svc
-    return {"skills": skills_svc.list_skill_records()}
-
-
-def handle_skill_get(skill_id: str, store: ConfigStore) -> Dict[str, Any]:
-    from ..services import skills as skills_svc
-    rec = skills_svc.get_skill_record(skill_id)
-    if rec is None:
-        raise KeyError(f"技能不存在: {skill_id}")
-    return rec
+def handle_supplements_list(store: ConfigStore) -> Dict[str, Any]:
+    from ..services import supplements as supplements_svc
+    return {"supplements": [_supplement_payload(item)
+                             for item in supplements_svc.list_supplements()]}
 
 
-def handle_skill_create(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
-    from ..services import skills as skills_svc
-    if payload.get("copy_from"):
-        return skills_svc.copy_builtin_to_custom(str(payload["copy_from"]))
-    return skills_svc.create_custom_skill(dict(payload or {}))
+def _supplement_payload(record: Any, *, content: str | None = None) -> Dict[str, Any]:
+    payload = record.to_json()
+    payload["hash"] = record.content_hash
+    if content is not None:
+        payload["content"] = content
+    return payload
 
 
-def handle_skill_update(skill_id: str, payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
-    from ..services import skills as skills_svc
-    return skills_svc.update_custom_skill(skill_id, dict(payload or {}))
+def handle_supplement_get(supplement_id: str, store: ConfigStore) -> Dict[str, Any]:
+    from ..services import supplements as supplements_svc
+    record = supplements_svc.get_supplement(supplement_id)
+    if record is None:
+        raise KeyError(f"补充资料不存在: {supplement_id}")
+    return _supplement_payload(record, content=supplements_svc.read_supplement(record))
 
 
-def handle_skill_delete(skill_id: str, store: ConfigStore) -> Dict[str, Any]:
-    from ..services import skills as skills_svc
-    skills_svc.delete_custom_skill(skill_id)
-    return {"ok": True, "skill_id": skill_id}
+def handle_supplement_create(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    from ..services import supplements as supplements_svc
+    record = supplements_svc.import_supplement(dict(payload or {}))
+    return _supplement_payload(record, content=supplements_svc.read_supplement(record))
 
 
-def handle_skill_set_enabled(skill_id: str, payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
-    from ..services import skills as skills_svc
-    return skills_svc.set_skill_enabled(skill_id, bool(payload.get("enabled", True)))
+def handle_supplement_update(supplement_id: str, payload: Dict[str, Any],
+                             store: ConfigStore) -> Dict[str, Any]:
+    from ..services import supplements as supplements_svc
+    record = supplements_svc.update_supplement(supplement_id, dict(payload or {}))
+    return _supplement_payload(record, content=supplements_svc.read_supplement(record))
+
+
+def handle_supplement_delete(supplement_id: str, store: ConfigStore) -> Dict[str, Any]:
+    from ..services import supplements as supplements_svc
+    supplements_svc.delete_supplement(supplement_id)
+    return {"ok": True, "supplement_id": supplement_id}
+
+
+def handle_supplement_set_enabled(supplement_id: str, payload: Dict[str, Any],
+                                  store: ConfigStore) -> Dict[str, Any]:
+    from ..services import supplements as supplements_svc
+    record = supplements_svc.set_supplement_enabled(
+        supplement_id, bool(payload.get("enabled", True)))
+    return _supplement_payload(record)
 
 
 # ---------------------------------------------------------------- aiohttp 注册
@@ -391,27 +404,27 @@ def register_routes() -> None:
     async def r_runtime(request):
         return await _run(request, lambda req, payload, st: handle_runtime(payload, st))
 
-    async def r_skills_list(request):
-        return await _run(request, lambda req, payload, st: handle_skills_list(st))
+    async def r_supplements_list(request):
+        return await _run(request, lambda req, payload, st: handle_supplements_list(st))
 
-    async def r_skill_get(request):
-        sid = request.match_info["skill_id"]
-        return await _run(request, lambda req, payload, st: handle_skill_get(sid, st))
+    async def r_supplement_get(request):
+        sid = request.match_info["supplement_id"]
+        return await _run(request, lambda req, payload, st: handle_supplement_get(sid, st))
 
-    async def r_skill_create(request):
-        return await _run(request, lambda req, payload, st: handle_skill_create(payload, st))
+    async def r_supplement_create(request):
+        return await _run(request, lambda req, payload, st: handle_supplement_create(payload, st))
 
-    async def r_skill_update(request):
-        sid = request.match_info["skill_id"]
-        return await _run(request, lambda req, payload, st: handle_skill_update(sid, payload, st))
+    async def r_supplement_update(request):
+        sid = request.match_info["supplement_id"]
+        return await _run(request, lambda req, payload, st: handle_supplement_update(sid, payload, st))
 
-    async def r_skill_delete(request):
-        sid = request.match_info["skill_id"]
-        return await _run(request, lambda req, payload, st: handle_skill_delete(sid, st))
+    async def r_supplement_delete(request):
+        sid = request.match_info["supplement_id"]
+        return await _run(request, lambda req, payload, st: handle_supplement_delete(sid, st))
 
-    async def r_skill_enable(request):
-        sid = request.match_info["skill_id"]
-        return await _run(request, lambda req, payload, st: handle_skill_set_enabled(sid, payload, st))
+    async def r_supplement_enable(request):
+        sid = request.match_info["supplement_id"]
+        return await _run(request, lambda req, payload, st: handle_supplement_set_enabled(sid, payload, st))
 
     async def r_recovery_latest(request):
         sid = request.match_info["session_id"]
@@ -440,12 +453,12 @@ def register_routes() -> None:
     routes.get(f"{API_PREFIX}/settings")(r_settings_get)
     routes.post(f"{API_PREFIX}/settings")(r_settings_set)
     routes.post(f"{API_PREFIX}/runtime")(r_runtime)
-    routes.get(f"{API_PREFIX}/skills")(r_skills_list)
-    routes.get(f"{API_PREFIX}/skills/{{skill_id}}")(r_skill_get)
-    routes.post(f"{API_PREFIX}/skills")(r_skill_create)
-    routes.put(f"{API_PREFIX}/skills/{{skill_id}}")(r_skill_update)
-    routes.delete(f"{API_PREFIX}/skills/{{skill_id}}")(r_skill_delete)
-    routes.post(f"{API_PREFIX}/skills/{{skill_id}}/enabled")(r_skill_enable)
+    routes.get(f"{API_PREFIX}/supplements")(r_supplements_list)
+    routes.get(f"{API_PREFIX}/supplements/{{supplement_id}}")(r_supplement_get)
+    routes.post(f"{API_PREFIX}/supplements")(r_supplement_create)
+    routes.put(f"{API_PREFIX}/supplements/{{supplement_id}}")(r_supplement_update)
+    routes.delete(f"{API_PREFIX}/supplements/{{supplement_id}}")(r_supplement_delete)
+    routes.post(f"{API_PREFIX}/supplements/{{supplement_id}}/enabled")(r_supplement_enable)
     routes.get(
         f"{API_PREFIX}/recovery/{{session_id}}/{{node_instance_id}}")(
             r_recovery_latest)

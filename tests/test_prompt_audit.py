@@ -7,15 +7,13 @@
 - 结构化输出偏好：技能统一要求只输出 JSON 对象。
 契约破坏即失败，防止提示词语义回归。
 """
-import yaml
-
 import aps.nodes.reference_analyzer as ra_mod
 import aps.services.h3_plan as h3_plan
 import aps.services.storyboard as sb_svc
 from aps.schemas.character import CharacterBible
 from aps.schemas.references import ReferenceManifest
 from aps.schemas.storyboard import Scene, Shot, Storyboard
-from aps.services.skills import SKILLS_DIR, load_skills
+from aps.prompting.model_cores import model_core_prompt
 
 
 # ---------------------------------------------------------------- Reference Analyzer
@@ -105,32 +103,16 @@ def test_storyboard_prompt_with_book_and_manifest():
     assert "[可用参考资产]" in p and "img_0" in p
 
 
-# ---------------------------------------------------------------- Skills（内置只读）
-
-def test_skills_guardrail_and_protocol_owner():
-    """SK-1：内置 Skill 含数据守则，传输协议由不可编辑核心持有。"""
-    skills = load_skills()
-    assert skills, "内置技能未加载"
-    for skill in (item for item in skills.values() if item.source == "builtin"):
-        assert "task data" in skill.system_prompt, \
-            f"技能 {skill.id} 缺少注入守则"
-    for sid in ("prompt_studio_anima", "prompt_studio_z_image",
-                "prompt_studio_qwen_image_edit", "prompt_studio_generic_image",
-                "minimax_h3_director"):
-        assert "Output only the JSON object" not in skills[sid].system_prompt
-    assert "Output only the JSON plan" in h3_plan.h3_system_prompt()
+def test_model_cores_are_the_single_target_rule_owner():
+    """MC-1：目标硬规则来自不可编辑 Model Core，而非可编辑资料。"""
+    for family, marker in (("anima", "Preserve every explicit identity"),
+                           ("z_image", "natural-language prompt"),
+                           ("qwen_image_edit", "Qwen Image Edit 2511"),
+                           ("minimax_h3", "Output only the JSON plan")):
+        prompt = model_core_prompt(family)
+        assert marker in prompt
 
 
-def test_skills_anima_family_renderer_anima_plan():
-    """SK-2：ANIMA 目标策略与严格通道 renderer 对齐。"""
-    skill = load_skills()["prompt_studio_anima"]
-    assert skill.renderer == "anima_plan"
-    assert skill.source == "builtin"
-
-
-def test_skill_files_are_readonly_builtin():
-    """SK-3：内置技能文件存在于仓库 skills/ 目录且 source=builtin。"""
-    for path in sorted(SKILLS_DIR.glob("*.yaml")):
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        assert data.get("source") == "builtin", f"{path.name} 必须标记 builtin"
-        assert data.get("id") and data.get("version") and data.get("renderer")
+def test_hard_model_core_does_not_load_project_markdown_implicitly():
+    """MC-2：Markdown 补充资料必须通过节点显式选择，不能隐式塞进核心。"""
+    assert "prompt_supplements" not in model_core_prompt("anima")

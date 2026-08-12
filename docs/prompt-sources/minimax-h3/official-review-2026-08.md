@@ -15,5 +15,5 @@ Primary sources are pinned to official commit `8d8824efaf94586c0cc9ac7ad8d0723d4
 
 - `unchanged`: current H3 plan, renderer, and validators cover the principal structure, duration, media counts/totals, timing, references, speakers, voiceover, soundscape, and marker modality.
 - `new`: P3 formal semantic validation now checks the Plan before protocol rendering, including stable speaker/reference ownership and safe mechanical repair.
-- `architectural conflict`: `H3_SYSTEM_PROMPT` and the editable H3 Skill still restate overlapping rules. P2 exposes them as separate Assembly sources, but a later Model Core migration must establish one immutable protocol source and reduce the Skill to operation strategy.
+- `resolved in P6`: the former `H3_SYSTEM_PROMPT`/editable Skill overlap is replaced by one immutable `prompting/model_cores.py` H3 core. Markdown supplements remain optional, lower-priority guidance and cannot replace the protocol/schema/validator.
 - `unsupported local assumption`: legacy `R2V` naming remains only for workflow compatibility; the official mode name is Ref2VA.

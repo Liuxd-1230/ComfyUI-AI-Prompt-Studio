@@ -47,7 +47,7 @@ Reference Analyzer 对单张图（或单次分析）产出的人物特征推断�
 _Avoid_: 剧本拆分
 
 **Prompt Plan（提示词计划）**：
-Composer 面向目标图像模型（ANIMA/Generic/SDXL/FLUX/自定义 Skill）生成的中间计划：正负提示词、目标模型、模式、校验结果。
+Composer 面向目标图像模型（ANIMA/Generic/SDXL/FLUX）生成的中间计划：正负提示词、目标模型、模式、校验结果。
 _Avoid_: 成稿
 
 **Prompt Session（提示词会话）**：
@@ -65,8 +65,8 @@ T2VA（纯文本）、I2VA（首帧锚定）、FL2VA（首尾帧路径）、L2VA
 **Speaker ID（说话人 ID）**：
 H3 提示词中的稳定说话人标记（S1/S2，复合 S1,S2），跨镜头保持一致，与 Character Bible 的人物 ID 映射。
 
-**Skill（提示词技能）**：
-模型专用规则包（YAML）：id/version/target/renderer/system_prompt/validators/source/hash。内置官方 Skill 只读，用户可复制后编辑。
+**Model Core / Markdown supplement**：
+模型专用硬规则由版本化、仓库所有的 `prompting/model_cores.py` 持有；用户可在设置页管理本地 `.md` 补充资料，并在节点的 `prompt_supplements` 输入中显式选择。Markdown 只作为低优先级参考，带来源和 SHA-256，不拥有输出协议或校验权。
 _Avoid_: 模板、预设
 
 **Renderer（渲染器）**：

@@ -48,7 +48,7 @@ Protocol garbage receives at most one content-preserving format repair request.
 Failure never commits.
 
 REFINE sends only the current prompt, latest instruction, and current connected
-context—not the full conversation. Source/Skill/target changes are recorded and
+context—not the full conversation. Source/Model Core/supplement/target changes are recorded and
 shown as warnings but do not block. Python enforces only provable target rules:
 non-empty output, reference existence, positive/negative contradictions, H3 media
 and timing limits, and ANIMA English visual prose. ANIMA permits non-English names,

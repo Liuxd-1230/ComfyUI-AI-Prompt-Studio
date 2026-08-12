@@ -146,8 +146,8 @@ function buildPanel() {
     el("div", { id: "aps-log" }),
   ]));
   bottom.appendChild(el("div", { class: "aps-section" }, [
-    el("h3", { text: t("skills") }),
-    el("div", { id: "aps-skills" }),
+    el("h3", { text: t("supplements") }),
+    el("div", { id: "aps-supplements" }),
   ]));
   body.appendChild(bottom);
   overlay.appendChild(body);
@@ -169,7 +169,7 @@ async function refreshAll() {
   }
   renderRuntime();
   renderLog();
-  renderSkills();
+  renderSupplements();
   if (currentProfileId) renderEditor(currentProfileId);
 }
 
@@ -550,124 +550,127 @@ function renderLog() {
     });
 }
 
-// ---------------- Prompt Skill 管理 ----------------
+// ---------------- Markdown 补充资料管理 ----------------
 
-function renderSkills() {
-  const box = document.querySelector("#aps-skills");
+function renderSupplements() {
+  const box = document.querySelector("#aps-supplements");
   if (!box) return;
   box.innerHTML = "";
-  box.appendChild(el("p", { class: "aps-muted", text: "正在加载技能…" }));
-  api("/skills")
-    .then(({ skills }) => {
+  box.appendChild(el("p", { class: "aps-muted", text: "正在加载 Markdown 补充资料…" }));
+  api("/supplements")
+    .then(({ supplements }) => {
       box.innerHTML = "";
       box.appendChild(el("div", { class: "aps-btn-row" }, [
-        el("button", { class: "aps-btn aps-btn-mini", text: "新建自定义技能", onClick: () => openSkillEditor(box) }),
+        el("button", { class: "aps-btn aps-btn-mini", text: "新建 Markdown 资料", onClick: () => openSupplementEditor(box) }),
       ]));
-      if (!skills.length) {
-        box.appendChild(el("p", { class: "aps-muted", text: "没有找到技能。请检查后端日志与 skills 目录。" }));
+      if (!supplements.length) {
+        box.appendChild(el("p", { class: "aps-muted", text: "暂无资料。可在这里添加模型提示词参考、风格词表或节点说明。" }));
         return;
       }
       const table = el("table", { class: "aps-table" });
       table.appendChild(el("tr", {}, [
-        el("th", { text: "id" }), el("th", { text: "version" }),
-        el("th", { text: "source" }), el("th", { text: "enabled" }),
-        el("th", { text: "renderer" }), el("th", { text: "ops" }),
+        el("th", { text: "id" }), el("th", { text: "标题" }),
+        el("th", { text: "适用范围" }), el("th", { text: "状态" }),
+        el("th", { text: "大小" }), el("th", { text: "hash / 更新时间" }),
+        el("th", { text: "操作" }),
       ]));
-      for (const s of skills) {
+      for (const s of supplements) {
         const ops = el("td", {});
-        ops.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: s.source === "custom" ? "编辑" : "查看", onClick: async () => {
+        ops.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: "查看/编辑", onClick: async () => {
           try {
-            const detail = await api("/skills/" + encodeURIComponent(s.id));
-            openSkillEditor(box, detail, s.source === "builtin");
+            const detail = await api("/supplements/" + encodeURIComponent(s.supplement_id));
+            openSupplementEditor(box, detail);
           } catch (e) { toast(t("error") + ": " + e.message, true); }
         } }));
-        if (s.source === "builtin") {
-          ops.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: "复制", onClick: async () => {
-            try {
-              await api("/skills", { method: "POST", body: JSON.stringify({ copy_from: s.id }) });
-              toast(t("save_ok"));
-              renderSkills();
-            } catch (e) { toast(t("error") + ": " + e.message, true); }
-          } }));
-        } else {
-          const del = el("button", { class: "aps-btn aps-btn-mini aps-btn-danger", text: "删除", onClick: async () => {
-            if (!confirm("删除自定义技能 " + s.id + "？")) return;
-            try {
-              await api("/skills/" + encodeURIComponent(s.id), { method: "DELETE" });
-              toast(t("save_ok"));
-              renderSkills();
-            } catch (e) { toast(t("error") + ": " + e.message, true); }
-          } });
-          const toggle = el("button", { class: "aps-btn aps-btn-mini", text: s.enabled ? "停用" : "启用", onClick: async () => {
-            try {
-              await api("/skills/" + encodeURIComponent(s.id) + "/enabled", {
-                method: "POST", body: JSON.stringify({ enabled: !s.enabled }),
-              });
-              renderSkills();
-            } catch (e) { toast(t("error") + ": " + e.message, true); }
-          } });
-          ops.appendChild(toggle);
-          ops.appendChild(del);
-        }
+        ops.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: s.enabled ? "停用" : "启用", onClick: async () => {
+          try {
+            await api("/supplements/" + encodeURIComponent(s.supplement_id) + "/enabled", {
+              method: "POST", body: JSON.stringify({ enabled: !s.enabled }),
+            });
+            renderSupplements();
+          } catch (e) { toast(t("error") + ": " + e.message, true); }
+        } }));
+        ops.appendChild(el("button", { class: "aps-btn aps-btn-mini aps-btn-danger", text: "删除", onClick: async () => {
+          if (!confirm("删除 Markdown 资料 " + s.supplement_id + "？")) return;
+          try {
+            await api("/supplements/" + encodeURIComponent(s.supplement_id), { method: "DELETE" });
+            toast(t("save_ok"));
+            renderSupplements();
+          } catch (e) { toast(t("error") + ": " + e.message, true); }
+        } }));
         table.appendChild(el("tr", {}, [
-          el("td", { text: s.id }), el("td", { text: s.version }),
-          el("td", { text: s.source }), el("td", { text: s.enabled ? "✓" : "✗" }),
-          el("td", { text: s.renderer }), ops,
+          el("td", { text: s.supplement_id }), el("td", { text: s.title }),
+          el("td", { text: s.scope === "target" ? (s.target_families || []).join(",") || "所有目标" : s.scope }),
+          el("td", { text: s.enabled ? "✓ 已启用" : "✗ 已停用" }),
+          el("td", { text: `${Math.ceil((s.size || 0) / 1024)} KiB` }),
+          el("td", { text: `${(s.hash || s.content_hash || "").slice(0, 12)}… · ${s.updated_at || "—"} ` }),
+          ops,
         ]));
       }
       box.appendChild(table);
-      box.appendChild(el("p", { class: "aps-muted", text: "内置技能只读；复制为自定义后可编辑/停用/删除。" }));
+      box.appendChild(el("p", { class: "aps-muted", text: "Markdown 只作为低优先级参考资料；不能覆盖 Model Core、输出格式、校验器或用户本轮指令。节点的 prompt_supplements 输入可填 ID，auto 会加载当前目标的已启用资料。" }));
     })
     .catch((e) => {
       box.innerHTML = "";
-      box.appendChild(el("p", { class: "aps-error", text: "技能加载失败：" + e.message }));
-      box.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: "重试", onClick: renderSkills }));
+      box.appendChild(el("p", { class: "aps-error", text: "Markdown 资料加载失败：" + e.message }));
+      box.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: "重试", onClick: renderSupplements }));
     });
 }
 
-function openSkillEditor(box, record = {}, readonly = false) {
-  const old = box.querySelector(".aps-skill-editor");
+function openSupplementEditor(box, record = {}) {
+  const old = box.querySelector(".aps-supplement-editor");
   if (old) old.remove();
-  const editor = el("div", { class: "aps-skill-editor" });
+  const editor = el("div", { class: "aps-supplement-editor" });
   const fields = {};
   const add = (name, value, multiline = false) => {
     const input = multiline
-      ? el("textarea", { rows: 12, disabled: readonly })
+      ? el("textarea", { rows: 12 })
       : textInput(value || "", name);
     input.value = value || "";
-    input.disabled = readonly || (name === "id" && !!record.id);
+    input.disabled = name === "supplement_id" && !!record.supplement_id;
     fields[name] = input;
     editor.appendChild(inputRow(name, input, name));
   };
-  editor.appendChild(el("h4", { text: readonly ? "查看内置技能" : (record.id ? "编辑自定义技能" : "新建自定义技能") }));
-  add("id", record.id);
-  add("version", record.version || "1.0");
-  add("target_family", record.target_family || "generic_image");
-  add("target_variant", record.target_variant || "");
-  add("renderer", record.renderer || "generic");
+  editor.appendChild(el("h4", { text: record.supplement_id ? "编辑 Markdown 补充资料" : "新建 Markdown 补充资料" }));
+  add("supplement_id", record.supplement_id || "");
+  add("title", record.title || "");
+  add("filename", record.filename || "reference.md");
+  add("scope", record.scope || "target");
+  add("target_families", (record.target_families || []).join(","));
+  add("node_ids", (record.node_ids || []).join(","));
   add("description", record.description || "");
-  add("validators", (record.validators || []).join(","));
-  add("system_prompt", record.system_prompt || "", true);
+  add("content", record.content || "", true);
+  const fileInput = el("input", { type: "file", accept: ".md,text/markdown" });
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".md")) {
+      toast("只支持 .md 文件", true);
+      fileInput.value = "";
+      return;
+    }
+    fields.filename.value = file.name;
+    fields.content.value = await file.text();
+  });
+  editor.appendChild(inputRow("导入本地 Markdown 文件", fileInput,
+    "文件只会读取为文本并发送到本地补充资料注册表，不会上传到第三方"));
   const actions = el("div", { class: "aps-btn-row" });
   actions.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: "关闭", onClick: () => editor.remove() }));
-  if (!readonly) {
-    actions.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: "保存", onClick: async () => {
-      const payload = {
-        id: fields.id.value.trim(), version: fields.version.value.trim(),
-        target_family: fields.target_family.value.trim(),
-        target_variant: fields.target_variant.value.trim(),
-        renderer: fields.renderer.value.trim(), description: fields.description.value.trim(),
-        validators: fields.validators.value.split(",").map((v) => v.trim()).filter(Boolean),
-        system_prompt: fields.system_prompt.value,
-      };
-      try {
-        const path = record.id ? "/skills/" + encodeURIComponent(record.id) : "/skills";
-        await api(path, { method: record.id ? "PUT" : "POST", body: JSON.stringify(payload) });
-        toast(t("save_ok"));
-        renderSkills();
-      } catch (e) { toast(t("error") + ": " + e.message, true); }
-    } }));
-  }
+  actions.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: "保存", onClick: async () => {
+    const payload = {
+      supplement_id: fields.supplement_id.value.trim(), title: fields.title.value.trim(),
+      filename: fields.filename.value.trim(), scope: fields.scope.value.trim(),
+      target_families: fields.target_families.value.split(",").map((v) => v.trim()).filter(Boolean),
+      node_ids: fields.node_ids.value.split(",").map((v) => v.trim()).filter(Boolean),
+      description: fields.description.value.trim(), content: fields.content.value,
+    };
+    try {
+      const path = record.supplement_id ? "/supplements/" + encodeURIComponent(record.supplement_id) : "/supplements";
+      await api(path, { method: record.supplement_id ? "PUT" : "POST", body: JSON.stringify(payload) });
+      toast(t("save_ok"));
+      renderSupplements();
+    } catch (e) { toast(t("error") + ": " + e.message, true); }
+  } }));
   editor.appendChild(actions);
   box.prepend(editor);
 }
@@ -709,7 +712,7 @@ app.registerExtension({
       id: OPEN_WORKBENCH_SETTING_ID,
       name: "打开 AI Prompt Studio 设置工作台",
       category: ["AI Prompt Studio", "常规", "设置工作台"],
-      tooltip: "选择“打开完整设置工作台”进入模型档案、本地运行时和提示词技能配置。",
+      tooltip: "选择“打开完整设置工作台”进入模型档案、本地运行时和 Markdown 补充资料配置。",
       type: "combo",
       defaultValue: "idle",
       options: [

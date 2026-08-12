@@ -34,7 +34,7 @@
 | 外部搜索后端（≥1 个 External SearchBackend） | `services/search.py search_external`：自定义 HTTP 契约（POST {query}→{results}），网关无原生时注入结果块；失败明确警告不伪造 |
 | 执行 unload_policy | after_request/after_success（仅 local）；卸载失败仅 warn 不影响请求 |
 | 自定义 runtime 选项 | 真实 CustomHTTPBackend（/v1/models 状态、/models/{load,unload} body={"model":...}），非摆设 |
-| Prompt Skill 管理 | 内置只读 + 自定义可复制/新建/改/删/启停；字段白名单+枚举校验+hash；/skills 6 路由 + 面板 UI |
+| Markdown 补充资料 | 本地 `.md` 导入/查看/编辑/删/启停；范围、大小、UTF-8、路径、SHA-256 校验；`/supplements` 路由 + 面板 UI |
 | Storyboard 消费 REFERENCE_MANIFEST | character Subject 补成角色表并沿用真实 subject_id；资产/主体参考块 |
 | 视觉/文本 Profile 解耦 | `vision_profile_id` 指向另一档案时视觉用其配置与密钥 |
 | 结构化输出 | gateway output_schema；能力允许→协议层 schema（Responses text.format / Chat response_format.json_schema）；DeepSeek→提示词约束+解析校验 |
@@ -54,12 +54,12 @@
 
 - 外部搜索后端契约字段 `search_url`（档案高级设置）。
 - `vision_profile_id` 视觉/文本档案解耦。
-- 自定义 Skill 管理（服务层 + 路由 + 面板）。
+- Model Core 与 Markdown supplement 管理（服务层 + 路由 + 面板）。
 - 函数工具循环（网关层，节点不改 UI）。
 
 ## 5. 产品决策落实（docs/decisions.md）
 
-D16 ANIMA 默认自然语言 · D17 CharacterBook/Speaker ID · D18 H3 编号/R2V/模式约束 · D19 采样参数进高级设置 · D20 附件 · D21 结构化输出 · D22 Batch C（共享服务层/外部搜索/工具循环/卸载策略） · D23 Batch D（身份判断/Profile 解耦/Manifest 消费/Skill 管理）。
+D16 ANIMA 默认自然语言 · D17 CharacterBook/Speaker ID · D18 H3 编号/R2V/模式约束 · D19 采样参数进高级设置 · D20 附件 · D21 结构化输出 · D22 Batch C（共享服务层/外部搜索/工具循环/卸载策略） · D23 Batch D（身份判断/Profile 解耦/Manifest 消费/Markdown supplement 管理）。
 
 ## 6. 仍未实现 / 明确不做（docs/known-limitations.md）
 
@@ -74,19 +74,19 @@ D16 ANIMA 默认自然语言 · D17 CharacterBook/Speaker ID · D18 H3 编号/R2
 
 ## 8. 测试
 
-- **396 通过 / 0 失败**（`pytest tests/ -q`，含 26 项附件安全、17 项 runtime 服务层、9 项身份判断、12 项 Skill 管理、9 项 Prompt Audit 语义契约、4 项回归用例）。
+- **当前全量测试以本地 `pytest tests/ -q` 为准**；历史 396 项记录仅保留作为旧批次快照，当前实现另含 Markdown supplement 安全、路由和生产节点注入回归。
 - JS：`node --check web/settings.js web/profile_widgets.js` 通过。
 - Python：`compileall` 全绿。
 
 ## 9. 真实 ComfyUI 冒烟（E 批，headless `--cpu` 独立端口 8189）
 
-- 9 个 `APS_*` 节点注册（`/object_info`）；设置路由 `/ai_prompt_studio/status|profiles|skills|runtime` 全部 200。
+- 11 个 `APS_*` 节点注册（`/object_info`）；设置路由 `/ai_prompt_studio/status|profiles|supplements|runtime` 全部由冒烟测试覆盖。
 - 档案 CRUD 往返：config.json **无 api_key / api_key_ref**；示例工作流（h3_full_chain / anima_full_chain）节点类型匹配、无密钥。
 - 扩展静态资源 `/extensions/ComfyUI-AI-Prompt-Studio/*.js|css` 200；`/api` 前缀路由 200；启动日志无扩展错误；验后关闭并确认端口释放。
 
 ## 10. 关键文件
 
-- services/: gateway.py, search.py, tools.py, attachments.py, capability_probe.py, reference.py, skills.py, vision.py, runtime/{control,custom,ollama,llamacpp,lmstudio}.py, adapters/{responses,chat}_adapter.py
+- services/: gateway.py, search.py, tools.py, attachments.py, capability_probe.py, reference.py, supplements.py, vision.py, runtime/{control,custom,ollama,llamacpp,lmstudio}.py, adapters/{responses,chat}_adapter.py
 - schemas/: profile.py, character.py, references.py, attachments.py, results.py
 - nodes/: llm_chat.py, reference_analyzer.py, character_bible.py, storyboard_builder.py, prompt_studio.py, h3_prompt_studio.py, runtime_control.py
 - server/: routes.py, config_store.py

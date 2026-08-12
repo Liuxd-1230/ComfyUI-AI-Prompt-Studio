@@ -51,6 +51,28 @@ def test_llm_generate_happy_path(monkeypatch, store):
     assert warnings == ""
 
 
+def test_llm_generate_explicit_markdown_supplement_enters_assembly(monkeypatch, store, tmp_path):
+    from aps.services import supplements
+
+    monkeypatch.setattr(supplements, "supplements_dir",
+                        lambda: tmp_path / "prompt_supplements")
+    record = supplements.import_supplement({
+        "supplement_id": "llm-notes", "title": "LLM notes", "filename": "llm.md",
+        "scope": "node", "node_ids": ["llm.generate"],
+        "content": "Use concise bullet points.",
+    })
+    payload = setup_profile(store)
+    fake = FakeGateway(LLMResult(text="ok", profile_id="p1"))
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: fake)
+    llm_chat_mod.APS_LLMGenerate().generate(
+        AI_PROFILE=payload, system_prompt="", user_prompt="问", context="",
+        history_mode="off", output_mode="text", json_schema="",
+        prompt_supplements=record.supplement_id)
+    assert "Use concise bullet points." in fake.req.system
+    assert any(item["source_id"] == "supplement.llm-notes"
+               for item in fake.req.assembly_report["sources"])
+
+
 def test_llm_generate_uses_capable_default_system_prompt(monkeypatch, store):
     payload = setup_profile(store)
     fake = FakeGateway(LLMResult(text="ok", profile_id="p1"))

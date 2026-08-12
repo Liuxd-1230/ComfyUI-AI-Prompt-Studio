@@ -27,4 +27,4 @@
 
 ## 版权文档副本（不提交）
 
-- `docs/sources/minimax_h3_FL2V手册.html`、`docs/sources/minimax_h3_r2v手册.html` 是 MiniMax 官方手册的本地副本，仅用于格式真源参照；**已加入 .gitignore，不进入版本库**。格式规则已提炼进 renderer/validator 与 `skills/minimax_h3/`，不将手册全文塞入请求。
+- `docs/sources/minimax_h3_FL2V手册.html`、`docs/sources/minimax_h3_r2v手册.html` 是 MiniMax 官方手册的本地副本，仅用于格式真源参照；**已加入 .gitignore，不进入版本库**。格式规则已提炼进 Model Core、renderer/validator，不将手册全文塞入请求。
