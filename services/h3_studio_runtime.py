@@ -16,6 +16,7 @@ from ..schemas.references import AssetRef, ReferenceManifest
 from ..services.h3_plan import (
     map_image_assets,
     normalize_media_labels,
+    normalize_ref2va_summary,
     sync_manifest_assets,
 )
 from ..validators.minimax_h3 import validate_h3
@@ -55,6 +56,7 @@ def normalize_plan(plan: H3PromptPlan, manifest: ReferenceManifest,
     plan.warnings = list(dict.fromkeys(
         [*plan.warnings, *map_image_assets(plan, image_count, mode)]))
     normalize_media_labels(plan)
+    normalize_ref2va_summary(plan)
     normalized = get_plan_adapter("minimax_h3").normalize(plan)
     expected_indices = list(range(1, len(normalized.shots) + 1))
     if previous_indices and previous_indices != expected_indices:
@@ -200,13 +202,19 @@ def stable_lock_issues(plan: H3PromptPlan, constraints: list[str]) -> list[str]:
 
 
 def _register_images(manifest: ReferenceManifest, count: int) -> None:
-    existing = {asset.asset_id for asset in manifest.assets}
+    existing_images = [asset for asset in manifest.assets
+                       if asset.asset_type == "image"]
     for index in range(1, count + 1):
-        if f"image_{index}" not in existing:
-            manifest.add_asset(AssetRef(
-                asset_id=f"image_{index}", asset_type="image", data_ref="images",
-                source="APS_H3PromptStudio", h3_labels=[f"Picture {index}"],
-                note=f"connected picture reference {index}"))
+        if index <= len(existing_images):
+            asset = existing_images[index - 1]
+            label = f"Picture {index}"
+            if label not in asset.h3_labels:
+                asset.h3_labels.append(label)
+            continue
+        manifest.add_asset(AssetRef(
+            asset_id=f"image_{index}", asset_type="image", data_ref="images",
+            source="APS_H3PromptStudio", h3_labels=[f"Picture {index}"],
+            note=f"connected picture reference {index}"))
 
 
 def _register_media(manifest: ReferenceManifest, kind: str,

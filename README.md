@@ -56,6 +56,10 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 
 示例均不含密钥。
 
+完整的公开模式、35 条类型兼容端口连接、测试提示词、效果边界与“基元”档案实跑结果见
+[提示词边界与工作流全连接验收](docs/testing/提示词边界与工作流全连接验收.md)；机器可读目录为
+[`examples/acceptance/prompt_matrix.json`](examples/acceptance/prompt_matrix.json)。
+
 ## 节点说明
 
 完整的每个输入/输出端口、连接方向和类型说明见 [节点端口参考](docs/node-reference-zh.md)；所有枚举模式、期待输入与成品示例见 [模式与提示词示例](docs/prompt-mode-examples-zh.md)。这些内容也同步到 ComfyUI 节点内的中文帮助页。
@@ -134,7 +138,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 powershell -ExecutionPolicy Bypass -File scripts/verify_prompt_contracts.ps1
 ```
 
-- PH9 单一入口依次执行全量 pytest、所有生产层 Python 编译、逐个 `web/*.js` 语法检查和 `git diff --check`；测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约和主链路回归。验收矩阵见 `docs/prompt-architecture/ph9-prompt-contract-regression.md`。
+- PH9 单一入口依次执行全量 pytest、所有生产层 Python 编译、逐个 `web/*.js` 语法检查和 `git diff --check`；测试覆盖加载器语义、aiohttp 路由回环、三后端 mock、H3/ANIMA 正反用例、示例工作流接口契约、全公开模式/端口目录和主链路回归。发布门见 `docs/prompt-architecture/ph9-prompt-contract-regression.md`，实跑矩阵见 `docs/testing/提示词边界与工作流全连接验收.md`。
 - 架构与决策：`docs/decisions.md`、`docs/adr/`、`docs/compatibility.md`。
 - P0-P4 历史架构与 ADR 0007 当前双通道决策见 `docs/prompt-architecture/` 和 `docs/adr/`。宽松模式只做可证明的硬检查；严格模式执行 ChangeSet、确定性依赖闭包、Diff Guard、locks、renderer/validator 与 revision CAS。两种模式都不调用 Semantic Critic，也不做隐藏的创意自动修复。四个目标模型的一手证据和本地差异见 `docs/prompt-sources/`。
 - 2026-08-11 的真实 ComfyUI/LM Studio 提示词验收记录见 `docs/prompt-architecture/p4.1-real-acceptance-2026-08-11.md`；记录明确区分已实跑项、自动化故障注入项和仍未能由当前模型现场诱发的损坏协议响应。

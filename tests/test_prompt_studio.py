@@ -12,6 +12,7 @@ from aps.schemas.prompt_session import PromptSession
 from aps.schemas.prompt_plan import ValidationReport
 from aps.schemas.references import ReferenceManifest
 from aps.schemas.results import LLMResult
+from aps.schemas.storyboard import StoryItem
 from aps.services.prompt_protocol import LenientPromptOutput
 
 
@@ -39,6 +40,19 @@ def test_prompt_studio_public_interface_has_no_operation_or_plan_ports() -> None
         "positive", "negative", "prompt_session", "validation",
         "change_summary")
     assert studio_mod.APS_PromptStudio.OUTPUT_NODE is True
+
+
+def test_prompt_studio_consumes_public_story_item_schema() -> None:
+    item = StoryItem(
+        item_id="shot_1", kind="shot", title="Rainy carriage",
+        text="Rin reads a letter beside a rain-covered train window.",
+        location="train carriage", camera="medium shot")
+
+    combined = studio_mod._input_text("Use cool fluorescent light.", item.to_json())
+
+    assert "Rin reads a letter" in combined
+    assert "medium shot" in combined
+    assert "Use cool fluorescent light" in combined
 
 
 def test_lenient_create_and_refine_commit_freeform_revisions(

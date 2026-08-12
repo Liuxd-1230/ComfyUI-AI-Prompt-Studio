@@ -536,7 +536,15 @@ def _strict_image_schema(family: str) -> dict[str, Any]:
         "type": "object", "additionalProperties": False,
         "properties": {
             "content": content,
-            "negative": {"type": "string"},
+            "negative": {
+                "type": "string",
+                "description": (
+                    "Optional comma-separated undesired artifacts or defects only. "
+                    "Never place a requested subject, identity trait, action, object, "
+                    "location, composition, style, or reference fact here. Return an "
+                    "empty string when the user supplied no independent negative constraint."
+                ),
+            },
         },
         "required": ["content", "negative"],
     }
@@ -608,7 +616,7 @@ def _input_text(text: str, story_item: Any) -> str:
 
     item = StoryItem.from_json(story_item)
     story = "\n".join(part for part in (
-        item.summary, item.action, item.camera) if str(part).strip())
+        item.title, item.text, item.location, item.camera) if str(part).strip())
     return "\n".join(part for part in (story, base) if part).strip()
 
 

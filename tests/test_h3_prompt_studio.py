@@ -365,3 +365,67 @@ def test_h3_i2va_alignment_consumes_picture_without_ref2va_retention() -> None:
     assert not any(issue.code in {
         "h3_reference_unused", "h3_reference_retention_missing"}
         for issue in report.issues)
+
+
+def test_h3_connected_images_reuse_analyzer_manifest_assets() -> None:
+    from aps.services.h3_studio_runtime import prepare_manifest
+
+    manifest = ReferenceManifest(assets=[
+        AssetRef(asset_id="img_0", asset_type="image", data_ref="image_tensor")])
+    class TwoImages:
+        shape = (2, 8, 8, 3)
+
+    prepared, count = prepare_manifest(
+        manifest.to_json(), TwoImages(), (None, None, None), (None, None, None))
+
+    assert count == 2
+    assert len([asset for asset in prepared.assets
+                if asset.asset_type == "image"]) == 2
+    assert [asset.h3_labels[0] for asset in prepared.assets] == [
+        "Picture 1", "Picture 2"]
+
+
+def test_h3_manifest_asset_ids_are_canonicalized_without_duplicates() -> None:
+    from aps.schemas.h3 import H3Asset, H3PromptPlan, H3Retention, H3Shot, H3Subject
+    from aps.services.h3_plan import sync_manifest_assets
+
+    manifest = ReferenceManifest(assets=[AssetRef(
+        asset_id="img_0", asset_type="image", data_ref="image_tensor",
+        h3_labels=["Picture 1"])])
+    plan = H3PromptPlan(
+        mode="Ref2VA",
+        assets=[H3Asset(label="img_0", kind="picture"),
+                H3Asset(label="Picture 1", kind="picture")],
+        subjects=[H3Subject(label="Subject 1", source_assets=["img_0"])],
+        retention=[H3Retention(label="img_0")],
+        shots=[H3Shot(references=["img_0"])],
+    )
+
+    sync_manifest_assets(plan, manifest)
+
+    assert [asset.label for asset in plan.assets] == ["Picture 1"]
+    assert plan.subjects[0].source_assets == ["Picture 1"]
+    assert plan.retention[0].label == "Picture 1"
+    assert plan.shots[0].references == ["Picture 1", "Subject 1"]
+
+
+def test_h3_locked_manifest_subject_gets_deterministic_retention() -> None:
+    from aps.schemas.h3 import H3PromptPlan, H3Shot
+    from aps.schemas.references import SubjectRef
+    from aps.services.h3_plan import sync_manifest_assets
+
+    manifest = ReferenceManifest(
+        assets=[AssetRef(asset_id="img_0", asset_type="image",
+                         h3_labels=["Picture 1"])],
+        subjects=[SubjectRef(subject_id="rose", kind="character",
+                             definition="Rose", source_assets=["img_0"],
+                             locked=True)])
+    plan = H3PromptPlan(mode="Ref2VA", shots=[
+        H3Shot(index=1, references=["Picture 1"])])
+
+    sync_manifest_assets(plan, manifest)
+
+    subject_retention = next(item for item in plan.retention
+                             if item.label == "Subject 1")
+    assert subject_retention.marker == "fully_preserved"
+    assert subject_retention.shot_refs == ["Shot 1"]

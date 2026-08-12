@@ -251,6 +251,15 @@ def test_candidate_check_still_rejects_real_positive_negative_conflict() -> None
         "正向内容与负向约束仍冲突: blurry"]
 
 
+def test_candidate_check_accepts_explicitly_negated_positive_prose() -> None:
+    content = _plan().to_json()
+    content["scene_description"] = (
+        "Rin reads a blank letter; no visible text appears anywhere in the image.")
+    state = ImageSemanticPlan(content=content, negative="visible text")
+
+    assert validate_image_candidate(state) == []
+
+
 def test_h3_duration_change_deterministically_scales_timeline_cutpoints() -> None:
     plan = H3PromptPlan(duration_seconds=10.0, soundscape="room tone",
                         shots=[H3Shot(index=1), H3Shot(index=2, start_time=8.0)])

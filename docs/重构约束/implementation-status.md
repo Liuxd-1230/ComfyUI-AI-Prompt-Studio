@@ -120,6 +120,12 @@ evidence map is `docs/prompt-architecture/ph9-prompt-contract-regression.md`. Ex
 provider behavior changes still require a separately recorded live acceptance run;
 the deterministic gate does not overclaim that boundary.
 
+The follow-up public matrix is executable in `tests/test_acceptance_matrix.py` and
+recorded in `examples/acceptance/prompt_matrix.json`. It covers every public mode and
+all 35 type-compatible APS port connections. The 2026-08-13 production-node run used
+the 基元 profile without downstream generation models: Image Studio 12/12, H3 Studio
+10/10, LLM text/schema, and text-reference→Bible→Storyboard→Select passed.
+
 ## Known Phase Gaps Outside §108
 
 - Both Studio nodes use their selected freeform or typed transaction lane end to end;

@@ -141,6 +141,17 @@ def _contains_semantic_token(text: str, token: str) -> bool:
     if not token:
         return False
     if re.search(r"[\u3400-\u9fff]", token):
-        return token in haystack
+        for match in re.finditer(re.escape(token), haystack):
+            prefix = haystack[max(0, match.start() - 8):match.start()]
+            if not re.search(r"(?:不要|不得|不含|没有|无)\s*$", prefix):
+                return True
+        return False
     pattern = r"(?<![\w])" + re.escape(token).replace(r"\ ", r"[\s_-]+") + r"(?![\w])"
-    return re.search(pattern, haystack) is not None
+    for match in re.finditer(pattern, haystack):
+        prefix = haystack[max(0, match.start() - 24):match.start()]
+        if not re.search(
+                r"(?:\bno|\bwithout|\bavoid|\bexclude|\bomit|\bremove|"
+                r"\bdo\s+not\s+(?:add|include|show|render|display)|"
+                r"\bmust\s+not\s+(?:include|show|contain))\s*$", prefix):
+            return True
+    return False

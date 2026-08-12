@@ -317,6 +317,7 @@ def sync_manifest_assets(plan: H3PromptPlan,
                            note=source.note)
             plan.assets.append(item)
             existing_labels[label] = item
+    _canonicalize_manifest_asset_labels(plan, asset_labels)
     for index, source in enumerate(manifest.subjects, start=1):
         label = f"Subject {index}"
         mapped = [asset_labels.get(asset_id, asset_id)
@@ -330,6 +331,61 @@ def sync_manifest_assets(plan: H3PromptPlan,
         else:
             existing.source_assets = list(dict.fromkeys(
                 list(existing.source_assets) + mapped))
+        if source.locked and not any(
+                item.label == label for item in plan.retention):
+            plan.retention.append(H3Retention(
+                label=label,
+                marker="fully_preserved",
+                notes="Locked reference subject; preserve identity and defining traits.",
+                shot_refs=[f"Shot {shot.index}" for shot in plan.shots
+                           if label in shot.references],
+            ))
+    _bind_subjects_to_asset_shots(plan)
+    for retention in plan.retention:
+        if retention.label.startswith("Subject ") and not retention.shot_refs:
+            retention.shot_refs = [f"Shot {shot.index}" for shot in plan.shots
+                                   if retention.label in shot.references]
+
+
+def _canonicalize_manifest_asset_labels(
+        plan: H3PromptPlan, asset_labels: dict[str, str]) -> None:
+    """Replace provider/internal asset IDs with official H3 media labels."""
+    if not asset_labels:
+        return
+    merged: dict[str, H3Asset] = {}
+    for asset in plan.assets:
+        asset.label = asset_labels.get(asset.label, asset.label)
+        previous = merged.get(asset.label)
+        if previous is None:
+            merged[asset.label] = asset
+            continue
+        if not previous.source and asset.source:
+            previous.source = asset.source
+        if previous.alignment_time is None and asset.alignment_time is not None:
+            previous.alignment_time = asset.alignment_time
+        if not previous.note and asset.note:
+            previous.note = asset.note
+    plan.assets = list(merged.values())
+    for retention in plan.retention:
+        retention.label = asset_labels.get(retention.label, retention.label)
+    for subject in plan.subjects:
+        subject.source_assets = list(dict.fromkeys(
+            asset_labels.get(label, label) for label in subject.source_assets))
+    for shot in plan.shots:
+        shot.references = list(dict.fromkeys(
+            asset_labels.get(label, label) for label in shot.references))
+
+
+def _bind_subjects_to_asset_shots(plan: H3PromptPlan) -> None:
+    """A shot using a subject's source media also uses that defined subject."""
+    for shot in plan.shots:
+        referenced = set(shot.references)
+        for subject in plan.subjects:
+            if referenced.intersection(subject.source_assets):
+                referenced.add(subject.label)
+        shot.references = list(dict.fromkeys([*shot.references, *(
+            subject.label for subject in plan.subjects
+            if subject.label in referenced)]))
 
 
 MEDIA_LABEL_RE = re.compile(r"^(Picture|Video|Audio)\s(\d+)$")
@@ -364,6 +420,19 @@ def normalize_media_labels(plan: H3PromptPlan) -> None:
     for shot in plan.shots:
         shot.references = [mapping.get(r, r) for r in shot.references]
     # 首行对齐指令中的 Picture 引用由 renderer 依据 assets 生成，无需改写
+
+
+def normalize_ref2va_summary(plan: H3PromptPlan) -> None:
+    """CREATE-style Ref2VA plans use one official task-type prefix."""
+    if plan.mode not in {"R2V", "Ref2VA"}:
+        return
+    allowed = {"keyframe completion", "reference generation", "video editing",
+               "video continuation", "audio reuse", "audio reference"}
+    match = re.match(r"^\[([^]]+)\]\s*(.*)$", plan.summary.strip(), re.S)
+    if match and match.group(1).strip().casefold() in allowed:
+        return
+    body = match.group(2).strip() if match else plan.summary.strip()
+    plan.summary = "[reference generation]" + (f" {body}" if body else "")
 
 
 # ---------------------------------------------------------------- 工具

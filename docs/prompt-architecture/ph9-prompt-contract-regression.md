@@ -25,3 +25,9 @@ Prompt-call ownership remains guarded by
 requires a matching inventory entry and test change. A green PH9 gate proves the
 checked contracts; it does not replace an explicit live-provider acceptance run when
 provider behavior itself changes.
+
+The public-mode, public-port and live-provider catalog is
+`examples/acceptance/prompt_matrix.json`; its Chinese execution guide is
+`docs/testing/提示词边界与工作流全连接验收.md`. The catalog is checked dynamically
+against node interfaces, so a typed connection cannot be added or removed without an
+explicit acceptance-matrix update.
