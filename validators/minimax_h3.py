@@ -90,7 +90,7 @@ def validate_h3(prompt: str, mode: str = "T2VA", *, duration: float | None = Non
     # T2VA is text-only. A manifest may still travel through a larger workflow,
     # but its assets are not mandatory references for this generation mode.
     if plan is not None and mode != "T2VA":
-        _check_plan_references(report, plan)
+        _check_plan_references(report, plan, mode)
     if plan is not None:
         _check_plan_speakers(report, plan)
     return report
@@ -376,7 +376,7 @@ def _check_unresolved_references(report, prompt: str) -> None:
             report.add("warning", "h3_reference_unknown", f"无法识别的引用标签 <{label}>")
 
 
-def _check_plan_references(report, plan) -> None:
+def _check_plan_references(report, plan, mode: str = "Ref2VA") -> None:
     defined = {str(label).strip("<>") for label in plan.all_reference_labels()}
     used = set()
     for shot in plan.shots:
@@ -384,6 +384,12 @@ def _check_plan_references(report, plan) -> None:
     used.update(str(item.label).strip("<>") for item in plan.retention)
     for label in sorted(used - defined):
         report.add("error", "h3_reference_undefined", f"引用 <{label}> 没有对应定义")
+    # I2VA/FL2VA/L2VA consume their connected pictures through the mandatory
+    # deterministic alignment line. The six-section retention_analysis contract
+    # exists only in Ref2VA; demanding it in base modes made every valid I2VA plan
+    # fail even though the rendered first line already fully references Picture 1.
+    if mode not in {"R2V", "Ref2VA"}:
+        return
     shot_used = {str(label).strip("<>") for shot in plan.shots for label in shot.references}
     retained = {str(item.label).strip("<>") for item in plan.retention}
     for label in sorted(defined - shot_used):

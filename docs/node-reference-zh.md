@@ -52,6 +52,8 @@
 
 输出：`prompt` 是可接 MiniMax H3 生成节点的最终 STRING；`prompt_session` 保存会话；`REFERENCE_MANIFEST` 是同步后的媒体清单；`validation` 是规则报告；`change_summary` 是本轮摘要。内部 H3 Plan 不作为公开端口。
 
+I2VA/FL2VA/L2VA 会用官方首行对齐句消费已连接图片；`retention_analysis` 仅属于 Ref2VA 六段协议。`character_bible.name` 是库内显示身份，不是必须画出的特征；真正需硬锁的发型、服装、配饰等应在 Character Bible 中锁定对应 trait。显示名可在成稿中省略，但一旦使用必须与来源逐字一致。
+
 ## APS_RuntimeControl · 本地运行时
 
 输入：`backend` 选择 Ollama/llama.cpp/LM Studio/custom；`action` 选择状态、列模型、加载、卸载、重载或全部卸载；`url` 留空用后端默认地址；`model` 在模型动作时填写；可选 `AI_PROFILE` 用于把运行状态继续向下传。

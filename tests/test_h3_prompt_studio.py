@@ -9,7 +9,7 @@ import aps.nodes.h3_prompt_studio as studio_mod
 from aps.domain.recovery_journal import DurableRecoveryJournal
 from aps.schemas.character import CharacterBible, CharacterTrait
 from aps.schemas.prompt_session import PromptSession
-from aps.schemas.references import ReferenceManifest
+from aps.schemas.references import AssetRef, ReferenceManifest
 from aps.schemas.results import LLMResult
 from aps.services.h3_studio_runtime import normalize_plan
 
@@ -317,3 +317,51 @@ def test_h3_lenient_missing_connected_identity_repairs_once_then_rejects(
             _profile(store), "Rin waits", "T2VA", 10.0, "lenient",
             character_bible=bible.to_json(), message_nonce="identity")
     assert len(SequenceGateway.requests) == 2
+
+
+def test_h3_display_name_is_not_a_required_visual_anchor() -> None:
+    """A UI/library label is not itself a drawable identity fact."""
+    bible = CharacterBible(character_id="rose", name="玫瑰午睡时", traits=[
+        CharacterTrait(name="hair", value="long dark wavy hair", category="stable")])
+    parsed = studio_mod.LenientPromptOutput(
+        prompt=_valid_prompt(), summary="", kind="tagged")
+
+    report = studio_mod._validate_lenient_h3(
+        parsed, "T2VA", 5.0, ReferenceManifest(), 0, [bible], "woman waits")
+
+    assert report.valid
+    assert not any(issue.code == "h3_identity_anchor_missing"
+                   for issue in report.issues)
+
+
+def test_h3_rejects_near_copy_display_name_drift() -> None:
+    bible = CharacterBible(character_id="rose", name="玫瑰午睡时")
+    parsed = studio_mod.LenientPromptOutput(
+        prompt=_valid_prompt().replace("A woman", "玫瑰午时睡"),
+        summary="", kind="tagged")
+
+    report = studio_mod._validate_lenient_h3(
+        parsed, "T2VA", 5.0, ReferenceManifest(), 0, [bible], "woman waits")
+
+    assert not report.valid
+    assert any(issue.code == "h3_identity_name_drift" for issue in report.issues)
+
+
+def test_h3_i2va_alignment_consumes_picture_without_ref2va_retention() -> None:
+    """Base-mode alignment is the reference contract; retention belongs to Ref2VA."""
+    plan = studio_mod.parse_plan_json(json.dumps(PLAN), "I2VA", 5.0)
+    manifest = ReferenceManifest(assets=[
+        AssetRef(asset_id="img_0", asset_type="image", data_ref="image_tensor")])
+
+    normalized = normalize_plan(
+        plan, manifest, image_count=1, mode="I2VA", duration=5.0)
+    rendered, report = studio_mod.render_validate(
+        normalized, manifest, image_count=1, mode="I2VA", duration=5.0)
+
+    assert rendered.startswith(
+        "For the target video, at 0.00 seconds into the target video, "
+        "<Picture 1> (from [Shot 1]) is fully referenced.")
+    assert report.valid
+    assert not any(issue.code in {
+        "h3_reference_unused", "h3_reference_retention_missing"}
+        for issue in report.issues)

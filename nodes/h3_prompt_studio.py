@@ -524,9 +524,23 @@ def _append_identity_anchor_errors(
     folded = prompt.casefold()
     missing: list[str] = []
     for bible in bibles:
-        anchors = [bible.name, *[item.value for item in bible.locked_traits()]]
+        # ``name`` is a library/display identity, not necessarily visible content.
+        # Requiring it verbatim rejected valid romanization (Li Jiayi vs 李佳奕) and
+        # user labels such as “参考人物”. Only explicitly locked drawable traits are
+        # hard prompt anchors; image-mode identity is additionally bound by the
+        # deterministic <Picture N> alignment/reference protocol.
+        anchors = [item.value for item in bible.locked_traits()]
         missing.extend(anchor for anchor in anchors
                        if anchor and anchor.casefold() not in folded)
+        name = bible.name.strip()
+        if name and name.casefold() not in folded:
+            cjk = list(dict.fromkeys(re.findall(r"[\u3400-\u9fff]", name)))
+            overlap = sum(character in prompt for character in cjk)
+            if len(cjk) >= 2 and overlap >= max(2, len(cjk) - 1):
+                report.add(
+                    "error", "h3_identity_name_drift",
+                    f"角色显示名 {name!r} 在 H3 提示词中被近似改写；"
+                    "请逐字保留或完全省略该名称，不要调换字序")
     if missing:
         report.add("error", "h3_identity_anchor_missing",
                    "H3 提示词缺少锁定身份锚点：" + "、".join(dict.fromkeys(missing)))
