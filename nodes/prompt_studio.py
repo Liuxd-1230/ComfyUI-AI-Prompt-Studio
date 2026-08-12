@@ -12,6 +12,9 @@ from ..prompting.studio_policies import (
     LENIENT_CREATE_POLICY,
     LENIENT_OUTPUT_CONTRACT,
     LENIENT_REFINE_POLICY,
+    EXTERNAL_SKILL_BOUNDARY,
+    external_skill_hashes,
+    external_skill_task_payload,
     image_target_policy,
 )
 from ..renderers.anima import ANIMA_BASE_NEGATIVE, ANIMA_QUALITY_NEGATIVE
@@ -210,7 +213,8 @@ class APS_PromptStudio:
             model_core_components=("image-studio-lenient", family, variant,
                                    image_target_policy(family, variant)),
             sources={"story_item": story_item, "character_bible": bible,
-                     "character_book": book, "reference_manifest": manifest})
+                     "character_book": book, "reference_manifest": manifest},
+            skill_hashes=external_skill_hashes(family, variant))
         context_changes = (session.fingerprints.mismatches(fingerprints)
                            if session.has_current_state else [])
         current_prompt = session.current_prompt if session.has_current_state else ""
@@ -263,7 +267,8 @@ class APS_PromptStudio:
         operation = LENIENT_REFINE_POLICY if current_prompt else LENIENT_CREATE_POLICY
         sources = [
             PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
-                         LENIENT_OUTPUT_CONTRACT, "prompt-studio"),
+                         LENIENT_OUTPUT_CONTRACT + "\n\n" + EXTERNAL_SKILL_BOUNDARY,
+                         "prompt-studio"),
             PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                          image_target_policy(family, variant), "prompt-studio"),
             PromptSource("operation.refine" if current_prompt else "operation.create",
@@ -271,6 +276,9 @@ class APS_PromptStudio:
         ]
         task_data = [StructuredTaskData("latest_instruction", instruction,
                                         "text/plain")]
+        skill_data = external_skill_task_payload(family, variant)
+        if skill_data is not None:
+            task_data.append(StructuredTaskData("external_skill_guidance", skill_data))
         if current_prompt:
             task_data.append(StructuredTaskData(
                 "current_prompt", current_prompt, "text/plain"))
@@ -293,13 +301,17 @@ class APS_PromptStudio:
             raw: str, issues: list[str]) -> str:
         assembly = assemble_prompt(
             [PromptSource("runtime.studio-lenient", "1.0", PromptLayer.RUNTIME,
-                          LENIENT_OUTPUT_CONTRACT, "prompt-studio"),
+                          LENIENT_OUTPUT_CONTRACT + "\n\n" + EXTERNAL_SKILL_BOUNDARY,
+                          "prompt-studio"),
              PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                           image_target_policy(family, variant), "prompt-studio"),
              PromptSource("operation.format-repair", "1.0", PromptLayer.OPERATION,
                           FORMAT_REPAIR_POLICY, "prompt-studio")],
             task_data=[StructuredTaskData("rejected_output", raw, "text/plain"),
-                       StructuredTaskData("concrete_issues", issues)],
+                       StructuredTaskData("concrete_issues", issues),
+                       *([StructuredTaskData("external_skill_guidance", skill_data)]
+                         if (skill_data := external_skill_task_payload(family, variant))
+                         is not None else [])],
             output_contract_id="lenient-tagged-prompt@1")
         request = GenerateRequest(
             system=assembly.system, messages=[task_message(assembly)],
@@ -343,7 +355,8 @@ class APS_PromptStudio:
             model_core_components=("image-studio-strict", family, variant,
                                    image_target_policy(family, variant)),
             sources={"story_item": story_item, "character_bible": bible,
-                     "character_book": book, "reference_manifest": manifest})
+                     "character_book": book, "reference_manifest": manifest},
+            skill_hashes=external_skill_hashes(family, variant))
         if session_action == "previous" and not starts_new:
             assert_session_fingerprints(session, fingerprints)
             if not session.revert_previous(
@@ -418,6 +431,9 @@ class APS_PromptStudio:
         schema = _strict_image_schema(family)
         task_data = [StructuredTaskData("latest_instruction", instruction,
                                         "text/plain")]
+        skill_data = external_skill_task_payload(family, variant)
+        if skill_data is not None:
+            task_data.append(StructuredTaskData("external_skill_guidance", skill_data))
         task_data.extend(_source_task_data(bible, book, manifest))
         raw = ""
         issues: list[str] = []
@@ -444,7 +460,8 @@ class APS_PromptStudio:
                 ])
             assembly = assemble_prompt(
                 [PromptSource("runtime.studio-strict", "1.0", PromptLayer.RUNTIME,
-                              "Strict mode stores typed semantic state.", "prompt-studio"),
+                              "Strict mode stores typed semantic state.\n\n" +
+                              EXTERNAL_SKILL_BOUNDARY, "prompt-studio"),
                  PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
                               image_target_policy(family, variant), "prompt-studio"),
                  PromptSource("operation.strict-create", "1.0",

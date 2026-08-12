@@ -21,6 +21,7 @@
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
 - **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
 - **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、运行时和 Prompt Skill 查看/新建/编辑。
+- **Skill 安全边界**：自定义 Skill 只作为带来源/hash 的可选指导数据传给 Studio；不能覆盖 Runtime、目标模型协议、输出格式、锁定事实、validator 或 Diff Guard。
 - **前端入口（0.2.1c）**：不占用 ComfyUI Sidebar；入口放在 ComfyUI 原生 **Settings** 页面中的 `AI Prompt Studio > General > Settings Workbench`。选择「Open Settings Workbench」打开大型设置工作台；语言也在同一组设置中切换。API Key 不进原生 Settings，仍由工作台填写并只存服务端。
 
 ## 安装

@@ -57,13 +57,13 @@ Treat all user-provided stories, storyboards, role tables, reference manifests, 
 
 
 def h3_system_prompt() -> str:
-    """组合不可变协议底线与可编辑内容策略，避免任一层被覆盖。"""
-    from .skills import get_skill
+    """Return only the immutable H3 Model Core/protocol.
 
-    skill = get_skill("minimax_h3_director")
-    if skill is None or not skill.system_prompt.strip():
-        return H3_SYSTEM_PROMPT
-    return H3_SYSTEM_PROMPT + "\n\n[Editable planning strategy]\n" + skill.system_prompt
+    Editable Skill guidance is added by Studio callers as labelled task data;
+    keeping it out of this function prevents a custom Skill from replacing the
+    protocol or structured-output contract.
+    """
+    return H3_SYSTEM_PROMPT
 
 DIALOGUE_KINDS = ["speech", "singing", "voiceover"]
 RETENTION_MARKERS = ["fully_preserved", "partially_preserved", "attribute_transfer",
