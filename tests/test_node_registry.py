@@ -126,6 +126,13 @@ def test_storyboard_select_node(ext, storyboard):
     assert batch == 1 and item_list["items"][0]["shot_id"] == "s2sh1"
 
 
+def test_storyboard_builder_retry_switch_is_visible(ext):
+    spec = ext.NODE_CLASS_MAPPINGS["APS_StoryboardBuilder"].INPUT_TYPES()
+    retry = spec["required"]["retry_on_invalid"]
+    assert retry[0] == "BOOLEAN"
+    assert retry[1]["default"] is True
+
+
 def test_storyboard_select_invalid(ext, storyboard):
     node = ext.NODE_CLASS_MAPPINGS["APS_StoryboardSelect"]()
     with pytest.raises(ValueError):

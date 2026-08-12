@@ -63,7 +63,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 | **LLM Generate / Chat** | 通用对话/生成（流式、推理、联网、会话） | `AI_PROFILE`、prompt | `LLM_RESULT`、`CHAT_SESSION` |
 | **Reference Analyzer** | 文本/图片参考分析（11 种模式） | `AI_PROFILE`、text、images | `REFERENCE_ANALYSIS`、`CHARACTER_CANDIDATE`、`REFERENCE_MANIFEST`、IMAGE 透传 |
 | **Character Bible** | 合并人物特征、锁定、冲突报告 | `CHARACTER_CANDIDATE`、`existing_bible` | `CHARACTER_BIBLE`、人物提示片段 |
-| **Storyboard Builder** | 剧情 → 结构化分镜（LLM）；收敛场景/时长/ID并生成连续性报告 | `AI_PROFILE`、story_text、CharacterBook | `STORYBOARD`、continuity |
+| **Storyboard Builder** | 剧情 → 结构化分镜（LLM）；收敛场景/时长/ID并生成连续性报告；格式失败默认重试一次 | `AI_PROFILE`、story_text、CharacterBook、retry_on_invalid | `STORYBOARD`、continuity |
 | **Storyboard Select / Batch** | 场景/镜头/区间/全部选择（不调模型）；输出可直接接下游的完整镜头文本 | `STORYBOARD` | 单项、容器及真实 ComfyUI `STORY_ITEMS` 列表输出 |
 | **Image Prompt Studio** | 宽松完整提示词 / 严格 Plan+ChangeSet，自动 CREATE/REFINE | `AI_PROFILE`、text、target、execution_mode | positive、negative、`prompt_session`、validation |
 | **图片引用提示词（输入 @）** | 图片连接 → 模型引用语法与资产清单 | prompt、target、image_1～3 | prompt、`REFERENCE_MANIFEST`、references、count |

@@ -32,7 +32,7 @@
 
 ## APS_StoryboardBuilder · 分镜构建
 
-输入：`AI_PROFILE`；`story_text` 是故事而非成品提示词；`split_mode` 控制场景/镜头/节拍粒度；`target_duration` 是全片目标秒数；`max_scenes` 是硬上限；`style` 是全局视觉方向；可选人物档案、人物集合和参考清单提供连续性约束。
+输入：`AI_PROFILE`；`story_text` 是故事而非成品提示词；`split_mode` 控制场景/镜头/节拍粒度；`target_duration` 是全片目标秒数；`max_scenes` 是硬上限；`style` 是全局视觉方向；`retry_on_invalid` 默认开启，模型返回不可解析 JSON 或空场景时只重试一次；可选人物档案、人物集合和参考清单提供连续性约束。
 
 输出：`STORYBOARD` 接 Select/H3；`story_summary` 是摘要；`continuity` 列出人物/位置连续性、超出 `max_scenes` 的截断、重复 ID 修复、空场景补镜头和时长规范化警告。节点会确定性保证场景上限、全片目标时长、场景/镜头/节拍 ID 唯一，并保留镜头/节拍声音字段；模型不合规时不会默默把超限结果传给下游。
 

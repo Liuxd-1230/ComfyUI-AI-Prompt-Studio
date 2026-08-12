@@ -12,6 +12,28 @@ def setup_profile(store):
     return store.get_profile("p1").node_payload()
 
 
+def valid_storyboard_text():
+    return json.dumps({
+        "title": "雨夜",
+        "characters": ["char_rin"],
+        "character_definitions": [],
+        "scenes": [{
+            "scene_id": "s1",
+            "title": "街口",
+            "location": "街口",
+            "characters": ["char_rin"],
+            "shots": [{
+                "shot_id": "s1sh1",
+                "summary": "小凛等候",
+                "action": "小凛看向街角",
+                "characters": ["char_rin"],
+                "audio": ["雨声"],
+                "duration": 6,
+            }],
+        }],
+    }, ensure_ascii=False)
+
+
 def test_storyboard_builder_sends_role_table_and_character_contract(monkeypatch, store):
     """角色书约束必须进入真实节点的 Gateway 请求，而不是只存在辅助函数。"""
     payload = setup_profile(store)
@@ -78,3 +100,46 @@ def test_storyboard_builder_sends_role_table_and_character_contract(monkeypatch,
         {"schema_version": "1.0", "character_id": "char_rin", "name": "小凛"},
     ]
     assert storyboard["scenes"][0]["shots"][0]["audio"] == ["雨声"]
+
+
+def test_storyboard_builder_retries_once_after_invalid_json(monkeypatch, store):
+    payload = setup_profile(store)
+    responses = iter([LLMResult(text="不是 JSON", profile_id="p1"),
+                      LLMResult(text=valid_storyboard_text(), profile_id="p1")])
+    requests = []
+
+    class FakeGateway:
+        def generate(self, profile, api_key, req):
+            requests.append(req)
+            return next(responses)
+
+    monkeypatch.setattr(storyboard_mod, "Gateway", lambda: FakeGateway())
+    result = storyboard_mod.APS_StoryboardBuilder().build(
+        AI_PROFILE=payload, story_text="小凛在雨夜等候。", split_mode="shot",
+        target_duration=6.0, max_scenes=2, style="", retry_on_invalid=True)
+
+    assert len(requests) == 2
+    assert "previous response did not satisfy" in requests[1].system
+    assert result[0]["scenes"][0]["shots"][0]["audio"] == ["雨声"]
+    continuity = json.loads(result[2])
+    assert any("重试 1 次并成功" in item["note"] for item in continuity)
+
+
+def test_storyboard_builder_can_disable_invalid_json_retry(monkeypatch, store):
+    payload = setup_profile(store)
+    calls = []
+
+    class FakeGateway:
+        def generate(self, profile, api_key, req):
+            calls.append(req)
+            return LLMResult(text="不是 JSON", profile_id="p1")
+
+    monkeypatch.setattr(storyboard_mod, "Gateway", lambda: FakeGateway())
+    result = storyboard_mod.APS_StoryboardBuilder().build(
+        AI_PROFILE=payload, story_text="保留原故事。", split_mode="shot",
+        target_duration=4.0, max_scenes=1, style="", retry_on_invalid=False)
+
+    assert len(calls) == 1
+    assert result[0]["scenes"][0]["shots"][0]["summary"] == "保留原故事。"
+    continuity = json.loads(result[2])
+    assert any("未开启重试" in item["note"] for item in continuity)

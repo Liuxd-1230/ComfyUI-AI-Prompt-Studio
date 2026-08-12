@@ -41,7 +41,8 @@
         "shot",
         10.0,
         12,
-        "Cinematic, warm tones"
+        "Cinematic, warm tones",
+        true
       ]
     },
     {
