@@ -4,6 +4,8 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
 const TARGETS = new Set(["APS_PromptStudio", "APS_H3PromptStudio"]);
+const STUDIO_HEIGHT = 390;
+const MIN_NODE_WIDTH = 420;
 const byName = (node, name) => (node.widgets || []).find((widget) => widget.name === name);
 const newMessageNonce = () => globalThis.crypto?.randomUUID?.()
   || `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -102,9 +104,15 @@ function attachStudio(node) {
     "message_nonce"].forEach(
     (name) => hideSerializedWidget(byName(node, name)));
   const root = studioElement(node);
-  node.addDOMWidget("prompt_studio_workbench", "PROMPT_STUDIO", root, {
-    serialize: false, hideOnZoom: false,
+  const studioWidget = node.addDOMWidget(
+    "prompt_studio_workbench", "PROMPT_STUDIO", root, {
+      serialize: false,
+      hideOnZoom: false,
+      getMinHeight: () => STUDIO_HEIGHT,
+      getMaxHeight: () => STUDIO_HEIGHT,
+      getHeight: () => STUDIO_HEIGHT,
   });
+  studioWidget.computeSize = () => [MIN_NODE_WIDTH, STUDIO_HEIGHT];
   renderSession(node, root);
 
   const previousExecuted = node.onExecuted;
@@ -140,7 +148,12 @@ function attachStudio(node) {
     api.removeEventListener("execution_error", onExecutionError);
     previousRemoved?.apply(this, arguments);
   };
-  node.setSize?.([Math.max(node.size?.[0] || 0, 420), Math.max(node.size?.[1] || 0, 620)]);
+  const [computedWidth = MIN_NODE_WIDTH, computedHeight = 0] =
+    node.computeSize?.() || [];
+  node.setSize?.([
+    Math.max(node.size?.[0] || 0, computedWidth, MIN_NODE_WIDTH),
+    Math.max(computedHeight, STUDIO_HEIGHT + 120),
+  ]);
 }
 
 app.registerExtension({

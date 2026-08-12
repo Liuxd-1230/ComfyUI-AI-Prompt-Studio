@@ -320,7 +320,13 @@
 }
 .aps-prompt-studio {
   display: grid;
+  grid-template-rows: auto minmax(54px, 1fr) auto auto auto auto;
   gap: 8px;
+  box-sizing: border-box;
+  height: 390px;
+  min-height: 390px;
+  max-height: 390px;
+  overflow: hidden;
   padding: 10px;
   color: var(--fg-color, #ddd);
   background: rgba(15, 18, 24, 0.92);
@@ -332,8 +338,8 @@
 .aps-studio-actions { display: flex; justify-content: space-between; gap: 8px; }
 .aps-studio-revision { color: #8fc7ff; }
 .aps-studio-chat {
-  min-height: 84px;
-  max-height: 180px;
+  min-height: 54px;
+  max-height: 84px;
   overflow: auto;
   padding: 7px;
   background: rgba(0, 0, 0, 0.24);
@@ -347,11 +353,12 @@
 .aps-studio-preview {
   box-sizing: border-box;
   width: 100%;
-  min-height: 110px;
+  min-height: 76px;
+  max-height: 92px;
   resize: vertical;
   color: inherit;
   background: rgba(0, 0, 0, 0.28);
 }
-.aps-studio-input { min-height: 76px; }
+.aps-studio-input { min-height: 58px; max-height: 72px; }
 .aps-studio-summary.is-error { color: #ff9b9b; }
 .aps-studio-actions button { flex: 1; cursor: pointer; }

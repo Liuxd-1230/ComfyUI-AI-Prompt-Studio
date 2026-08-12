@@ -127,6 +127,17 @@ def test_prompt_studio_frontend_persists_backend_session_in_widget():
     assert "当前会话尚无可恢复的成功版本" in source
 
 
+def test_prompt_studio_dom_widget_has_bounded_layout_contract():
+    source = (PROJECT_ROOT / "web" / "prompt_studio.js").read_text(encoding="utf-8")
+    styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
+    assert "getMinHeight: () => STUDIO_HEIGHT" in source
+    assert "getMaxHeight: () => STUDIO_HEIGHT" in source
+    assert "studioWidget.computeSize" in source
+    assert "height: 390px" in styles
+    assert "max-height: 390px" in styles
+    assert "overflow: hidden" in styles
+
+
 def test_binding_refactor_contracts_are_present_and_referenced():
     """Architecture work must not silently lose its durable repository contract."""
     agents = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8")
