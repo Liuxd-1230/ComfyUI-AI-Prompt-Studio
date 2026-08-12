@@ -98,7 +98,17 @@ path confinement, Settings management, and production Prompt Builder loading are
 implemented. Corrupt registry state raises a visible diagnostic instead of appearing
 empty. Tests import real Markdown, capture final assembly provenance, reject disabled
 or wrong-scope files, enforce budgets/path/hash checks, and prove the final Output
-Contract follows hostile supplemental guidance. PH8 remains open.
+Contract follows hostile supplemental guidance.
+
+## PH8 Node UI Integration
+
+PH8 is complete. LLM Generate, Reference Analyzer, Storyboard Builder, Image Prompt
+Studio, and H3 Prompt Studio now share a collapsed Advanced supplement picker. It
+loads the live registry, distinguishes enabled/applicable/disabled/missing records,
+supports explicit multi-selection and the nodes where `auto` is safe, and reports
+load failures with retry. The raw serialized STRING widget is hidden but retained as
+the stable workflow compatibility field, so Markdown content never enters workflow
+JSON and the primary node UI remains focused. PH9 remains open.
 
 ## Known Phase Gaps Outside §108
 

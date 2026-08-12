@@ -608,7 +608,7 @@ function renderSupplements() {
         ]));
       }
       box.appendChild(table);
-      box.appendChild(el("p", { class: "aps-muted", text: "Markdown 只作为低优先级参考资料；不能覆盖 Model Core、输出格式、校验器或用户本轮指令。节点的 prompt_supplements 输入可填 ID，auto 会加载当前目标的已启用资料。" }));
+      box.appendChild(el("p", { class: "aps-muted", text: "Markdown 只作为低优先级参考资料；不能覆盖 Model Core、输出格式、校验器或用户本轮指令。请在支持节点的“高级设置 · Prompt Supplements”中选择；工作流只保存稳定 ID。" }));
     })
     .catch((e) => {
       box.innerHTML = "";

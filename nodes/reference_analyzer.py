@@ -157,7 +157,8 @@ class APS_ReferenceAnalyzer:
             "custom_prompt": ("STRING", {"default": "", "multiline": True,
                                          "tooltip": "analysis_mode=custom 时的自定义分析指令"}),
             "prompt_supplements": ("STRING", {"default": "", "multiline": False,
-                                                 "tooltip": "可选 Markdown 分析参考资料 ID，多个用逗号"}),
+                                                 "advanced": True,
+                                                 "tooltip": "高级设置：由 Markdown 分析参考资料选择器写入"}),
         }}
 
     RETURN_TYPES = (types.REFERENCE_ANALYSIS, types.CHARACTER_CANDIDATE, types.REFERENCE_MANIFEST,

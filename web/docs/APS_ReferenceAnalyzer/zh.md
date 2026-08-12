@@ -4,7 +4,7 @@
 
 `AI_PROFILE` 提供文字与视觉档案；`images` 接 IMAGE 批次；`text_anchor` 写已知事实；`character_bible` 提供已有身份；`custom_prompt` 仅 custom 模式使用。
 
-`prompt_supplements`：可选 Markdown 分析参考资料 ID，多个用逗号；资料只作参考，不会覆盖视觉观察守则和结构化输出契约。
+展开节点底部的“高级设置 · Prompt Supplements”可自动加载适用资料或显式多选。选择结果保存在隐藏兼容字段 `prompt_supplements`；资料只作参考，不会覆盖视觉观察守则和结构化输出契约。
 
 `analysis_mode` 模式：`character_identity` 只取稳定身份；`character_full` 全身设定；`clothing` 服装；`pose_expression` 姿势表情；`scene` 场景；`composition` 构图；`style` 媒介风格；`object` 物件；`anima_reference` 提取 ANIMA 可用词；`h3_reference` 建静态 H3 参考；`custom` 按自定义问题且禁止猜测。
 

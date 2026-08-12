@@ -14,11 +14,14 @@
   schema, registry, import/edit/delete, scope, enable/disable, runtime selection,
   budget, hash/integrity, path safety, UI management, and assembly precedence are
   executable and covered.
+- PH8 Node UI Integration is complete: all five supplement-capable nodes expose one
+  collapsed Advanced picker backed by the registry, with scope/status diagnostics and
+  stable-ID workflow serialization; the raw ID widget is hidden.
 - Runtime YAML Prompt Skill loading, CRUD, node injection, settings UI, tests, and `/skills` routes are removed.
 - Markdown supplements are implemented end to end: safe local storage, explicit/target/node selection, enable/disable, hash fingerprints, Prompt Assembly provenance, settings UI, and node inputs for LLM, Reference Analyzer, Storyboard Builder, Image Studio, and H3 Studio.
 
 ## Deliberately open
 
-- PH8 node UI integration and PH9 final prompt-contract regression remain separate.
+- PH9 final prompt-contract regression remains separate.
   No placeholder operation, output-contract, or Skill compatibility path is retained.
 - Markdown supplements do not become a second policy language; adding a new hard rule requires a Model Core/code/test change.

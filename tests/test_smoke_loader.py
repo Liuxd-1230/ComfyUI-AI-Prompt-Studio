@@ -175,3 +175,22 @@ def test_studio_session_widgets_follow_public_inputs(loaded):
     assert list(h3_inputs["required"])[-2:] == ["execution_mode", "session_action"]
     assert list(h3_inputs["optional"])[-3:] == [
         "prompt_session", "message_nonce", "prompt_supplements"]
+    assert composer_inputs["optional"]["prompt_supplements"][1]["advanced"] is True
+    assert h3_inputs["optional"]["prompt_supplements"][1]["advanced"] is True
+
+
+def test_supplement_picker_is_advanced_and_preserves_workflow_ids(loaded):
+    """PH8 uses one collapsed selector instead of exposing raw ID text fields."""
+    module, _, _ = loaded
+    for node_name in (
+            "APS_LLMGenerate", "APS_ReferenceAnalyzer", "APS_StoryboardBuilder",
+            "APS_PromptStudio", "APS_H3PromptStudio"):
+        inputs = module.NODE_CLASS_MAPPINGS[node_name].INPUT_TYPES()
+        assert inputs["optional"]["prompt_supplements"][1]["advanced"] is True
+    source = (PROJECT_ROOT / "web" / "supplement_picker.js").read_text(encoding="utf-8")
+    assert "hideSerializedWidget(widget)" in source
+    assert 'widget.serializeValue = async () => widget.value' in source
+    assert 'api.fetchApi("/ai_prompt_studio/supplements")' in source
+    assert "不适用于当前节点/目标" in source
+    assert "资料已删除或注册表中不存在" in source
+    assert 'APS_LLMGenerate: { family: "generic_llm", nodeId: "llm.generate", auto: false }' in source

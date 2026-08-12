@@ -135,7 +135,8 @@ class APS_PromptStudio:
             "prompt_session": ("STRING", {"default": "", "multiline": True}),
             "message_nonce": ("STRING", {"default": "", "multiline": False}),
             "prompt_supplements": ("STRING", {"default": "", "multiline": False,
-                                                 "tooltip": "可选 Markdown 补充资料 ID，多个用逗号；auto=加载当前目标适用的已启用资料"}),
+                                                 "advanced": True,
+                                                 "tooltip": "高级设置：由 Markdown 补充资料选择器写入；auto=自动加载当前目标适用资料"}),
         }, "hidden": {"unique_id": "UNIQUE_ID"}}
 
     RETURN_TYPES = ("STRING", "STRING", types.PROMPT_SESSION, "STRING", "STRING")

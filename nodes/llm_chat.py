@@ -65,7 +65,8 @@ class APS_LLMGenerate:
             "attachment_files": ("STRING", {"default": "", "multiline": True,
                                             "tooltip": "本机附件文件路径（每行一个，相对 ComfyUI input 目录；文本/图片自动识别；越界或超限将被拒绝）"}),
             "prompt_supplements": ("STRING", {"default": "", "multiline": False,
-                                                 "tooltip": "可选 Markdown 补充资料 ID（多个用逗号）；通用 LLM 只接受显式 ID，不自动加载"}),
+                                                 "advanced": True,
+                                                 "tooltip": "高级设置：由 Markdown 补充资料选择器写入；通用 LLM 只接受显式选择，不自动加载"}),
         }}
 
     RETURN_TYPES = ("STRING", "STRING", types.CHAT_SESSION, types.LLM_RESULT, "STRING", "STRING", "STRING")

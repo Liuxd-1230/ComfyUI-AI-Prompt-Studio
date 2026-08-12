@@ -1,5 +1,7 @@
 # Changelog
 
+- **PH8 Node UI Integration**：LLM Generate、Reference Analyzer、Storyboard Builder、Image Prompt Studio 与 H3 Prompt Studio 不再要求手填 `prompt_supplements` ID。新增默认收起的高级多选器，从后端读取资料并按 global/node/target scope 与启用状态展示；支持自动选择、显式多选、不使用、加载失败重试和旧工作流缺失 ID 提示。工作流仍只序列化稳定 ID，主操作区不增加常驻控件。
+
 - **PH7 Markdown Supplemental System 验收收口**：按绑定阶段编号正式核验既有 `PromptSupplement` schema、注册表、Markdown 导入、global/node/target scope、启停、运行时加载、数量/上下文预算、hash 与路径安全。注册表损坏不再静默显示为空；设置页会收到明确错误。新增最终 Prompt Assembly 回归，证明恶意 Markdown 位于 Output Contract 之前，不能覆盖成品格式。
 
 - **PH6 Schema Contract Cleanup**：新增 `prompting/output_contracts.py` 深模块；每个 LLM 请求现在只接收一个 `OutputContract`，由它同时拥有 provenance ID、system 摘要、机器 JSON Schema、JSON 模式和非原生 provider fallback。Image/H3 Studio、Storyboard、Reference Analyzer（含视觉身份判断）、ChangeSet 与通用 LLM JSON 输出全部迁移；删除节点中的 `json_mode`/`output_schema` 双状态、Reference 手写 JSON 示例和 Model Core 内的输出格式命令。Markdown supplement 排在 Output Contract 之前，不能覆盖最终格式。
