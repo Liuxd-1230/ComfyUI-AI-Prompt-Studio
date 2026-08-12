@@ -4,14 +4,27 @@ import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
 const TARGETS = new Set(["APS_PromptStudio", "APS_H3PromptStudio"]);
-const STUDIO_HEIGHT = 390;
+const STUDIO_HEIGHT = 438;
 const MIN_NODE_WIDTH = 420;
+const H3_MODE_HELP = {
+  T2VA: "纯文字生成视频｜不接参考图。适合从零描述完整画面、动作、镜头和声音。",
+  I2VA: "首帧生成视频｜接 1 张图，作为 0 秒的真实首帧；提示词描述它之后如何运动。",
+  FL2VA: "首尾帧生成视频｜接 2 张图，Picture 1 是首帧、Picture 2 是末帧；描述连续过渡。",
+  L2VA: "尾帧生成视频｜接 1 张图，作为视频最终帧；提示词设计前序动作并收敛到该图。",
+  Ref2VA: "多模态参考生成｜可组合图片、视频、音频来约束人物、风格、动作和声音；不是首尾帧模式。",
+};
+const EXECUTION_HELP = {
+  lenient: "宽松：直接生成并继续修改完整成品提示词，速度快、兼容本地模型；只检查明确硬错误。",
+  strict: "严格：维护结构化 Plan，每次修改走 ChangeSet、Diff Guard、锁和校验；更稳但更挑模型格式。",
+};
 const byName = (node, name) => (node.widgets || []).find((widget) => widget.name === name);
 const newMessageNonce = () => globalThis.crypto?.randomUUID?.()
   || `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 function hideSerializedWidget(widget) {
   if (!widget) return;
+  widget.hidden = true;
+  widget.draw = () => {};
   widget.computeSize = () => [0, -4];
   widget.serializeValue = async () => widget.value;
 }
@@ -38,6 +51,11 @@ function studioElement(node) {
   root.className = "aps-prompt-studio";
   root.innerHTML = `
     <header><strong>Prompt Studio</strong><span class="aps-studio-revision">v0</span></header>
+    <div class="aps-studio-help" hidden>
+      <div><strong>生成模式：</strong><span class="aps-studio-mode-help"></span></div>
+      <div><strong>执行模式：</strong><span class="aps-studio-execution-help"></span></div>
+      <div class="aps-studio-legacy-note">旧工作流里的 R2V 等同 Ref2VA；新建工作流统一使用 Ref2VA。</div>
+    </div>
     <div class="aps-studio-chat" aria-label="会话记录"></div>
     <div class="aps-studio-summary"></div>
     <label>本轮需求 / 修改意见
@@ -78,6 +96,31 @@ function studioElement(node) {
   return root;
 }
 
+function renderInlineHelp(node, root) {
+  const help = root.querySelector(".aps-studio-help");
+  if ((node.comfyClass || node.type) !== "APS_H3PromptStudio") {
+    help.hidden = true;
+    return;
+  }
+  help.hidden = false;
+  const mode = String(byName(node, "mode")?.value || "T2VA");
+  const executionMode = String(byName(node, "execution_mode")?.value || "lenient");
+  root.querySelector(".aps-studio-mode-help").textContent =
+    H3_MODE_HELP[mode] || H3_MODE_HELP.Ref2VA;
+  root.querySelector(".aps-studio-execution-help").textContent =
+    EXECUTION_HELP[executionMode] || EXECUTION_HELP.lenient;
+}
+
+function watchHelpWidget(node, root, name) {
+  const widget = byName(node, name);
+  if (!widget) return;
+  const previousCallback = widget.callback;
+  widget.callback = function updateStudioHelp(value) {
+    previousCallback?.apply(this, arguments);
+    renderInlineHelp(node, root);
+  };
+}
+
 function renderSession(node, root, session = parseSession(node), message = null) {
   const chat = root.querySelector(".aps-studio-chat");
   chat.replaceChildren();
@@ -114,6 +157,9 @@ function attachStudio(node) {
   });
   studioWidget.computeSize = () => [MIN_NODE_WIDTH, STUDIO_HEIGHT];
   renderSession(node, root);
+  renderInlineHelp(node, root);
+  watchHelpWidget(node, root, "mode");
+  watchHelpWidget(node, root, "execution_mode");
 
   const previousExecuted = node.onExecuted;
   node.onExecuted = function onExecuted(message) {
@@ -133,6 +179,7 @@ function attachStudio(node) {
       root.querySelector(".aps-studio-input").value =
         String(byName(node, "text")?.value || "");
       renderSession(node, root);
+      renderInlineHelp(node, root);
     }, 0);
   };
   const onExecutionError = ({ detail }) => {

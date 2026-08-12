@@ -12,6 +12,8 @@ from .base import Schema
 from .prompt_plan import ValidationReport, empty_validation
 
 H3_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA", "R2V"]
+# R2V is accepted only when loading legacy workflows. New node UIs expose Ref2VA.
+H3_UI_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA"]
 H3_OPERATIONS = ["generate", "rewrite", "convert_storyboard", "audit", "repair"]
 
 # R2V 六段固定顺序

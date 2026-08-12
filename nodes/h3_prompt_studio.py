@@ -17,7 +17,7 @@ from ..prompting.studio_policies import (
 )
 from ..schemas import types
 from ..schemas.character import CharacterBible, CharacterBook
-from ..schemas.h3 import H3_MODES, H3PromptPlan
+from ..schemas.h3 import H3_UI_MODES, H3PromptPlan
 from ..schemas.profile import AIProfile
 from ..schemas.prompt_plan import ValidationReport
 from ..schemas.prompt_session import PromptSession
@@ -61,9 +61,15 @@ class APS_H3PromptStudio:
             "AI_PROFILE": (types.AI_PROFILE,),
             "text": ("STRING", {"default": "", "multiline": True,
                                 "tooltip": "第一次写完整导演任务；之后只写本轮修改"}),
-            "mode": (H3_MODES, {"default": "T2VA"}),
+            "mode": (H3_UI_MODES, {
+                "default": "T2VA",
+                "tooltip": "T2VA 文生视频；I2VA 首帧；FL2VA 首尾帧；L2VA 尾帧；Ref2VA 多模态参考",
+            }),
             "duration": ("FLOAT", {"default": 10.0, "min": 4.0, "max": 15.0}),
-            "execution_mode": (EXECUTION_MODES, {"default": "lenient"}),
+            "execution_mode": (EXECUTION_MODES, {
+                "default": "lenient",
+                "tooltip": "lenient 宽松：直接维护成品提示词；strict 严格：结构化 Plan + ChangeSet 校验",
+            }),
             "session_action": (["continue", "previous", "new"],
                                {"default": "continue"}),
         }, "optional": {

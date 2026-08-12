@@ -320,12 +320,12 @@
 }
 .aps-prompt-studio {
   display: grid;
-  grid-template-rows: auto minmax(54px, 1fr) auto auto auto auto;
+  grid-template-rows: auto auto minmax(48px, 1fr) auto auto auto auto;
   gap: 8px;
   box-sizing: border-box;
-  height: 390px;
-  min-height: 390px;
-  max-height: 390px;
+  height: 438px;
+  min-height: 438px;
+  max-height: 438px;
   overflow: hidden;
   padding: 10px;
   color: var(--fg-color, #ddd);
@@ -337,6 +337,19 @@
 .aps-prompt-studio header,
 .aps-studio-actions { display: flex; justify-content: space-between; gap: 8px; }
 .aps-studio-revision { color: #8fc7ff; }
+.aps-studio-help {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px;
+  color: #cbd5e1;
+  background: rgba(74, 144, 217, 0.1);
+  border: 1px solid rgba(74, 144, 217, 0.42);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.aps-studio-help[hidden] { display: none; }
+.aps-studio-legacy-note { color: #9aa7b5; }
 .aps-studio-chat {
   min-height: 54px;
   max-height: 84px;

@@ -73,6 +73,9 @@ def test_h3_studio_public_interface_removes_operation_and_plan_port() -> None:
         "prompt", "prompt_session", "REFERENCE_MANIFEST", "validation",
         "change_summary")
     assert studio_mod.APS_H3PromptStudio.OUTPUT_NODE is True
+    assert inputs["required"]["mode"][0] == [
+        "T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA"]
+    assert "R2V" not in inputs["required"]["mode"][0]
 
 
 def test_h3_lenient_create_and_refine_commit_freeform(monkeypatch, store) -> None:

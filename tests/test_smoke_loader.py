@@ -133,9 +133,12 @@ def test_prompt_studio_dom_widget_has_bounded_layout_contract():
     assert "getMinHeight: () => STUDIO_HEIGHT" in source
     assert "getMaxHeight: () => STUDIO_HEIGHT" in source
     assert "studioWidget.computeSize" in source
-    assert "height: 390px" in styles
-    assert "max-height: 390px" in styles
+    assert "height: 438px" in styles
+    assert "max-height: 438px" in styles
     assert "overflow: hidden" in styles
+    assert "H3_MODE_HELP" in source
+    assert "EXECUTION_HELP" in source
+    assert "widget.hidden = true" in source
 
 
 def test_binding_refactor_contracts_are_present_and_referenced():
