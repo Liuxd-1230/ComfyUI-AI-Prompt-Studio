@@ -27,12 +27,12 @@ def test_new_sessions_use_single_lane_identity() -> None:
     assert session.execution_mode == "single"
 
 
-def test_legacy_strict_session_requires_new_session() -> None:
+def test_outdated_strict_session_is_rejected() -> None:
     payload = PromptSession().to_json()
     payload["schema_version"] = "3.1"
     payload["execution_mode"] = "strict"
 
-    with pytest.raises(ValueError, match="旧 strict.*新会话"):
+    with pytest.raises(ValueError, match="仅支持当前 schema_version '3.2'"):
         PromptSession.from_json(payload)
 
 

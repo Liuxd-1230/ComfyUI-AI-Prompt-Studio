@@ -15,7 +15,7 @@
 - **Storyboard Builder / Select**：模型无关的剧情分镜（场景 / 镜头 / 节拍），选择与批处理，不写目标模型格式；确定性收敛场景上限、全片时长、重复 ID、空场景和人物显示名，并保留镜头/节拍声音。
 - **Image Prompt Studio**：`APS_PromptStudio` 覆盖 ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 与 Generic Image。节点只维护可直接交给下游的完整提示词，自动从 Session 判断首次创建或继续修改。ANIMA 会确定性补齐质量前缀、输出基础负面词并合并用户明确写出的排除项；最近保留 10 个成功版本。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
-- **MiniMax H3 Prompt Studio**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（读取旧 R2V 值时归一化），支持图片、视频和音频参考，只维护完整官方 H3 文本。
+- **MiniMax H3 Prompt Studio**：T2VA / I2VA / FL2VA / L2VA / Ref2VA，支持图片、视频和音频参考，只维护完整官方 H3 文本。
 - **H3 白描与动作连续性**：优先写主体位置、动作起点/路径/结果、路人反应与明确结尾，避免没有可视信息的堆砌形容词；未规定的小动作与环境细节可为连贯性补足。H3 文本节点不会直接看裸图片像素，Ref2VA 要获得可靠人物/场景细节应连接 Reference Analyzer 输出的 Manifest。
 - **输出容错**：模型返回半截 JSON、半截标签或不满足确定性硬规则时，在不修改当前 revision 的前提下最多保真修复一次；仍失败会显示截断原文并保留上一版。
 - **P5 持久会话恢复**：Session 提交先以 transaction/base/result revision 原子写入按节点实例隔离的 Recovery Journal，再回写工作流。异常退出后打开旧工作流时会明确询问是否恢复后端较新版本；复制节点会保留当前成品并建立独立 lineage，旧请求不能覆盖新 revision。日志位于 ComfyUI `user/ai_prompt_studio/recovery-journal.json`，最多保留最近 100 个节点会话。
@@ -109,7 +109,8 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 ## MiniMax H3（官方手册规则）
 
 - **四模式（T2VA/I2VA/FL2VA/L2VA）**：首行对齐指令（I2VA 首帧锚定 / FL2VA 首尾帧路径、默认单镜头 / L2VA 尾帧收敛）+ 空行 + 三字段 `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`。
-- **Ref2VA**（旧工作流 `R2V` 自动迁移）：六段 `subject_definitions` / `summary`（`[任务类型]` 前缀）/ `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`；图片≤9、视频≤3、音频≤3、混合≤12，视频总时长≤15 秒、音频总时长≤15 秒。
+- **Ref2VA**：六段 `subject_definitions` / `summary`（`[任务类型]` 前缀）/ `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`；图片≤9、视频≤3、音频≤3、混合≤12，视频总时长≤15 秒、音频总时长≤15 秒。
+- 仅接受当前节点值和 Schema；过期的 H3 模式名、ANIMA Plan 或 Prompt Session 会明确报错，不再自动映射、重置或迁移。
 - 镜头 `[Shot 1]` 无时间戳，后续 `[Shot N] At MM:SS.mmm, ...` 严格递增；对白 `<d>[Language] ...</d>` 逐字保留原语言；说话人稳定 `(S1)` `(S2)`。
 - 首行指令、时间戳和标签编号由 **Python 确定性渲染**；`validation` 仍会检查模型产生的语义、引用、媒体边界与声音字段，失败不会伪装成通过。
 - 格式依据：[MiniMax-H3 官方提示词指南](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing)；官方仓库仅作研究来源，本项目运行时规则集中在 Model Core，实现差异与固定提交见 `docs/research/`。

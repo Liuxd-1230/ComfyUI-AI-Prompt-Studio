@@ -1,5 +1,4 @@
 # 决策记录 decisions.md
-
 > 本文件按时间保留历史决策。涉及 Prompt Composer、H3 Director、operation、
 > 独立审批、Semantic Critic 或创意自动修复的旧条目均由 ADR 0007 取代。
 
@@ -86,7 +85,7 @@
 
 ## D15. H3 渲染/校验细节（Phase 5）
 
-- **镜头检查只扫描描述字段/段**：`SHOT_RE` 会误匹配首行对齐指令里的 `(from [Shot 1])` 与 retention_analysis 段的 `[Shot N]` 引用，因此 `_check_shots` 只在 `integrated_multimodal_description`（四模式）或 `detailed_description`（R2V）内找镜头。
+- **镜头检查只扫描描述字段/段**：`SHOT_RE` 会误匹配首行对齐指令里的 `(from [Shot 1])` 与 retention_analysis 段的 `[Shot N]` 引用，因此 `_check_shots` 只在 `integrated_multimodal_description`（四模式）或 `detailed_description`（Ref2VA）内找镜头。
 - **畸形时间戳独立检测**：`SHOT_RE` 只捕获合法 `MM:SS.mmm`，格式错误的 `At XX:XX:XXX` 会被当成「缺失时间戳」；新增 `AT_RE` 单独捕获并报 `h3_ts_format`。
 - **`<d>` 语言标注独立检测**：`DIALOGUE_RE` 需要 `[Language]` 才匹配，缺失语言标注的对白匹配不上；改为对每个 `<d>` 直接检查其后是否紧跟 `[`。
 - **H3 Model Core + Markdown 参考**：`prompting/model_cores.py` 保存不可编辑的协议/内容硬规则；用户 Markdown 只能作为带来源的低优先级参考。renderer/validator 中不可变的格式协议仍由代码强制。repair 把校验问题回灌给 LLM，一次修复后重新渲染并复验。
@@ -105,11 +104,11 @@
 - 单个 CharacterBible 不再默认 `speaker_id="S1"`（曾导致多人物全部撞号）；唯一 ID 由 `CharacterBook.assign_speaker_ids()` 分配：既有 ID 稳定、删除不改动他人、新人物取下一个可用、冲突修复并记 warning。
 - 节点按「同名」复用 Book 中已有档案（保留 character_id / Speaker ID / 锁定），更新不产生重复条目。
 
-## D18. H3 媒体独立编号 + R2V 英文 + 模式资产约束（2026-08-07）
+## D18. H3 媒体独立编号 + Ref2VA 英文 + 模式资产约束（2026-08-07）
 
 - Picture/Video/Audio 按类型独立 1 起始连续编号（`normalize_media_labels` 渲染前确定性重排），manifest 标签可回溯到原始资产。
-- R2V 六段正文必须英文；检测到非英语 → 一次 LLM 修复（auto_repair，默认开）；仍失败 → validation 记 `h3_r2v_english` 错误，不做假装翻译。`<d>` 对白/歌词/画面文字保留原语言。
-- 模式资产约束：T2VA=0 图、I2VA=1、FL2VA=2、L2VA=1、R2V 不限；不满足记 error 且不生成错误引用。
+- Ref2VA 六段正文必须英文；检测到非英语 → 一次 LLM 修复（auto_repair，默认开）；仍失败 → validation 记 `h3_ref2va_english` 错误，不做假装翻译。`<d>` 对白/歌词/画面文字保留原语言。
+- 模式资产约束：T2VA=0 图、I2VA=1、FL2VA=2、L2VA=1、Ref2VA 不限；不满足记 error 且不生成错误引用。
 
 ## D19. 采样参数进档案高级设置（2026-08-07）
 
@@ -177,7 +176,7 @@
 - **原生设置项**：`AI Prompt Studio.General.language`（combo zh/en）+ `AI Prompt Studio.General.openWorkbench`（动作 combo）。**API Key 不进前端设置**——密钥存储保持服务端 SecretStore，工作台只显示脱敏值。
 - **重复打开防护**：`openPanel()` 复用 `#aps-overlay`（`panel || getElementById`），不重复建面板。
 - **诊断日志**：加载与 Settings 注册都有 `[AI Prompt Studio]` 前缀的 `console.info`；动作复位失败 `console.warn`；只打状态，不打印 API Key / 提示词 / 附件内容。
-- **前端可测性**：Settings 配置与动作通过真实 ComfyUI 0.30.2 + frontend 1.47.12 浏览器验收；生产 `settings.js` 不依赖 Sidebar/legacy 入口模块。
+- **前端可测性**：Settings 配置与动作通过真实 ComfyUI 0.30.2 + frontend 1.47.12 浏览器验收；生产 `settings.js` 不依赖 Sidebar 入口模块。
 
 ## D28. 主动能力探测（2026-08-08）
 

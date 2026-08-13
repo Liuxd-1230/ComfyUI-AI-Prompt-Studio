@@ -10,6 +10,7 @@ from typing import List, Optional
 
 from ..schemas.character import CharacterBible, CharacterBook
 from ..schemas.h3 import (
+    H3_MODES,
     H3Asset,
     H3Dialogue,
     H3PromptPlan,
@@ -29,7 +30,6 @@ MODE_HINTS = {
     "FL2VA": "首尾帧路径：描述首帧到末帧的连续变化（运动、姿态、光照过渡），官方一般偏爱单镜头。",
     "L2VA": "尾帧收敛：<Picture 1> 是末帧，推断合理的前序状态并向末帧收敛。",
     "Ref2VA": "全参考重写：subject_definitions/summary/retention_analysis/detailed_description 六段。",
-    "R2V": "全参考重写（旧名称，等同 Ref2VA）：六段固定结构。",
 }
 
 DIALOGUE_KINDS = ["speech", "singing", "voiceover"]
@@ -41,8 +41,8 @@ RETENTION_MARKERS = ["fully_preserved", "partially_preserved", "attribute_transf
 H3_SCHEMA = {
     "type": "object",
     "properties": {
-        "style_opening": {"type": "string", "description": "R2V 风格开场（1-2 句，其他模式可空）"},
-        "summary": {"type": "string", "description": "R2V summary 段全文（以 [任务类型] 前缀开头，其他模式可空）"},
+        "style_opening": {"type": "string", "description": "Ref2VA 风格开场（1-2 句，其他模式可空）"},
+        "summary": {"type": "string", "description": "Ref2VA summary 段全文（以 [任务类型] 前缀开头，其他模式可空）"},
         "speakers": {"type": "array", "items": {"type": "object",
             "properties": {"speaker_id": {"type": "string"}, "name": {"type": "string"},
                            "character_id": {"type": "string"},
@@ -133,6 +133,8 @@ def build_plan_task_data(
 def parse_plan_json(raw: str, mode: str, duration: float,
                     storyboard_id: str = "") -> H3PromptPlan:
     """把 LLM 输出 JSON 容错解析为 H3PromptPlan（失败抛可读错误）。"""
+    if mode not in H3_MODES:
+        raise ValueError(f"unsupported H3 mode: {mode!r}")
     data = extract_json_object(raw)
     if data is None:
         raise ValueError("模型输出不是合法 JSON，无法构建 H3 计划；请重试。")
@@ -241,7 +243,7 @@ def map_image_assets(plan: H3PromptPlan, image_count: int, mode: str) -> List[st
     """把输入图片映射为 Picture 资产（I2VA 首帧 / FL2VA 首尾 / L2VA 尾帧）。
 
     同时按模式校验资产约束（docs/decisions.md D18）：
-    T2VA=0 图；I2VA=1（首帧）；FL2VA=2（首尾帧）；L2VA=1（尾帧）；R2V 不限。
+    T2VA=0 图；I2VA=1（首帧）；FL2VA=2（首尾帧）；L2VA=1（尾帧）；Ref2VA 按官方混合媒体上限。
     返回 warning 列表；约束不满足时给出明确 warning/error，不生成错误引用。
     """
     warnings: List[str] = []
@@ -424,7 +426,7 @@ def normalize_media_labels(plan: H3PromptPlan) -> None:
 
 def normalize_ref2va_summary(plan: H3PromptPlan) -> None:
     """CREATE-style Ref2VA plans use one official task-type prefix."""
-    if plan.mode not in {"R2V", "Ref2VA"}:
+    if plan.mode != "Ref2VA":
         return
     allowed = {"keyframe completion", "reference generation", "video editing",
                "video continuation", "audio reuse", "audio reference"}
@@ -438,7 +440,7 @@ def normalize_ref2va_summary(plan: H3PromptPlan) -> None:
 # ---------------------------------------------------------------- 工具
 
 def _clean(text: str) -> str:
-    """去除首尾空白。不做假装翻译（R2V 英文由 LLM/修复循环负责）。"""
+    """去除首尾空白。不做假装翻译（Ref2VA 英文由 LLM/修复循环负责）。"""
     return (text or "").strip()
 
 

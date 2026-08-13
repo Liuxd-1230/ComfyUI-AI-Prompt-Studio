@@ -1,5 +1,4 @@
 # Prompt Audit（提示词审计）
-
 > 当前运行时采用 ADR 0007 双通道 Studio。下文 2026-08-07 的站点记录保留为历史审计；
 > 运行时硬规则现由 Model Core 持有；用户 Markdown supplement 只能作为低优先级参考。
 
@@ -17,7 +16,7 @@
    - **可观察性**（视觉/角色分析）：只描述可观察特征，禁止推断民族/国籍/性格/年龄；
    - **不伪造**：翻译/英文要求不做假装翻译，失败标记错误。
 3. 每个提示词站点的文本存入本文件的快照区段（ID 索引），供回归比对。
-4. Prompt 回归用例（tests/prompt_cases/）覆盖关键语义：Case1 单锚点、Case2 多人物不串位、Case3 多图共识、Case4 H3 R2V 英文。
+4. Prompt 回归用例（tests/prompt_cases/）覆盖关键语义：Case1 单锚点、Case2 多人物不串位、Case3 多图共识、Case4 H3 Ref2VA 英文。
 
 ## 提示词站点清单
 
@@ -27,7 +26,7 @@
 | RA-2 | `nodes/reference_analyzer.py` 文字锚点 system `"You extract structured character traits as JSON."` | 文字锚点结构化解析 | 薄 system 合理（模式指令在用户消息），保留 |
 | RA-3 | `nodes/reference_analyzer.py` 多图共识 warnings | 冲突提示 | 新增逐冲突 warning（特征名+候选值+原因） |
 | V-1 | `services/vision.py` build_vision_messages | 视觉调用消息组装 | 文本+image_url parts；提示词本身来自 RA-1，不重复构造 |
-| H3-S-1 | `prompting/model_cores.py` H3 Model Core（`services/h3_plan.py` 兼容入口） | H3 协议规则 system 层 | **新增**：三字段/镜头时间戳/稳定 S ID/<d> 对白/六段顺序/R2V 英文/retention/注入守则 |
+| H3-S-1 | `prompting/model_cores.py` H3 Model Core（`services/h3_plan.py` 兼容入口） | H3 协议规则 system 层 | **新增**：三字段/镜头时间戳/稳定 S ID/<d> 对白/六段顺序/Ref2VA 英文/retention/注入守则 |
 | H3-S-2 | `services/h3_plan.py` build_plan_task_data（task data） | H3 模式、时长、角色、参考资产、分镜、问题 | 只构造类型化任务数据；Model Core、Operation Policy 与 H3_SCHEMA 分别拥有规则、轮次职责和协议 |
 | H3-S-3 | `nodes/h3_prompt_studio.py` protocol repair | 宽松/严格协议修复 | 只修格式/Schema 缺陷并保留可用内容；validator 失败不做创意改写 |
 | SB-1 | `services/storyboard.py` build_storyboard_prompt | 分镜拆分指令 | 含 [任务边界]/[事实推断区分]/[连续性]/数据守则；角色表沿用 ID；manifest 注入 |
@@ -57,7 +56,7 @@
 **原问题**：system 只有 "You are a MiniMax H3 prompt specialist. Output only JSON."，
 所有协议规则与任务上下文拼接在一条 user 消息里（违反分层原则；且一旦用户文本含指令前缀，规则易被覆盖）。
 **重写**：新增不可编辑 H3 Model Core（协议规则层：三字段顺序、[Shot N] At MM:SS.mmm 严格递增、
-稳定 S ID 禁止自造、<d>[Language] 逐字保留、Picture/Video/Audio 独立编号、R2V 六段固定顺序+英文正文、
+稳定 S ID 禁止自造、<d>[Language] 逐字保留、Picture/Video/Audio 独立编号、Ref2VA 六段固定顺序+英文正文、
 soundscape/music 句数与禁词、retention markers、**注入守则**）；user 消息只保留
 [模式]/[目标时长]/上下文块/JSON 结构/[输入]。修复路径 system = H3 Model Core + 「只修列出的问题」。
 
@@ -89,14 +88,14 @@ expand/rewrite/repair/translate operation 分支。
 | Case1 单文字锚点 | reference_anchor | 锚点 → stable 特征全部 source=text_anchor；无图不得出 uncertain |
 | Case2 多人物不串位 | anima_multi_char | 每人物的稳定特征只出现在自己人物块（8 项正/反断言） |
 | Case3 多图共识 | multi_image_consensus | 同特征冲突 → uncertain + conflict 记录；Manifest 保留全部资产 |
-| Case4 H3 R2V 英文 | h3_r2v_english | 中文语义段被检出（chinese_flagged）；英文通过；六段顺序固定 |
+| Case4 H3 Ref2VA 英文 | h3_ref2va_english | 中文语义段被检出（chinese_flagged）；英文通过；六段顺序固定 |
 
 执行器：tests/test_prompt_cases.py（确定性管线，不调 LLM）。Case2 依赖的 `CharacterCandidate.conflicts` 字段
 （consensus 冲突可见性）为本次补上（schemas/character.py + services/reference.py）。
 
 ## 已知限制（不假装翻译 / 不伪造）
 
-- R2V 英文：检测到非英语语义段 → 一次 LLM 修复；仍不过则 validation 记 h3_r2v_english 错误，
+- Ref2VA 英文：检测到非英语语义段 → 一次 LLM 修复；仍不过则 validation 记 h3_ref2va_english 错误，
   不做假翻译（validators/minimax_h3.py）。
 - 分镜 camera 可空：不确定就不编造。
 - Reference 解析失败：空候选 + 低置信度 + warning，不伪造特征。
@@ -141,7 +140,7 @@ framing / camera angle / environment / lighting / spatial relationships / refere
 
 ### H3-S-1h：retention markers 修正
 
-- R2V 手册复核：audio marker 完整集合含 `weak_reference`（"Broad similarity only"），
+- Ref2VA 手册复核：audio marker 完整集合含 `weak_reference`（"Broad similarity only"），
   与 visual marker 共用 weak_reference；系统提示词按 visual / audio 分别列 marker 集。
 
 ### COMP-1h / H3 结构化输出偏好（P1-17）

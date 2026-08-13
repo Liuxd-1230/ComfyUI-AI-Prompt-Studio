@@ -25,18 +25,14 @@ def test_v3_defaults_to_empty_lenient_session() -> None:
     assert session.has_current_state is False
 
 
-def test_v2_workflow_state_resets_instead_of_becoming_editable_v3() -> None:
+def test_outdated_workflow_state_is_rejected_instead_of_reset() -> None:
     old = {
         "schema_version": "2.0", "id": "old-session", "revision": 4,
         "target_family": "anima", "current_prompt": "old prompt",
         "current_plan": {"scene": "old"},
     }
-    session = PromptSession.from_json(old)
-    assert session.schema_version == "3.2"
-    assert session.id != "old-session"
-    assert session.revision == 0
-    assert session.current_prompt == ""
-    assert session.revisions == []
+    with pytest.raises(SchemaError, match="仅支持当前 schema_version '3.2'"):
+        PromptSession.from_json(old)
 
 
 def test_freeform_commit_and_restore_share_atomic_revision_interface() -> None:
@@ -243,9 +239,9 @@ def test_oversized_workflow_session_is_rejected_on_load():
         })
 
 
-def test_legacy_v1_session_resets_to_empty_v3_state():
-    legacy = {
-        "schema_version": "1.0", "id": "psess_legacy",
+def test_v1_session_is_rejected_without_compatibility_reset():
+    outdated = {
+        "schema_version": "1.0", "id": "psess_outdated",
         "target_family": "anima", "target_variant": "base",
         "current_plan": {"scene": "Tokyo"}, "current_prompt": "Tokyo",
         "revision": 1, "conversation": [], "locked_constraints": [],
@@ -254,13 +250,8 @@ def test_legacy_v1_session_resets_to_empty_v3_state():
                        "prompt": "Tokyo", "validation": VALID,
                        "user_instruction": "create", "change_summary": "v1"}],
     }
-    restored = PromptSession.from_json(legacy)
-    assert restored.schema_version == "3.2"
-    assert restored.current_plan == {}
-    assert restored.current_prompt == ""
-    assert restored.revisions == []
-    assert restored.last_processed_message_id == ""
-    assert restored.fingerprint_state == "bound"
+    with pytest.raises(SchemaError, match="仅支持当前 schema_version '3.2'"):
+        PromptSession.from_json(outdated)
 
 
 def test_source_schema_version_is_part_of_the_authoritative_fingerprint():
@@ -270,25 +261,21 @@ def test_source_schema_version_is_part_of_the_authoritative_fingerprint():
 
 
 def test_future_or_malformed_session_is_rejected_instead_of_silently_downgraded():
-    with pytest.raises(SchemaError, match="future schema_version"):
+    with pytest.raises(SchemaError, match="仅支持当前 schema_version '3.2'"):
         PromptSession.from_json({"schema_version": "4.0", "current_plan": {}})
     with pytest.raises(SchemaError, match=r"revisions\[0\]"):
         PromptSession.from_json({
             "schema_version": "3.2", "revisions": ["not a revision"]})
 
 
-def test_v30_session_migrates_without_losing_stable_state() -> None:
+def test_v30_session_is_rejected_without_compatibility_migration() -> None:
     source = PromptSession(target_family="anima")
     source.commit({"scene": "rain"}, "rain", VALID, "create", "created")
     payload = source.to_json()
     payload["schema_version"] = "3.0"
 
-    restored = PromptSession.from_json(payload)
-
-    assert restored.schema_version == "3.2"
-    assert restored.current_prompt == "rain"
-    assert restored.revision == 1
-    assert restored.node_instance_id == ""
+    with pytest.raises(SchemaError, match="仅支持当前 schema_version '3.2'"):
+        PromptSession.from_json(payload)
 
 
 def test_copied_node_forks_session_identity_but_preserves_stable_snapshot() -> None:

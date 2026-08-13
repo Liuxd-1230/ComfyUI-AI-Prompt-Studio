@@ -2,17 +2,16 @@
 
 ## Versioned Session Envelope
 
-`PromptSession` is now schema version `3.0` and carries `execution_mode` plus an
+`PromptSession` is schema version `3.2` and carries `execution_mode` plus an
 explicit `freeform` or `structured` payload kind. Both modes share atomic commit,
 nonce, validation, bounded history, restore, transaction identity, and Recovery
 Journal seams. A freeform revision requires a non-empty prompt but no semantic Plan;
 a structured revision requires both.
 
-ADR 0007 intentionally does not migrate v1/v2 state into editable v3 state. Loading
-either legacy envelope creates a new empty lenient Session with a new ID. This avoids
-silently treating a previously structured lineage as freeform or rebinding old
-fingerprints to current inputs. Unknown future versions and malformed v3 revisions
-remain hard schema errors.
+Prompt Studio accepts only the current v3.2 Session envelope. Older, missing, future,
+or malformed versions are hard schema errors and never become editable state. This
+avoids silently treating an incompatible lineage as freeform or rebinding unknown
+fingerprints to current inputs.
 
 ## Immutable Revision Lineage
 
@@ -27,7 +26,7 @@ History is bounded to 10 revisions and chat display to 40 messages. The serializ
 hidden workflow envelope is additionally capped at 4 MiB; oversized state is rejected
 before the stable Session or Recovery Journal is changed.
 
-Restore never removes history. The legacy `previous` action resolves the preceding
+Restore never removes history. The `previous` action resolves the preceding
 snapshot and commits it as a new revision whose parent points to the restored version.
 The stored rendered prompt plus renderer signature retain the distinction needed for
 future semantic restore versus exact replay.
@@ -37,7 +36,7 @@ future semantic restore versus exact replay.
 Composer and H3 append a serialized `message_nonce` widget. The workbench assigns a
 new nonce when the user edits the message. Re-queueing an empty message or an already
 processed nonce returns the current outputs without Gateway calls or a new revision;
-legacy workflows without the widget use a deterministic message hash.
+an empty nonce uses a deterministic idempotency hash so backend callers remain safe.
 
 Each successful transaction pins target, actual renderer/validator Model Core,
 active Markdown supplement, Character Bible/Book, Storyboard and Reference Manifest hashes. A
@@ -45,9 +44,7 @@ connected H3 image/video/audio payload is hashed as content, not merely by slot 
 count. Bound sessions compare these fingerprints on every Queue, including an empty
 or repeated message, before taking the zero-call path. A changed authoritative
 context is reported before Gateway or commit and leaves the stable revision
-untouched. The old `continue_previous` widget remains
-serialized only for workflow compatibility and has no lifecycle authority; reset is
-the explicit `session_action=new`. The workbench does not clear the serialized old
+untouched. Reset is the explicit `session_action=new`. The workbench does not clear the serialized
 Session when this button is clicked; only a successful backend CREATE replaces it.
 Rebase and target migration remain explicit
 later-phase operations rather than being disguised as chat refinement.

@@ -1,6 +1,6 @@
 {
-  "name": "Case 4: H3 R2V 英文正文要求（中文语义段必须被检出，英文通过）",
-  "pipeline": "h3_r2v_english",
+  "name": "Case 4: H3 Ref2VA 英文正文要求（中文语义段必须被检出，英文通过）",
+  "pipeline": "h3_ref2va_english",
   "input": {
     "chinese_plan": {
       "style_opening": "一种安静的绘画风格，柔和的窗光。",
@@ -30,5 +30,5 @@
     "english_flagged": false,
     "section_order_ok": true
   },
-  "note": "R2V 六段顺序固定；语义段必须是英文；<d> 对白/歌词/画面文字保留原语言（不做假装翻译）。"
+  "note": "Ref2VA 六段顺序固定；语义段必须是英文；<d> 对白/歌词/画面文字保留原语言（不做假装翻译）。"
 }

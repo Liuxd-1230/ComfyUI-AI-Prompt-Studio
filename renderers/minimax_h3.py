@@ -4,7 +4,7 @@
 - T2VA/I2VA/FL2VA/L2VA：首行对齐指令（I2VA/FL2VA/L2VA 有）+ 空行 + 三字段
   `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`；
   I2VA 首帧锚定、FL2VA 首尾帧路径（默认单镜头连续路径）、L2VA 尾帧收敛；
-- R2V：六段 `subject_definitions` / `summary` / `retention_analysis` /
+- Ref2VA：六段 `subject_definitions` / `summary` / `retention_analysis` /
   `detailed_description`（风格开场在 [Shot 1] 之前）/ `overall_soundscape` / `non_diegetic_music`。
 镜头：[Shot 1] 无时间戳；后续 `[Shot N] At MM:SS.mmm, ...`（严格递增）。
 """
@@ -14,6 +14,7 @@ import re
 from typing import List, Optional
 
 from ..schemas.h3 import (
+    H3_MODES,
     H3Dialogue,
     H3PromptPlan,
     H3Retention,
@@ -78,8 +79,10 @@ def render_shot(shot: H3Shot, speaker_descriptions: Optional[dict[str, str]] = N
 
 def render_h3(plan: H3PromptPlan) -> str:
     """H3PromptPlan → 最终提示词（确定性，无 LLM）。"""
-    if plan.mode in {"R2V", "Ref2VA"}:
-        return _render_r2v(plan)
+    if plan.mode not in H3_MODES:
+        raise ValueError(f"unsupported H3 mode: {plan.mode!r}")
+    if plan.mode == "Ref2VA":
+        return _render_ref2va(plan)
     return _render_four_mode(plan)
 
 
@@ -159,9 +162,9 @@ def _soundscape_text(plan: H3PromptPlan) -> str:
     return plan.soundscape.strip()
 
 
-# ---------------------------------------------------------------- R2V
+# ---------------------------------------------------------------- Ref2VA
 
-def _render_r2v(plan: H3PromptPlan) -> str:
+def _render_ref2va(plan: H3PromptPlan) -> str:
     lines: List[str] = []
 
     lines.append("subject_definitions:")

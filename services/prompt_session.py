@@ -31,14 +31,14 @@ def node_execution_result(result: tuple[Any, ...], session_json: str,
 
 
 def message_identity(message_nonce: str, message: str) -> str:
-    """Return an explicit UI nonce, or a deterministic legacy compatibility ID."""
+    """Return an explicit UI nonce or a deterministic idempotency key."""
     nonce = str(message_nonce or "").strip()
     if nonce:
         return nonce
     normalized = str(message or "").strip()
     if not normalized:
         return ""
-    return "legacy_" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
+    return "implicit_" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
 
 
 def content_fingerprint(value: Any) -> str:

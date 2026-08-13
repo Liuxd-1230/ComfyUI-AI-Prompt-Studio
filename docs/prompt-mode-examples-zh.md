@@ -124,7 +124,7 @@ H3 输入是“导演任务”。节点直接维护完整官方文本，不接�
 
 输出六段：subject definitions、summary、retention analysis、detailed description、soundscape、music。图片≤9、视频≤3、音频≤3、合计≤12；视频总时长≤15 秒、音频总时长≤15 秒。
 
-### R2V
+### Ref2VA
 
 旧工作流兼容别名，进入节点后迁移到 `Ref2VA`。新工作流请选择 Ref2VA。
 

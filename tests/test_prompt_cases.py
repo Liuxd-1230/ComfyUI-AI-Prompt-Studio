@@ -3,7 +3,7 @@
 每个用例文件声明 pipeline + input + expect（观测字典）。执行器跑确定性管线
 （不调 LLM），收集观测值并与 expect 逐项比对。用于防止提示词/渲染语义回归
 （docs/prompt-audit.md 的 regression cases：Case1 单锚点、Case2 多人物不串位、
-Case3 多图共识、Case4 H3 R2V 英文要求）。
+Case3 多图共识、Case4 H3 Ref2VA 英文要求）。
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from aps.schemas.character import CharacterCandidate, CharacterTrait  # noqa: E4
 from aps.schemas.references import AssetRef  # noqa: E402
 from aps.services import reference as reference_svc  # noqa: E402
 from aps.services.h3_plan import parse_plan_json  # noqa: E402
-from aps.validators.minimax_h3 import r2v_english_issue  # noqa: E402
+from aps.validators.minimax_h3 import ref2va_english_issue  # noqa: E402
 
 
 def _case_files():
@@ -88,9 +88,9 @@ def _pipeline_multi_image_consensus(inp):
     }
 
 
-def _pipeline_h3_r2v_english(inp):
-    cn = parse_plan_json(json.dumps(inp["chinese_plan"]), "R2V", 10.0)
-    en = parse_plan_json(json.dumps(inp["english_plan"]), "R2V", 10.0)
+def _pipeline_h3_ref2va_english(inp):
+    cn = parse_plan_json(json.dumps(inp["chinese_plan"]), "Ref2VA", 10.0)
+    en = parse_plan_json(json.dumps(inp["english_plan"]), "Ref2VA", 10.0)
     cn_rendered = render_h3(cn)
     en_rendered = render_h3(en)
     # 六段固定顺序
@@ -100,8 +100,8 @@ def _pipeline_h3_r2v_english(inp):
     idx = [cn_rendered.find(h) for h in heads]
     order_ok = all(idx[i] != -1 and idx[i] < idx[i + 1] for i in range(len(idx) - 1))
     return {
-        "chinese_flagged": r2v_english_issue(cn_rendered) is not None,
-        "english_flagged": r2v_english_issue(en_rendered) is not None,
+        "chinese_flagged": ref2va_english_issue(cn_rendered) is not None,
+        "english_flagged": ref2va_english_issue(en_rendered) is not None,
         "section_order_ok": order_ok,
     }
 
@@ -110,7 +110,7 @@ _PIPELINES = {
     "reference_anchor": _pipeline_reference_anchor,
     "anima_multi_char": _pipeline_anima_multi_char,
     "multi_image_consensus": _pipeline_multi_image_consensus,
-    "h3_r2v_english": _pipeline_h3_r2v_english,
+    "h3_ref2va_english": _pipeline_h3_ref2va_english,
 }
 
 

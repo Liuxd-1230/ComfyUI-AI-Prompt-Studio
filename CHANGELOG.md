@@ -1,5 +1,7 @@
 # Changelog
 
+- **删除过期兼容层**：H3 只接受 T2VA / I2VA / FL2VA / L2VA / Ref2VA，不再把过期模式名静默映射为 Ref2VA；ANIMA 只接受 Plan Normal Form v2，Prompt Studio 只接受 Session v3.2。删除 Schema 迁移注册表、旧字段推断、会话重置/绑定分支和前端隐藏旧 widget；过期输入现在明确报错。当前 Ref2VA 六段、Session 恢复、多轮修改、无 nonce 幂等保护和现有节点端口保持不变。
+
 - **H3 白描质量与三模式本地实测**：以同一“亚洲女生直播跳舞、路人大爷大妈打量”输入在真实 LM Studio 9B 上对照当前核心、基础版 Markdown、R2VA 加强版，覆盖 I2VA/FL2VA/Ref2VA。新增小模型可照抄的模式骨架、白描与动作连续性规则、裸参考不可脑补边界及无歧义协议归一；Ref2VA 未知标签/非法 retention/未分析内容声明不再假绿。三种模式均取得可交付样本，Ref2VA 需连接已分析 Manifest，本地端点仍有偶发 120 秒超时。详见 `docs/testing/h3-dance-prompt-quality-audit-2026-08-13.md`。
 
 - **H3 社区模板与双采样调研**：对照用户提供的基础/加强 Ref2VA 模板、MiniMax 官方固定 Skill 与当前 Model Core/validator，拆解 123 节点双模型二采工作流的像素放大、影音 latent 重编码和第二 UNet 重绘链路；补充人物模糊的时序恢复、跟踪裁脸局部二采与渐进放大建议，并明确 Civitai/RunningHub 可验证证据边界。详见 `docs/research/h3-double-sampling-community-2026-08-13.md`。

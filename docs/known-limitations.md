@@ -59,5 +59,5 @@
 - 内置搜索引擎（外部搜索后端需要用户提供）。
 - DeepSeek 思考/推理关闭（reasoning=off 不做——DeepSeek 无官方禁用 thinking 的稳定接口）。
 - 对第三方 GPL/受限项目（Prompt Assistant / TE_MAN / DaSiWa）代码的直接复制；只参考结构与产品语义，实现全部原创。
-- 附件本地解析 PPTX / XLSX（见 §4）；H3 R2V 之外的「自动翻译」不做（不假装翻译）。
+- 附件本地解析 PPTX / XLSX（见 §4）；H3 Ref2VA 之外的「自动翻译」不做（不假装翻译）。
 - 静态 Reference Analyzer 不做镜头运动推断（camera motion 由 H3 Prompt Studio 生成阶段决定）。

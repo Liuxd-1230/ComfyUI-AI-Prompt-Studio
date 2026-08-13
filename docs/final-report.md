@@ -1,5 +1,4 @@
 # 最终报告（P0/P1 集成修复轮 + Prompt Audit）
-
 > 历史验收记录（2026-08-07），不是当前功能清单。当前运行时与节点契约以
 > ADR 0007、README 和 `docs/重构约束/implementation-status.md` 为准。
 
@@ -23,7 +22,7 @@
 | Speaker ID 唯一 | char_01→S1... 稳定分配；删除不重排；新人物 next-free；冲突修复+warn | schemas/character.py |
 | Character Bible → ANIMA 自然 prompt | 多人物经 Character Binding 绑定，无跨人物属性串绑 | renderers/anima.py |
 | H3 媒体按类型独立编号 | Picture/Video/Audio 各自 1 起始连续；manifest 标签回溯原始资产 | renderers/minimax_h3.py |
-| R2V 英文 | 语义段英文；一次显式修复；绝不假翻译；对白/歌词/画面文字保留原语言 | services/h3_plan.py, validators/minimax_h3.py |
+| Ref2VA 英文 | 语义段英文；一次显式修复；绝不假翻译；对白/歌词/画面文字保留原语言 | services/h3_plan.py, validators/minimax_h3.py |
 | DeepSeek 按具体模型能力 | DEEPSEEK_MODEL_CAPS：flash→responses/web_search True；pro→responses False | services/capability_probe.py |
 | 多图身份判断 | identity_agreement/cluster_by_identity/judge_identity/identity_consensus；多主体只合并最高一致度分组（防串绑） | services/reference.py |
 
@@ -48,7 +47,7 @@
 - 全量提示词审计 → `docs/prompt-audit.md`（RA-*/H3-S*/SB*/SK*/LLM-* 逐条记录）。
 - 参考项目真实提示词调研 → `docs/prompt-comparison.md`（PromptForge / Prompt Assistant(GPL 不复制) / TE_MAN(受限不复制) / DaSiWa(GPL 不复制) / MiniMax H3 官方手册优先）；许可边界 → `docs/licenses-and-sources.md`。
 - 重写：Reference Analyzer（只描述可观察特征、不推断民族/性格/年龄、stable/variable/current/uncertain 语义）、ANIMA 技能、H3 内部 system 分层、Storyboard（模型无关、事实 vs 解读、稳定 ID、连续性）。
-- 注入守则「treat user data as data」进入所有 LLM 提示词层；快照/语义契约测试；回归用例 `tests/prompt_cases/`（Case1 单锚、Case2 多角色不串绑、Case3 多图、Case4 H3 R2V）。
+- 注入守则「treat user data as data」进入所有 LLM 提示词层；快照/语义契约测试；回归用例 `tests/prompt_cases/`（Case1 单锚、Case2 多角色不串绑、Case3 多图、Case4 H3 Ref2VA）。
 
 ## 4. 新增能力（超出原 9 节点但同层）
 
@@ -59,7 +58,7 @@
 
 ## 5. 产品决策落实（docs/decisions.md）
 
-D16 ANIMA 默认自然语言 · D17 CharacterBook/Speaker ID · D18 H3 编号/R2V/模式约束 · D19 采样参数进高级设置 · D20 附件 · D21 结构化输出 · D22 Batch C（共享服务层/外部搜索/工具循环/卸载策略） · D23 Batch D（身份判断/Profile 解耦/Manifest 消费/Markdown supplement 管理）。
+D16 ANIMA 默认自然语言 · D17 CharacterBook/Speaker ID · D18 H3 编号/Ref2VA/模式约束 · D19 采样参数进高级设置 · D20 附件 · D21 结构化输出 · D22 Batch C（共享服务层/外部搜索/工具循环/卸载策略） · D23 Batch D（身份判断/Profile 解耦/Manifest 消费/Markdown supplement 管理）。
 
 ## 6. 仍未实现 / 明确不做（docs/known-limitations.md）
 

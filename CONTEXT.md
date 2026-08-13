@@ -57,10 +57,10 @@ Prompt Studio 的持久领域状态：Current Plan、Current Prompt、revision�
 目标图像模型的采样参数建议（步数、CFG、调度器等），随 Prompt Plan 输出，供后续采样节点使用。
 
 **H3 Prompt Plan（H3 提示词计划）**：
-H3 Director 的中间结构化计划：模式（T2VA/I2VA/FL2VA/L2VA/R2V）、镜头、说话人、标签映射、声音与音乐字段；经 Python 渲染器变成最终 STRING 提示词。
+H3 Studio 的中间结构化计划：模式（T2VA/I2VA/FL2VA/L2VA/Ref2VA）、镜头、说话人、标签映射、声音与音乐字段；经 Python 渲染器变成最终 STRING 提示词。
 
 **H3 模式（H3 mode）**：
-T2VA（纯文本）、I2VA（首帧锚定）、FL2VA（首尾帧路径）、L2VA（尾帧收敛）、R2V（全参考重写）。
+T2VA（纯文本）、I2VA（首帧锚定）、FL2VA（首尾帧路径）、L2VA（尾帧收敛）、Ref2VA（全参考重写）。
 
 **Speaker ID（说话人 ID）**：
 H3 提示词中的稳定说话人标记（S1/S2，复合 S1,S2），跨镜头保持一致，与 Character Bible 的人物 ID 映射。

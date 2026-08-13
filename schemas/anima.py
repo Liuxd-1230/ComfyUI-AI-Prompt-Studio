@@ -1,22 +1,11 @@
-"""Formal ANIMA semantic plan schemas.
-
-Version 2 is the Plan Normal Form: character facts live only on character
-records, while ``scene_description`` is reserved for non-character scene prose.
-Legacy prose fields are migrated at the schema boundary and never survive as a
-second editable truth source.
-"""
+"""Formal ANIMA semantic plan schemas with one owner per semantic fact."""
 import dataclasses
 import re
-from typing import Any, Callable
-
+from typing import Any
 from .base import Schema, SchemaError
 
 
 ANIMA_NORMAL_FORM_VERSION = "2.0"
-
-
-class AnimaMigrationConflict(SchemaError):
-    """Legacy prose overlaps structured facts and cannot be split losslessly."""
 
 
 @dataclasses.dataclass
@@ -63,7 +52,7 @@ class AnimaPromptPlan(Schema):
 
     @classmethod
     def from_json(cls, data: Any) -> "AnimaPromptPlan":
-        """Load current or v1 plans through the explicit normal-form migration."""
+        """Load only the current Plan Normal Form."""
         if isinstance(data, cls):
             if data.normal_form_version == ANIMA_NORMAL_FORM_VERSION:
                 return data
@@ -78,7 +67,12 @@ class AnimaPromptPlan(Schema):
             if isinstance(parsed, dict):
                 data = parsed
         if isinstance(data, dict):
-            data = _migrate_normal_form(dict(data))
+            version = str(data.get("normal_form_version", "") or "")
+            if version != ANIMA_NORMAL_FORM_VERSION:
+                raise SchemaError(
+                    "AnimaPromptPlan 仅支持 normal_form_version '2.0'；"
+                    f"收到 {version!r}")
+            data = dict(data)
             for field_name in (
                     "creative_notes", "characters", "control_tags", "series_tags",
                     "artist_tags", "supplemental_tags", "style", "environment",
@@ -227,94 +221,3 @@ def _fragment_in_text(text: str, fragment: str) -> bool:
         return False
     return re.search(r"(?<!\w)" + re.escape(clean) + r"(?!\w)", text,
                      flags=re.IGNORECASE) is not None
-
-
-def _migrate_normal_form(data: dict[str, Any]) -> dict[str, Any]:
-    """Run registered migrations until the current normal-form version."""
-    version = str(data.get("normal_form_version", "1.0") or "1.0")
-    visited: set[str] = set()
-    while version != ANIMA_NORMAL_FORM_VERSION:
-        if version in visited or version not in ANIMA_NORMAL_FORM_MIGRATIONS:
-            raise ValueError(f"不支持的 ANIMA Plan Normal Form 版本: {version}")
-        visited.add(version)
-        target, migrate = ANIMA_NORMAL_FORM_MIGRATIONS[version]
-        data = migrate(dict(data))
-        version = target
-        data["normal_form_version"] = version
-    return data
-
-
-def _migrate_v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
-    """Remove v1 prose caches while retaining their only non-duplicated facts."""
-    legacy_body = str(data.get("natural_body", "") or "").strip()
-    retained_scene = [*_legacy_list(data.get("environment")),
-                      *_legacy_list(data.get("style")),
-                      *_legacy_list(data.get("control_tags")),
-                      *_legacy_list(data.get("series_tags")),
-                      *_legacy_list(data.get("artist_tags")),
-                      *_legacy_list(data.get("character_tags")),
-                      *_legacy_list(data.get("visual_tags")),
-                      *_legacy_list(data.get("supplemental_tags")),
-                      *_legacy_list(data.get("creative_notes")),
-                      data.get("scene_description", ""),
-                      data.get("composition", ""), data.get("lighting", "")]
-    retained_character_facts = [
-        value
-        for raw in data.get("characters") or [] if isinstance(raw, dict)
-        for value in [*_legacy_list(raw.get("required_traits")),
-                      *_legacy_list(raw.get("variable_traits")),
-                      *_legacy_list(raw.get("creative_notes")),
-                      raw.get("action", ""), raw.get("position", ""),
-                      raw.get("description", "")]
-    ]
-    if legacy_body and any(str(value or "").strip()
-                           for value in [*retained_scene, *retained_character_facts]):
-        raise AnimaMigrationConflict(
-            "ANIMA v1 natural_body 是未分类完整 prose，且与其他语义字段并存，"
-            "无法证明事实所有权并无损自动迁移；"
-            "上一版会话保持不变，请新建会话或先移除重复 prose")
-
-    data.pop("natural_body", None)
-    if legacy_body:
-        notes = _legacy_list(data.get("creative_notes"))
-        notes.append(legacy_body)
-        data["creative_notes"] = notes
-    data.setdefault("scene_description", "")
-    migrated_characters: list[dict[str, Any]] = []
-    for raw in data.get("characters") or []:
-        if not isinstance(raw, dict):
-            raise SchemaError("ANIMA v1 characters 必须只包含人物对象")
-        character = dict(raw)
-        legacy_description = str(character.pop("description", "") or "").strip()
-        has_structured_facts = bool(
-            character.get("required_traits") or character.get("variable_traits") or
-            character.get("action") or character.get("position") or
-            character.get("creative_notes"))
-        if legacy_description and not has_structured_facts:
-            notes = _legacy_list(character.get("creative_notes"))
-            notes.append(legacy_description)
-            character["creative_notes"] = notes
-        elif legacy_description:
-            raise AnimaMigrationConflict(
-                "ANIMA v1 character.description 与结构化人物字段并存，"
-                "无法判断独有事实；上一版会话保持不变，请新建会话或先整理旧计划")
-        migrated_characters.append(character)
-    data["characters"] = migrated_characters
-    legacy_tags = [*_legacy_list(data.pop("character_tags", [])),
-                   *_legacy_list(data.pop("visual_tags", [])),
-                   *_legacy_list(data.get("supplemental_tags", []))]
-    data["supplemental_tags"] = _dedupe(legacy_tags)
-    return data
-
-
-ANIMA_NORMAL_FORM_MIGRATIONS: dict[
-    str, tuple[str, Callable[[dict[str, Any]], dict[str, Any]]]
-] = {"1.0": ("2.0", _migrate_v1_to_v2)}
-
-
-def _legacy_list(value: Any) -> list[Any]:
-    if value is None:
-        return []
-    if isinstance(value, (list, tuple)):
-        return list(value)
-    return [value]

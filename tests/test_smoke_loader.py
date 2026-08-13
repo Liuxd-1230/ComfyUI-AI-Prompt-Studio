@@ -204,7 +204,7 @@ def test_binding_refactor_contracts_are_present_and_referenced():
 
 
 def test_studio_session_widgets_follow_public_inputs(loaded):
-    """ADR 0007 removes image legacy widgets and keeps explicit v3 state."""
+    """ADR 0007 keeps the current Studio inputs and explicit session state."""
     module, _, _ = loaded
     composer_inputs = module.NODE_CLASS_MAPPINGS["APS_PromptStudio"].INPUT_TYPES()
     assert "operation" not in composer_inputs["required"] | composer_inputs["optional"]

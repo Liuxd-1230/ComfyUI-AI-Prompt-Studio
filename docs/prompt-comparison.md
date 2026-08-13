@@ -1,5 +1,4 @@
 # Prompt 对比（参考项目调研）
-
 > 调研日期：2026-08-07（全部来源当日访问）
 > 用途：说明本扩展提示词设计从参考项目中借鉴了什么、为什么没有直接复制。
 > 许可结论：**只借鉴结构与思想，不复制受限项目的文本/代码。**
@@ -67,7 +66,7 @@ PromptBuilder）在三字段/六段格式上完全收敛**——本扩展的 H3 
 
 ## 5. 官方 MiniMax H3 手册（最高优先级，github.com/MiniMax-AI/MiniMax-H3）
 
-- `skills/h3-prompt-writing/references/base-en.txt`（T2VA/I2VA/FL2VA/L2VA）与 `ref-en.txt`（全参考 R2V）。
+- `skills/h3-prompt-writing/references/base-en.txt`（T2VA/I2VA/FL2VA/L2VA）与 `ref-en.txt`（全参考 Ref2VA）。
 - **三字段**：`integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music` +
   各模式对齐指令首行。
 - **六段固定顺序**：`subject_definitions` / `summary` / `retention_analysis` / `detailed_description` /
@@ -97,7 +96,7 @@ GPL/受限项目仅用于对照学习，未复制任何文本或代码（docs/li
 
 ## 7. 0.2.1 补充核实（2026-08-07）
 
-- **H3 retention markers**：上表 §5 的视觉/音频两套标记已对照 `docs/sources/minimax_h3_r2v手册.html`
+- **H3 retention markers**：上表 §5 的视觉/音频两套标记已对照 `docs/sources/minimax_h3_ref2va手册.html`
   逐条核实——视觉 `fully_preserved / partially_preserved / attribute_transfer / weak_reference`，
   音频 `fully_copy / partially_copy / reference / weak_reference`（「weak_reference」表示仅保留大体相似度/风格氛围）。
   校验器（validators/minimax_h3.py）按资产类型检查对应集合。

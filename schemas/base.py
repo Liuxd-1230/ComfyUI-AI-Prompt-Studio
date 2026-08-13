@@ -1,4 +1,4 @@
-"""Schema 基础：dataclass + 版本字段 + 迁移注册表 + JSON 往返 + 输入容错。
+"""Schema 基础：dataclass + 当前版本校验 + JSON 往返 + 输入容错。
 
 所有节点间传递的数据类型都必须继承 :class:`Schema`（dataclass 基类），
 禁止在节点之间传递含义不明的任意字典（见 ADR-0001）。
@@ -7,7 +7,7 @@
 import dataclasses
 import typing
 from types import UnionType
-from typing import Any, Callable, ClassVar, Dict, get_args, get_origin
+from typing import Any, ClassVar, Dict, get_args, get_origin
 
 SCHEMA_VERSION = "1.0"
 
@@ -92,8 +92,6 @@ class Schema:
 
     schema_version: str = SCHEMA_VERSION
 
-    # 迁移注册表：{"1.0": {"1.1": fn(data)->data, ...}, ...}
-    MIGRATIONS: ClassVar[Dict[str, Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]]]] = {}
     CURRENT_SCHEMA_VERSION: ClassVar[str] = SCHEMA_VERSION
 
     def to_json(self) -> Dict[str, Any]:
@@ -106,18 +104,12 @@ class Schema:
         return json.dumps(self.to_json(), ensure_ascii=False, indent=2)
 
     @classmethod
-    def _migrate(cls, data: Dict[str, Any]) -> Dict[str, Any]:
-        version = str(data.get("schema_version", SCHEMA_VERSION))
-        chain = cls.MIGRATIONS.get(version, {})
-        for target in sorted(chain.keys()):
-            fn = chain[target]
-            try:
-                data = fn(data)
-            except Exception as exc:  # noqa: BLE001 - 迁移错误统一为 SchemaError
-                raise SchemaError(
-                    f"{cls.__name__}: 数据迁移 {version}->{target} 失败：{exc}"
-                ) from exc
-            version = target
+    def _require_current_version(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+        version = str(data.get("schema_version", cls.CURRENT_SCHEMA_VERSION))
+        if version != cls.CURRENT_SCHEMA_VERSION:
+            raise SchemaError(
+                f"{cls.__name__}: 仅支持当前 schema_version "
+                f"{cls.CURRENT_SCHEMA_VERSION!r}；收到 {version!r}")
         data["schema_version"] = cls.CURRENT_SCHEMA_VERSION
         return data
 
@@ -138,7 +130,7 @@ class Schema:
                 data = parsed
         if not isinstance(data, dict):
             raise SchemaError(f"{cls.__name__}: 输入必须是对象，实际是 {type(data).__name__}")
-        data = cls._migrate(dict(data))
+        data = cls._require_current_version(dict(data))
         fields = {f.name: f for f in dataclasses.fields(cls)}
         kwargs: Dict[str, Any] = {}
         for name, f in fields.items():

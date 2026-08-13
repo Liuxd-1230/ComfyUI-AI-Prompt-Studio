@@ -8,7 +8,7 @@ H3 提示词，不连接视频生成模型也能完成调试。
 - `AI_PROFILE`：连接 AI 模型档案。
 - `text`：第一次写完整导演任务；之后只写本轮修改意见。
 - `mode`：`T2VA` 纯文本；`I2VA` 首帧；`FL2VA` 首尾帧；`L2VA` 尾帧；
-  `Ref2VA` 使用图片、视频、音频等参考。旧 `R2V` 值会归一化为 Ref2VA。
+  `Ref2VA` 使用图片、视频、音频等参考。节点只接受下拉框中的当前模式值。
 - `duration`：目标时长 4–15 秒。
 - `session_action`：`continue`、`previous` 或 `new`。新会话只在新 CREATE 成功后替换旧状态。
 - `storyboard`、`character_bible`、`character_book`：可选剧情和人物权威来源。

@@ -4,20 +4,21 @@
 MM:SS.mmm 格式、I2VA/FL2VA/L2VA 首行对齐指令、FL2VA 两位小数时长、
 标签编号连续、<d>[Language]</d> 配对。
 内容性规则（警告级）：soundscape 不重复对白、non_diegetic_music 无抽象情绪词、
-R2V 风格开场位置、音频不重复。
+Ref2VA 风格开场位置、音频不重复。
 """
 from __future__ import annotations
 
 import re
 from typing import Dict, List
 
+from ..schemas.h3 import H3_MODES
 from ..schemas.prompt_plan import ValidationReport
 
 FOUR_MODE_FIELDS = ["integrated_multimodal_description",
                     "overall_soundscape", "non_diegetic_music"]
-R2V_SECTION_HEADINGS = ["subject_definitions", "summary", "retention_analysis",
-                        "detailed_description", "overall_soundscape",
-                        "non_diegetic_music"]
+REF2VA_SECTION_HEADINGS = ["subject_definitions", "summary", "retention_analysis",
+                           "detailed_description", "overall_soundscape",
+                           "non_diegetic_music"]
 
 LABEL_RE = re.compile(r"<(Subject|Picture|Video|Audio)\s(\d+)>")
 SHOT_RE = re.compile(r"\[Shot\s(\d+)\](?:\s+At\s+(\d{2}:\d{2}\.\d{3}))?")
@@ -46,6 +47,9 @@ def validate_h3(prompt: str, mode: str = "T2VA", *, duration: float | None = Non
                 manifest=None, plan=None) -> ValidationReport:
     report = ValidationReport()
     report.checks.append(f"h3_{mode}")
+    if mode not in H3_MODES:
+        report.add("error", "h3_mode", f"unsupported H3 mode: {mode!r}")
+        return report
     if not prompt or not prompt.strip():
         report.add("error", "h3_empty", "提示词为空")
         return report
@@ -53,16 +57,16 @@ def validate_h3(prompt: str, mode: str = "T2VA", *, duration: float | None = Non
         report.add("error", "h3_duration", "MiniMax H3 目标时长必须在 4–15 秒")
 
     # 1) 段/字段结构
-    if mode in {"R2V", "Ref2VA"}:
-        _check_section_order(report, prompt, R2V_SECTION_HEADINGS, "h3_section")
-        _check_r2v_style_opening(report, prompt)
+    if mode == "Ref2VA":
+        _check_section_order(report, prompt, REF2VA_SECTION_HEADINGS, "h3_section")
+        _check_ref2va_style_opening(report, prompt)
         _check_retention_markers(report, prompt, mode)
         _check_summary_prefix(report, prompt)
         _check_ref_detail_density(report, prompt)
-        bad = r2v_english_issue(prompt)
+        bad = ref2va_english_issue(prompt)
         if bad:
-            report.add("warning", "h3_r2v_english",
-                       f"R2V 语义段 {bad!r} 含大量非英语内容（官方要求英文正文；"
+            report.add("warning", "h3_ref2va_english",
+                       f"Ref2VA 语义段 {bad!r} 含大量非英语内容（官方要求英文正文；"
                        f"对白/歌词/画面文字除外）；节点会自动尝试一次翻译修复")
     else:
         _check_section_order(report, prompt, FOUR_MODE_FIELDS, "h3_field")
@@ -84,7 +88,7 @@ def validate_h3(prompt: str, mode: str = "T2VA", *, duration: float | None = Non
     # 6) 音频段内容规则
     _check_soundscape(report, prompt)
     _check_music(report, prompt, mode)
-    if manifest is not None and mode in {"R2V", "Ref2VA"}:
+    if manifest is not None and mode == "Ref2VA":
         _check_reference_limits(report, manifest)
         _check_unanalysed_reference_claims(report, prompt, manifest)
     _check_unresolved_references(report, prompt, mode)
@@ -146,7 +150,7 @@ def _check_alignment_instruction(report, prompt, mode: str) -> None:
 # ---------------------------------------------------------------- 镜头
 
 def _check_shots(report, prompt, mode: str, duration: float | None = None) -> None:
-    heading = ("integrated_multimodal_description" if mode not in {"R2V", "Ref2VA"}
+    heading = ("integrated_multimodal_description" if mode != "Ref2VA"
                else "detailed_description")
     section = _section_text(prompt, heading)
     shots = SHOT_RE.findall(section)
@@ -270,7 +274,7 @@ def _check_music(report, prompt, mode: str) -> None:
 
 
 def _section_text(prompt: str, heading: str) -> str:
-    """提取某段/字段的正文（四模式为行内，R2V 为换行后到下一标题）。"""
+    """提取某段/字段的正文（四模式为行内，Ref2VA 为换行后到下一标题）。"""
     start = prompt.find(f"{heading}:")
     if start == -1:
         return ""
@@ -288,12 +292,12 @@ def _section_text(prompt: str, heading: str) -> str:
     return prompt[start:end].strip()
 
 
-def _check_r2v_style_opening(report, prompt) -> None:
+def _check_ref2va_style_opening(report, prompt) -> None:
     dd = _section_text(prompt, "detailed_description")
     first_shot = dd.find("[Shot 1]")
     if first_shot == 0:
-        report.add("warning", "h3_r2v_style_opening",
-                   "R2V detailed_description 建议在 [Shot 1] 前有 1-2 句风格开场")
+        report.add("warning", "h3_ref2va_style_opening",
+                   "Ref2VA detailed_description 建议在 [Shot 1] 前有 1-2 句风格开场")
 
 
 def _check_retention_markers(report, prompt, mode: str) -> None:
@@ -321,7 +325,7 @@ def _check_summary_prefix(report, prompt) -> None:
     summary = _section_text(prompt, "summary")
     if summary and not summary.startswith("["):
         report.add("error", "h3_summary_prefix",
-                   "R2V summary 必须以方括号任务类型前缀开头，如 [reference generation]")
+                   "Ref2VA summary 必须以方括号任务类型前缀开头，如 [reference generation]")
     match = re.match(r"\[([^\]]+)\]", summary)
     if match:
         allowed = {"keyframe completion", "reference generation", "video editing",
@@ -422,7 +426,7 @@ def _check_plan_references(report, plan, mode: str = "Ref2VA") -> None:
     # deterministic alignment line. The six-section retention_analysis contract
     # exists only in Ref2VA; demanding it in base modes made every valid I2VA plan
     # fail even though the rendered first line already fully references Picture 1.
-    if mode not in {"R2V", "Ref2VA"}:
+    if mode != "Ref2VA":
         return
     shot_used = {str(label).strip("<>") for shot in plan.shots for label in shot.references}
     retained = {str(item.label).strip("<>") for item in plan.retention}
@@ -447,13 +451,13 @@ def _check_plan_speakers(report, plan) -> None:
                            "voiceover 必须设置 lips_closed=true")
 
 
-# ---------------------------------------------------------------- R2V 英文
+# ---------------------------------------------------------------- Ref2VA 英文
 
 _NON_ASCII_RE = re.compile(r"[^\x00-\x7f]")
 
 
-def r2v_english_issue(prompt: str) -> Optional[str]:
-    """检测 R2V 语义段是否包含大量非英语内容（<d> 对白与引号内画面文字除外）。
+def ref2va_english_issue(prompt: str) -> Optional[str]:
+    """检测 Ref2VA 语义段是否包含大量非英语内容（<d> 对白与引号内画面文字除外）。
 
     返回首个违规段名；都合规返回 None。不伪造翻译，只报告。
     """

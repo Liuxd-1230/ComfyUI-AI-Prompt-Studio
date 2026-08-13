@@ -1,6 +1,6 @@
 """MiniMax H3 提示词计划：H3PromptPlan 及各子结构。
 
-以官方手册为格式真源（docs/sources/minimax_h3_FL2V手册.html / minimax_h3_r2v手册.html）。
+以官方 H3 手册为格式真源。
 """
 
 
@@ -11,12 +11,11 @@ from typing import Any, List, Optional
 from .base import Schema
 from .prompt_plan import ValidationReport, empty_validation
 
-H3_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA", "R2V"]
-# R2V is accepted only when loading legacy workflows. New node UIs expose Ref2VA.
-H3_UI_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA"]
+H3_MODES = ["T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA"]
+H3_UI_MODES = H3_MODES
 
-# R2V 六段固定顺序
-R2V_SECTIONS = [
+# Ref2VA 六段固定顺序
+REF2VA_SECTIONS = [
     "subject_definitions",
     "summary",
     "retention_analysis",
@@ -121,9 +120,9 @@ class H3PromptPlan(Schema):
     """H3 结构化计划：LLM 产出内容决策，Python renderer 拼装最终格式。"""
 
     plan_id: str = ""
-    mode: str = "T2VA"               # T2VA | I2VA | FL2VA | L2VA | Ref2VA（R2V 兼容）
+    mode: str = "T2VA"               # T2VA | I2VA | FL2VA | L2VA | Ref2VA
     duration_seconds: float = 0.0    # 有效视频时长 S.SS（两位小数）
-    style_opening: str = ""          # R2V 在 [Shot 1] 之前的风格开场（1-2 句）
+    style_opening: str = ""          # Ref2VA 在 [Shot 1] 之前的风格开场（1-2 句）
     shots: List[H3Shot] = dataclasses.field(default_factory=list)
     speakers: List[H3Speaker] = dataclasses.field(default_factory=list)
     subjects: List[H3Subject] = dataclasses.field(default_factory=list)
@@ -132,7 +131,7 @@ class H3PromptPlan(Schema):
     soundscape: str = ""             # overall_soundscape 正文
     explicit_silence: bool = False    # 仅用户明确要求全片静音时允许 soundscape=N/A
     non_diegetic_music: str = ""     # non_diegetic_music 正文（N/A 表示无）
-    summary: str = ""                # R2V summary 段（含任务前缀）
+    summary: str = ""                # Ref2VA summary 段（含任务前缀）
     storyboard_id: str = ""
     warnings: List[str] = dataclasses.field(default_factory=list)
     validation: ValidationReport = dataclasses.field(default_factory=empty_validation)
@@ -142,6 +141,8 @@ class H3PromptPlan(Schema):
     def __post_init__(self):
         import uuid
 
+        if self.mode not in H3_MODES:
+            raise ValueError(f"unsupported H3 mode: {self.mode!r}")
         if not self.plan_id:
             self.plan_id = "h3_" + uuid.uuid4().hex[:10]
         if not self.created_at:

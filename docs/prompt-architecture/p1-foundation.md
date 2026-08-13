@@ -1,8 +1,8 @@
 # Persistent P1 Semantic Domain Foundation
 
 > Historical implementation record. ADR 0007 replaces the former Prompt Composer
-> runtime and its creative repair behavior; the strict image Studio still reuses the
-> PNF schema, renderer, validator, and migration-safe ownership rules documented here.
+> runtime and its creative repair behavior; the current image Studio still reuses the
+> PNF schema, renderer, validator, and ownership rules documented here.
 
 P1 establishes executable boundaries without changing public node widgets or workflow serialization.
 
@@ -12,7 +12,7 @@ P1 establishes executable boundaries without changing public node widgets or wor
 - ANIMA Plan Normal Form v2 has one editable owner per important fact. Character identity and appearance live in `required_traits` / `variable_traits`, behavior in `action`, framing location in `position`, and non-character residual prose in `scene_description`. `creative_notes` and `supplemental_tags` are limited to facts that have no structured owner.
 - The editable `AnimaCharacter.description`, `AnimaPromptPlan.natural_body`, `character_tags`, and `visual_tags` fields were removed. Natural, tags, and hybrid renderers now derive from the same formal Plan; tag rendering no longer depends on a parallel tag cache.
 - `AnimaPromptPlan.validate()` applies one owner matrix to every structured, free-prose, and tag field, rejecting exact or contained duplicates. Semantic paraphrase detection belongs to the later critic phase; P1 does not claim that deterministic string checks understand synonyms. Prompt Composer sends detected violations through its existing one-repair validation path.
-- v1 JSON and workflow sessions migrate through `ANIMA_NORMAL_FORM_MIGRATIONS`. Legacy `natural_body` alone becomes a global `creative_notes` item, and a standalone character `description` becomes a character-bound creative note—neither is guessed to be scene, action, or stable appearance. If legacy prose coexists with any other semantic owner, migration raises `AnimaMigrationConflict` before any revision changes. The user must start a new session or remove the conflicting legacy prose; the stable v1 session remains intact. Malformed character entries fail at the schema boundary with `SchemaError`. Successfully refined non-conflicting sessions persist v2.
+- ANIMA accepts Plan Normal Form v2 only. Missing or non-v2 `normal_form_version` fails at the schema boundary with `SchemaError`; no prose-field inference or compatibility migration runs. Malformed character entries fail at the same boundary.
 - `AnimaPromptPlan.normalized()` provides deterministic trimming and de-duplication. ANIMA Model Core output contracts emit v2 directly, and Prompt Studio exposes ownership violations through its normal validation and repair path.
 - ANIMA and H3 plans expose compact `to_llm_context()` data. P2's `request_changeset()` uses the selected session adapter and sends only editable semantic state, so final prompts, validation, generation profiles, provider output, warnings, generated IDs, and timestamps stay out of REFINE requests.
 - `domain/plan_adapters.py` supplies real ANIMA and H3 adapters for loading, cloning, normalizing, and `to_llm_context()`; the unused pre-release alias has been removed.
@@ -25,8 +25,11 @@ Prompt Assembly consumes explicit versioned sources. PH5 replaced the disconnect
 core registry with the `operation_policies.py` interface; runtime boundaries and
 node-domain roles stay with their production callers. Target Model Cores are added
 only after primary-source research; user-authored Markdown supplements are optional
-guidance and there is no legacy runtime Skill compatibility path.
+guidance and there is no runtime Skill loader.
 
-## Compatibility
+## Current API
 
-Existing imports from `renderers.anima` and one-shot `render_anima(text, ...)` calls remain valid. Non-conflicting serialized PNF v1 content is migrated on the next refinement and committed as v2; conflicting content fails before Gateway/commit and preserves the old revision. Tests cover schema round-trip, safe/refused v1 migration, renderer output, Model Core and Markdown supplement contracts, Composer validation, compact REFINE context, and workflow-session migration.
+Existing imports from `renderers.anima` and one-shot `render_anima(text, ...)` calls
+remain valid. Serialized Plan input must be PNF v2. Tests cover current schema
+round-trip, outdated-version rejection, renderer output, Model Core and Markdown
+supplement contracts, validation, compact REFINE context, and v3.2 Session reload.

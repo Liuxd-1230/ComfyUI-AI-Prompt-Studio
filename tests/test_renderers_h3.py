@@ -148,10 +148,10 @@ def test_shot_audio_notes_stay_in_shot_not_global_soundscape():
     assert "[Shot 1]" in out and "Rain falls on the window." in out
 
 
-# ------------------------------------------------------------------ R2V
+# ------------------------------------------------------------------ Ref2VA
 
-def test_r2v_six_sections_in_order():
-    plan = make_plan("R2V")
+def test_ref2va_six_sections_in_order():
+    plan = make_plan("Ref2VA")
     plan.style_opening = "A quiet, painterly style with soft window light."
     plan.summary = "[reference generation] A girl enters a cafe and sits down."
     plan.subjects = [H3Subject(label="Subject 1", kind="character",
@@ -176,3 +176,8 @@ def test_r2v_six_sections_in_order():
     assert "[Shot 1]" in lines[dd_start + 2]
     # 对白语言保留
     assert "<d>[Chinese] 你好。</d>" in out
+
+
+def test_renderer_rejects_removed_r2v_mode():
+    with pytest.raises(ValueError, match="unsupported H3 mode"):
+        render_h3(make_plan("R2V"))

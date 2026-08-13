@@ -105,8 +105,13 @@ def test_parse_plan_json_bad_json():
 
 def test_parse_plan_json_clamps_marker():
     raw = '{"retention": [{"label": "Subject 1", "marker": "nope"}], "shots": []}'
-    plan = parse_plan_json(raw, "R2V", 10.0)
+    plan = parse_plan_json(raw, "Ref2VA", 10.0)
     assert plan.retention[0].marker == "fully_preserved"
+
+
+def test_parse_plan_json_rejects_removed_r2v_mode():
+    with pytest.raises(ValueError, match="unsupported H3 mode"):
+        parse_plan_json('{"shots": []}', "R2V", 10.0)
 
 
 # ---------------------------------------------------------------- 图片映射
@@ -149,7 +154,7 @@ def test_normalize_media_labels_per_kind():
     from aps.schemas.h3 import H3Asset, H3Retention
     from aps.services.h3_plan import normalize_media_labels
 
-    plan = H3PromptPlan(mode="R2V", duration_seconds=10.0)
+    plan = H3PromptPlan(mode="Ref2VA", duration_seconds=10.0)
     plan.assets = [
         H3Asset(label="Picture 1", kind="picture"),
         H3Asset(label="Video 2", kind="video"),

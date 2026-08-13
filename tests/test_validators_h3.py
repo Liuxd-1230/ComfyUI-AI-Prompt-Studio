@@ -14,14 +14,14 @@ FOUR_MODE_OK = (
     "non_diegetic_music: A slow piano theme in D minor."
 )
 
-R2V_OK = (
+REF2VA_OK = (
     "subject_definitions:\n"
     "<Subject 1> is the girl with long dark hair, reused from <Picture 1>.\n"
     "<Audio 1> is the original dialogue track.\n"
     "summary:\n"
     "[reference generation] A girl enters a cafe and sits by the window.\n"
     "retention_analysis:\n"
-    "<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - retained as-is\n"
+    "<Subject 1>: fully_preserved - retained as-is\n"
     "<Audio 1>: fully_copy - keep the original track\n"
     "detailed_description:\n"
     "A quiet painterly style with soft window light.\n"
@@ -38,29 +38,29 @@ def test_four_mode_ok():
     assert validate_h3(FOUR_MODE_OK, "I2VA").valid is True
 
 
-def test_r2v_ok():
-    assert validate_h3(R2V_OK, "R2V").valid is True
+def test_ref2va_ok():
+    assert validate_h3(REF2VA_OK, "Ref2VA").valid is True
 
 
 def test_plan_rejects_undefined_reference_and_speaker():
     plan = H3PromptPlan(mode="Ref2VA", shots=[H3Shot(
         references=["Picture 99"], dialogues=[H3Dialogue(
             text="hello", speaker_ids=["S9"])])])
-    report = validate_h3(R2V_OK, "Ref2VA", plan=plan)
+    report = validate_h3(REF2VA_OK, "Ref2VA", plan=plan)
     codes = {issue.code for issue in report.issues}
     assert "h3_reference_undefined" in codes
     assert "h3_speaker_undefined" in codes
 
 
 def test_ref2va_duration_outside_official_range_fails():
-    report = validate_h3(R2V_OK, "Ref2VA", duration=16)
+    report = validate_h3(REF2VA_OK, "Ref2VA", duration=16)
     assert any(issue.code == "h3_duration" for issue in report.issues)
 
 
 def test_ref2va_rejects_defined_asset_not_used_in_shot_or_retention():
     plan = H3PromptPlan(mode="Ref2VA", assets=[H3Asset(label="Picture 1")],
                         shots=[H3Shot(index=1)])
-    report = validate_h3(R2V_OK, "Ref2VA", plan=plan)
+    report = validate_h3(REF2VA_OK, "Ref2VA", plan=plan)
     codes = {issue.code for issue in report.issues}
     assert "h3_reference_unused" in codes
     assert "h3_reference_retention_missing" in codes
@@ -71,7 +71,7 @@ def test_ref2va_accepts_asset_used_at_exact_shot_and_retained():
         mode="Ref2VA", assets=[H3Asset(label="Picture 1")],
         retention=[H3Retention(label="Picture 1", marker="fully_preserved")],
         shots=[H3Shot(index=1, references=["Picture 1"])])
-    report = validate_h3(R2V_OK, "Ref2VA", plan=plan)
+    report = validate_h3(REF2VA_OK, "Ref2VA", plan=plan)
     codes = {issue.code for issue in report.issues}
     assert "h3_reference_unused" not in codes
     assert "h3_reference_retention_missing" not in codes
@@ -84,14 +84,14 @@ def test_ref2va_rejects_unknown_and_excess_total_media_duration():
         AssetRef(asset_id="a1", asset_type="audio"),
         AssetRef(asset_id="p1", asset_type="image"),
     ])
-    report = validate_h3(R2V_OK, "Ref2VA", manifest=manifest)
+    report = validate_h3(REF2VA_OK, "Ref2VA", manifest=manifest)
     codes = {issue.code for issue in report.issues}
     assert "h3_reference_video_total" in codes
     assert "h3_reference_duration_unknown" in codes
 
 
 def test_ref2va_rejects_retention_marker_for_wrong_modality():
-    prompt = R2V_OK.replace("<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved",
+    prompt = REF2VA_OK.replace("<Subject 1>: fully_preserved",
                             "<Subject 1>: fully_copy")
     report = validate_h3(prompt, "Ref2VA")
     assert any(issue.code == "h3_retention_modality" for issue in report.issues)
@@ -121,9 +121,9 @@ def test_field_order():
     assert any(i.code == "h3_field_order" for i in r.issues)
 
 
-def test_r2v_section_missing():
-    prompt = R2V_OK.replace("retention_analysis:\n<Subject 1> (appears in [Shot 1], [Shot 2]): fully_preserved - retained as-is\n<Audio 1>: fully_copy - keep the original track\n", "")
-    r = validate_h3(prompt, "R2V")
+def test_ref2va_section_missing():
+    prompt = REF2VA_OK.replace("retention_analysis:\n<Subject 1>: fully_preserved - retained as-is\n<Audio 1>: fully_copy - keep the original track\n", "")
+    r = validate_h3(prompt, "Ref2VA")
     assert any(i.code == "h3_section_missing" for i in r.issues)
     assert any(i.code == "h3_section_incomplete" for i in r.issues)
 
@@ -213,10 +213,10 @@ def test_shot_timestamp_not_increasing():
     assert any(i.code == "h3_ts_increasing" for i in r.issues)
 
 
-def test_shot1_timestamp_in_r2v():
-    prompt = R2V_OK.replace("[Shot 1] The girl walks in.",
+def test_shot1_timestamp_in_ref2va():
+    prompt = REF2VA_OK.replace("[Shot 1] The girl walks in.",
                             "[Shot 1] At 00:00.000, The girl walks in.")
-    r = validate_h3(prompt, "R2V")
+    r = validate_h3(prompt, "Ref2VA")
     assert any(i.code == "h3_shot1_timestamp" for i in r.issues)
 
 
@@ -267,23 +267,23 @@ def test_music_duplicates_soundscape():
     assert any(i.code == "h3_audio_duplicate" for i in r.issues)
 
 
-# ---------------------------------------------------------------- R2V 特有
+# ---------------------------------------------------------------- Ref2VA 特有
 
-def test_r2v_summary_prefix():
-    prompt = R2V_OK.replace("[reference generation] A girl enters a cafe and sits by the window.",
+def test_ref2va_summary_prefix():
+    prompt = REF2VA_OK.replace("[reference generation] A girl enters a cafe and sits by the window.",
                             "A girl enters a cafe and sits by the window.")
-    r = validate_h3(prompt, "R2V")
+    r = validate_h3(prompt, "Ref2VA")
     assert any(i.code == "h3_summary_prefix" for i in r.issues)
 
 
-def test_r2v_retention_marker():
-    prompt = R2V_OK.replace("fully_preserved - retained as-is", "kept the same look")
-    r = validate_h3(prompt, "R2V")
+def test_ref2va_retention_marker():
+    prompt = REF2VA_OK.replace("fully_preserved - retained as-is", "kept the same look")
+    r = validate_h3(prompt, "Ref2VA")
     assert any(i.code == "h3_retention_marker" for i in r.issues)
 
 
 def test_ref2va_rejects_generic_asset_labels_and_malformed_retention() -> None:
-    prompt = R2V_OK.replace("<Picture 1>", "<Asset 1>")
+    prompt = REF2VA_OK.replace("<Picture 1>", "<Asset 1>")
 
     report = validate_h3(prompt, "Ref2VA")
 
@@ -293,9 +293,9 @@ def test_ref2va_rejects_generic_asset_labels_and_malformed_retention() -> None:
 
 
 def test_ref2va_rejects_retention_text_between_label_and_colon() -> None:
-    prompt = R2V_OK.replace(
-        "<Picture 1>: fully_preserved",
-        "<Picture 1> (appears in [Shot 1]): fully_preserved")
+    prompt = REF2VA_OK.replace(
+        "<Subject 1>: fully_preserved",
+        "<Subject 1> (appears in [Shot 1]): fully_preserved")
 
     report = validate_h3(prompt, "Ref2VA")
 
@@ -311,7 +311,7 @@ def test_ref2va_unanalysed_picture_cannot_claim_full_preservation() -> None:
         asset_id="image_1", asset_type="image", h3_labels=["Picture 1"],
         note="unanalysed connected picture reference; contents unavailable")])
 
-    prompt = R2V_OK.replace(
+    prompt = REF2VA_OK.replace(
         "<Audio 1>: fully_copy - keep the original track",
         "<Picture 1>: fully_preserved - preserves the dancer pose\n"
         "<Audio 1>: fully_copy - keep the original track")
@@ -333,7 +333,7 @@ def test_xml_style_closing_reference_tags_are_not_unknown_labels() -> None:
                    for issue in report.issues)
 
 
-def test_r2v_style_opening_warning():
-    prompt = R2V_OK.replace("A quiet painterly style with soft window light.\n", "")
-    r = validate_h3(prompt, "R2V")
-    assert any(i.code == "h3_r2v_style_opening" for i in r.issues)
+def test_ref2va_style_opening_warning():
+    prompt = REF2VA_OK.replace("A quiet painterly style with soft window light.\n", "")
+    r = validate_h3(prompt, "Ref2VA")
+    assert any(i.code == "h3_ref2va_style_opening" for i in r.issues)

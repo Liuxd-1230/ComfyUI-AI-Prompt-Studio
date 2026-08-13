@@ -382,7 +382,6 @@
 .aps-studio-output summary { cursor: pointer; }
 .aps-studio-help > div:first-of-type { margin-top: 5px; }
 .aps-studio-help[hidden] { display: none; }
-.aps-studio-legacy-note { color: #9aa7b5; }
 .aps-studio-chat {
   max-height: 96px;
   overflow: auto;

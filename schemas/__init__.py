@@ -15,7 +15,7 @@ from .character import (
 )
 from .h3 import (
     H3_MODES,
-    R2V_SECTIONS,
+    REF2VA_SECTIONS,
     THREE_FIELDS,
     H3Asset,
     H3AudioField,
@@ -129,5 +129,5 @@ __all__ = [
     # h3
     "H3PromptPlan", "H3Shot", "H3Speaker", "H3Subject", "H3Asset",
     "H3Dialogue", "H3Retention", "H3AudioField",
-    "H3_MODES", "R2V_SECTIONS", "THREE_FIELDS",
+    "H3_MODES", "REF2VA_SECTIONS", "THREE_FIELDS",
 ]

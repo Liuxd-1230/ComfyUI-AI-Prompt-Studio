@@ -9,8 +9,7 @@ from aps.prompting import PromptAssembler, PromptSource, StructuredTaskData
 from aps.prompting.assembly import PromptLayer
 from aps.prompting.operation_policies import OperationKind, operation_source
 from aps.prompting.output_contracts import schema_contract
-from aps.schemas.anima import (AnimaCharacter, AnimaMigrationConflict,
-                               AnimaPromptPlan)
+from aps.schemas.anima import AnimaCharacter, AnimaPromptPlan
 from aps.schemas.base import SchemaError
 from aps.schemas.h3 import H3PromptPlan, H3Shot
 from aps.prompting.model_cores import model_core_prompt
@@ -52,8 +51,8 @@ def test_anima_v2_has_one_authoritative_owner_for_character_prose() -> None:
     assert "scene_description" in plan_fields
 
 
-def test_anima_v1_conflict_is_not_silently_promoted_to_v2() -> None:
-    with pytest.raises(AnimaMigrationConflict, match="保持不变"):
+def test_anima_v1_plan_is_rejected_without_compatibility_migration() -> None:
+    with pytest.raises(SchemaError, match="仅支持 normal_form_version '2.0'"):
         AnimaPromptPlan.from_json({
             "normal_form_version": "1.0",
             "natural_body": "Alice wears a red coat in a rainy street.",
@@ -64,49 +63,10 @@ def test_anima_v1_conflict_is_not_silently_promoted_to_v2() -> None:
         })
 
 
-def test_anima_v1_description_only_is_retained_as_character_creative_note() -> None:
-    restored = AnimaPromptPlan.from_json({
-        "normal_form_version": "1.0",
-        "characters": [{
-            "character_id": "c1",
-            "name": "Alice",
-            "description": "short black hair and a white uniform",
-        }],
-    })
-
-    assert restored.characters[0].creative_notes == [
-        "short black hair and a white uniform"
-    ]
-    assert "description" not in restored.to_llm_context()["characters"][0]
-
-
-def test_anima_v1_natural_body_only_is_retained_as_global_creative_note() -> None:
-    restored = AnimaPromptPlan.from_json({
-        "normal_form_version": "1.0",
-        "natural_body": "Alice runs through the rain.",
-    })
-
-    assert restored.creative_notes == ["Alice runs through the rain."]
-    assert restored.scene_description == ""
-    assert restored.validate() == []
-
-
-def test_anima_v1_description_conflict_is_not_silently_discarded() -> None:
-    with pytest.raises(AnimaMigrationConflict, match="保持不变"):
-        AnimaPromptPlan.from_json({
-            "normal_form_version": "1.0",
-            "characters": [{
-                "character_id": "c1",
-                "action": "runs through the rain",
-                "description": "Alice runs through the rain",
-            }],
-        })
-
-
-def test_anima_malformed_legacy_character_fails_at_schema_boundary() -> None:
+def test_anima_current_plan_rejects_malformed_character_at_schema_boundary() -> None:
     with pytest.raises(SchemaError, match="characters"):
         AnimaPromptPlan.from_json({
-            "normal_form_version": "1.0",
+            "normal_form_version": "2.0",
             "characters": ["not-a-character"],
         })
 
@@ -186,18 +146,6 @@ def test_anima_owner_matrix_scopes_same_value_to_each_character() -> None:
     ])
 
     assert plan.validate() == []
-
-
-def test_anima_v1_description_conflicts_with_existing_creative_notes() -> None:
-    with pytest.raises(AnimaMigrationConflict, match="保持不变"):
-        AnimaPromptPlan.from_json({
-            "normal_form_version": "1.0",
-            "characters": [{
-                "character_id": "c1",
-                "description": "blue hair",
-                "creative_notes": ["blue hair"],
-            }],
-        })
 
 
 def test_anima_model_core_is_operation_neutral() -> None:

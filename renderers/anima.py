@@ -207,18 +207,11 @@ def parse_anima_plan(raw: str, bible: Optional[CharacterBible] = None) -> AnimaP
     """把 LLM 输出的计划 JSON 容错解析为 AnimaPromptPlan。
 
     非 JSON 时回退：整段文本作为 scene_description，Bible 派生人物绑定（不伪造）。
-    v1 的 natural_description/natural_body/character.description 只在 schema
-    迁移边界消费，renderer 永远只接收 PNF v2。
+    JSON 输出必须直接符合 PNF v2；不做旧字段映射。
     """
     data = _extract_json(raw)
     if data is not None:
-        legacy_payload = dict(data)
-        legacy_payload.setdefault("normal_form_version", "1.0")
-        legacy_payload["natural_body"] = (
-            _s(data.get("natural_description")) or _s(data.get("natural_body")))
-        legacy_payload["control_tags"] = (
-            _str_list(data.get("control_tags")) or _str_list(data.get("quality")))
-        plan = AnimaPromptPlan.from_json(legacy_payload).normalized()
+        plan = AnimaPromptPlan.from_json(data).normalized()
         if not plan.characters and bible is not None:
             plan.characters = build_anima_plan("", bible).characters
         if (not plan.scene_description and not plan.creative_notes and

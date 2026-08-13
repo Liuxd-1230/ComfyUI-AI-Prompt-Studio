@@ -3,8 +3,8 @@
 > **ADR 0008 current runtime:** PromptSession v3.2 and both Studio nodes use one
 > complete-prompt path. The public execution-mode switch and the disconnected strict
 > Plan/ChangeSet/transaction implementation were removed after real 基元/LM comparison
-> showed extra latency, format failures, and H3 semantic false positives. Old lenient
-> sessions migrate to the single path; old strict sessions require a new conversation.
+> showed extra latency, format failures, and H3 semantic false positives. The runtime
+> accepts only current v3.2 Session state; incompatible versions fail explicitly.
 > Historical P0-P4 rows below document completed architecture experiments, not current
 > production APIs. Current acceptance is tracked by `test_single_lane_studio.py`, public
 > Studio flow tests, and the prompt matrix.
@@ -22,6 +22,12 @@
 > `tests/test_h3_prompt_studio.py` and `tests/test_validators_h3.py`; provider evidence
 > and remaining timeout/wording limits are recorded in
 > `docs/testing/h3-dance-prompt-quality-audit-2026-08-13.md`.
+>
+> **2026-08-13 compatibility removal:** Production accepts only ANIMA Plan Normal
+> Form v2, PromptSession v3.2, and the five current H3 mode values. Incompatible
+> versions fail before Gateway/commit; there is no schema migration registry,
+> field inference, session reset, or mode-alias branch. Current restore, idempotency,
+> Ref2VA, and multi-turn behavior remain covered by the public-flow suite.
 
 This table tracks the binding Persistent contract §108 at the current HEAD.
 “Partial” means the invariant has an executable base but the named end-to-end
@@ -29,14 +35,14 @@ surface is not complete; it must not be described as finished functionality.
 
 | §108 | Status | Executable evidence / remaining gap |
 |---|---|---|
-| 108.1 Single Attribute Edit | done | strict Studio scoped ChangeSet + Diff Guard regressions |
+| 108.1 Single Attribute Edit | done | current Studio multi-turn refinement regressions |
 | 108.2 Derived Description Synchronization | done | PNF has no editable derived prose; `test_phase1_architecture.py` |
 | 108.3 Environment Invalidation | done | PNF ownership plus strict candidate validation |
 | 108.4 Positive / Negative Conflict | done | deterministic negative cleanup in `test_phase2_transactions.py` and Studio failure regression |
 | 108.5 H3 Timing Dependency | done | proportional timestamp closure in transaction and H3 Studio tests |
 | 108.6 Delete Middle Shot | done | H3 adapter reindexes list items after guarded middle-shot deletion; public strict-node regression covers rendered Shot 1/2 output |
 | 108.7 Object State | partial | no LLM Critic under ADR 0007; protocol validator covers representable hard conflicts only |
-| 108.8 Intentional Surreal Transition | done | creative interpretation remains with the selected model; strict mode guards only declared mutations |
+| 108.8 Intentional Surreal Transition | done | creative interpretation remains with the selected model; deterministic protocol checks do not overconstrain it |
 | 108.9 Unauthorized Changes | done | declared requested paths + Diff Guard; model-proposed dependencies are rejected |
 | 108.10 Malformed Patch | done | bounded structured retry in `test_p41_resilience.py` |
 | 108.11 Validator Failure | done | image/H3 Studio production failures do not commit or creatively repair |
@@ -50,7 +56,7 @@ surface is not complete; it must not be described as finished functionality.
 | 108.19 CharacterBible Changed | done | same-nonce mismatch-before-Gateway production test |
 | 108.20 Storyboard Major Change | done | source fingerprint comparison; finer compatibility/rebase is not implemented |
 | 108.21 Target Compatible Switch | done | lenient target changes warn and continue; strict changes require a successful new lineage |
-| 108.22 Target Incompatible Switch | done | strict mode creates a replacement lineage only after successful CREATE |
+| 108.22 Target Incompatible Switch | done | explicit new-session flow replaces lineage only after successful CREATE |
 | 108.23 Long Conversation | done | explicit conversation/revision caps in `test_prompt_session.py` |
 | 108.24 Workflow Size | done | Session history remains capped at 10 revisions/40 messages and the serialized hidden workflow envelope is hard-capped at 4 MiB; load and pre-commit regressions prove oversized state never replaces the stable revision |
 | 108.25 Prompt Injection in Storyboard | done | external context is task data, not executable instruction; prompt inventory tests |

@@ -65,7 +65,6 @@ function studioElement(node) {
       <summary>H3 模式说明</summary>
       <div><strong>生成模式：</strong><span class="aps-studio-mode-help"></span></div>
       <div><strong>执行方式：</strong>直接维护成品提示词；格式异常时仅自动修复一次，失败保留上一版。</div>
-      <div class="aps-studio-legacy-note">旧工作流里的 R2V 等同 Ref2VA；新建工作流统一使用 Ref2VA。</div>
     </details>
     <div class="aps-studio-summary" role="status" aria-live="polite"></div>
     <label>本轮需求 / 修改意见
@@ -273,7 +272,7 @@ async function recoverNewerJournal(node, root) {
 }
 
 function attachStudio(node) {
-  ["operation", "text", "prompt_session", "session_action", "continue_previous",
+  ["operation", "text", "prompt_session", "session_action",
     "message_nonce"].forEach(
     (name) => hideSerializedWidget(byName(node, name)));
   const root = studioElement(node);

@@ -33,7 +33,7 @@ from ..services.prompt_session import (
 from ..services.supplements import supplement_sources as load_supplement_sources
 from ..prompting.model_cores import model_core_prompt
 from ..services.structured_output import raw_excerpt
-from ..validators.minimax_h3 import r2v_english_issue, validate_h3
+from ..validators.minimax_h3 import ref2va_english_issue, validate_h3
 from ._helpers import require_api_key, resolve_profile_input
 
 
@@ -85,7 +85,8 @@ class APS_H3PromptStudio:
             audio_3: Any = None, prompt_session: str = "",
             message_nonce: str = "", prompt_supplements: str = "",
             unique_id: Any = None) -> Any:
-        mode = _normalize_mode(mode)
+        if mode not in H3_UI_MODES:
+            raise ValueError(f"unsupported H3 mode: {mode!r}")
         if not 4.0 <= float(duration) <= 15.0:
             raise ValueError("MiniMax H3 目标时长必须在 4–15 秒之间")
         incoming = AIProfile.from_json(AI_PROFILE or {})
@@ -275,10 +276,6 @@ class APS_H3PromptStudio:
             session.revision, session.validation.as_text())
 
 
-def _normalize_mode(mode: str) -> str:
-    return "Ref2VA" if mode in {"R2V", "R2V (legacy)"} else mode
-
-
 def _h3_task_sources(
         storyboard: Storyboard | None, bible: CharacterBible | None,
         book: CharacterBook | None,
@@ -309,7 +306,7 @@ def _validate_lenient_h3(
     if required is not None and image_count != required:
         report.add("error", "h3_asset_mode",
                    f"{mode} 需要 {required} 张参考图，实际 {image_count}")
-    if mode == "Ref2VA" and r2v_english_issue(parsed.prompt):
+    if mode == "Ref2VA" and ref2va_english_issue(parsed.prompt):
         report.add("error", "h3_ref2va_english",
                    "Ref2VA 语义描述必须使用英文；对白/歌词/画面文字除外")
     decimal_issue = _decimal_second_confusion(parsed.prompt, duration)

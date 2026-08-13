@@ -149,46 +149,11 @@ class PromptRevision(Schema):
         return self
 
 
-def _reset_legacy_session_to_v32(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Pre-Studio state cannot be rebound to the current prompt safely."""
-    del data
-    return {
-        "schema_version": "3.2", "execution_mode": "single",
-        "current_payload_kind": "empty", "fingerprint_state": "bound",
-    }
-
-
-def _migrate_single_lane(data: Dict[str, Any]) -> Dict[str, Any]:
-    migrated = dict(data)
-    if migrated.get("execution_mode") == "strict":
-        raise ValueError("旧 strict 会话不能安全转换为单一路径，请开始新会话")
-    migrated["schema_version"] = "3.2"
-    migrated["execution_mode"] = "single"
-    migrated["current_payload_kind"] = (
-        "freeform" if migrated.get("current_prompt") else "empty")
-    migrated["current_plan"] = {}
-    for revision in migrated.get("revisions", []):
-        if isinstance(revision, dict):
-            revision["execution_mode"] = "single"
-            revision["payload_kind"] = "freeform"
-            revision["plan"] = {}
-    migrated.setdefault("node_instance_id", "")
-    migrated.setdefault("origin_session_id", "")
-    return migrated
-
-
 @dataclasses.dataclass
 class PromptSession(Schema):
     """Source of truth for one persistent CREATE/REFINE lifecycle."""
 
     CURRENT_SCHEMA_VERSION: ClassVar[str] = "3.2"
-    MIGRATIONS: ClassVar[Dict[str, Dict[str, Any]]] = {
-        "1.0": {"3.2": _reset_legacy_session_to_v32},
-        "2.0": {"3.2": _reset_legacy_session_to_v32},
-        "3.0": {"3.2": _migrate_single_lane},
-        "3.1": {"3.2": _migrate_single_lane},
-    }
-
     schema_version: str = "3.2"
     id: str = ""
     node_instance_id: str = ""
@@ -207,7 +172,6 @@ class PromptSession(Schema):
     last_processed_message_id: str = ""
     fingerprints: SessionFingerprints = dataclasses.field(
         default_factory=SessionFingerprints)
-    fingerprint_state: str = "bound"
     created_at: str = ""
     updated_at: str = ""
 
@@ -227,14 +191,6 @@ class PromptSession(Schema):
             raise SchemaError("PromptSession.execution_mode 非法")
         if self.current_payload_kind not in {"empty", "freeform", "structured"}:
             raise SchemaError("PromptSession.current_payload_kind 非法")
-        if self.fingerprint_state not in {"bound", "legacy_unbound"}:
-            raise SchemaError("PromptSession.fingerprint_state 非法")
-        if (self.has_current_state
-                and not (self.fingerprints.target_signature
-                         or self.fingerprints.model_core_hash
-                         or self.fingerprints.source_hashes
-                         or self.fingerprints.supplement_hashes)):
-            self.fingerprint_state = "legacy_unbound"
         self.revisions = self.revisions[-MAX_REVISIONS:]
         self.conversation = self.conversation[-MAX_CONVERSATION_MESSAGES:]
         if not self.id:
@@ -258,12 +214,12 @@ class PromptSession(Schema):
                 candidate = json.loads(candidate)
             except ValueError:
                 candidate = None
-        if isinstance(candidate, dict):
-            version = str(candidate.get("schema_version", "1.0"))
-            if version not in {"1.0", "2.0", "3.0", "3.1",
-                               cls.CURRENT_SCHEMA_VERSION}:
+        if isinstance(candidate, dict) and candidate:
+            version = str(candidate.get("schema_version", ""))
+            if version != cls.CURRENT_SCHEMA_VERSION:
                 raise SchemaError(
-                    f"PromptSession future schema_version {version!r} 无法安全编辑")
+                    "PromptSession 仅支持当前 schema_version '3.2'；"
+                    f"收到 {version!r}，请新建会话")
         restored = super().from_json(data)
         if not isinstance(restored, cls):
             raise SchemaError("PromptSession 反序列化结果类型错误")
@@ -358,7 +314,6 @@ class PromptSession(Schema):
         staged.conversation = staged.conversation[-MAX_CONVERSATION_MESSAGES:]
         staged.last_processed_message_id = message_id or staged.last_processed_message_id
         staged.fingerprints = next_fingerprints
-        staged.fingerprint_state = "bound"
         staged.locked_constraints = next_locks
         staged.updated_at = time.strftime("%Y-%m-%dT%H:%M:%S")
         if _serialized_size(staged.to_json()) > MAX_SESSION_SERIALIZED_BYTES:
@@ -403,7 +358,7 @@ class PromptSession(Schema):
     def revert_previous(
             self, *, node_instance_id: str = "",
             recovery_journal: "RecoveryJournal | None" = None) -> bool:
-        """Legacy UI action: restore the preceding snapshot without deleting history."""
+        """Restore the preceding snapshot without deleting history."""
         if len(self.revisions) < 2:
             return False
         return self.restore_revision(
@@ -416,13 +371,11 @@ class PromptSession(Schema):
 
     def fingerprint_mismatches(
             self, fingerprints: SessionFingerprints | Dict[str, Any]) -> List[str]:
-        if self.fingerprint_state == "legacy_unbound" and self.has_current_state:
-            return ["legacy_unbound"]
         return self.fingerprints.mismatches(
             SessionFingerprints.from_json(fingerprints))
 
     def for_node(self, node_instance_id: str) -> tuple["PromptSession", bool]:
-        """Bind an old snapshot once, or fork copied state for a different node."""
+        """Bind an unowned snapshot once, or fork copied state for a different node."""
         node_id = str(node_instance_id or "").strip()
         if not node_id:
             raise ValueError("Prompt Studio 缺少 node_instance_id")

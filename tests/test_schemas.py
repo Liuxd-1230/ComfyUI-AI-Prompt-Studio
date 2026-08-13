@@ -1,4 +1,4 @@
-"""Schema 层测试：往返序列化 / 容错 / 迁移 / 嵌套转换 / 校验。"""
+"""Schema 层测试：往返序列化 / 容错 / 版本 / 嵌套转换 / 校验。"""
 import dataclasses
 
 import pytest
@@ -39,25 +39,12 @@ def test_tolerant_input():
     assert r.reasoning == ""         # 缺失取默认
 
 
-def test_migration():
-    @dataclasses.dataclass
-    class M(S.Schema):
-        a: str = ""
-        b: int = 0
-
-    M.MIGRATIONS = {"0.9": {"1.0": lambda d: {**d, "b": int(d.get("b") or 0) + 1}}}
-    m = M.from_json({"schema_version": "0.9", "a": "x", "b": 1})
-    assert m.b == 2
-    assert m.schema_version == S.SCHEMA_VERSION
-
-
-def test_bad_migration_raises():
+def test_outdated_schema_version_is_rejected():
     @dataclasses.dataclass
     class M(S.Schema):
         a: str = ""
 
-    M.MIGRATIONS = {"0.9": {"1.0": lambda d: (_ for _ in ()).throw(ValueError("boom"))}}
-    with pytest.raises(S.SchemaError):
+    with pytest.raises(S.SchemaError, match="仅支持当前 schema_version"):
         M.from_json({"schema_version": "0.9", "a": "x"})
 
 
@@ -138,7 +125,7 @@ def test_manifest_merge_dedupe():
 def test_h3_plan_basics():
     plan = S.H3PromptPlan(mode="FL2VA", duration_seconds=8.0)
     assert plan.mode == "FL2VA"
-    assert S.R2V_SECTIONS[0] == "subject_definitions"
+    assert S.REF2VA_SECTIONS[0] == "subject_definitions"
     assert len(S.THREE_FIELDS) == 3
     assert S.H3PromptPlan.from_json(plan.to_json()).duration_seconds == 8.0
 

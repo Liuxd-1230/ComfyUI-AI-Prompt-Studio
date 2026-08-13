@@ -34,7 +34,7 @@ def test_refine_and_repair_have_disjoint_responsibilities() -> None:
     assert "Do not add creative details" in repair
 
 
-def test_legacy_user_operation_surfaces_are_removed() -> None:
+def test_removed_user_operation_surfaces_do_not_return() -> None:
     prompt_plan = (ROOT / "schemas" / "prompt_plan.py").read_text(encoding="utf-8")
     h3_plan = (ROOT / "schemas" / "h3.py").read_text(encoding="utf-8")
     h3_service = (ROOT / "services" / "h3_plan.py").read_text(encoding="utf-8")
