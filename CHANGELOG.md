@@ -1,5 +1,7 @@
 # Changelog
 
+- **H3 社区模板与双采样调研**：对照用户提供的基础/加强 Ref2VA 模板、MiniMax 官方固定 Skill 与当前 Model Core/validator，拆解 123 节点双模型二采工作流的像素放大、影音 latent 重编码和第二 UNet 重绘链路；补充人物模糊的时序恢复、跟踪裁脸局部二采与渐进放大建议，并明确 Civitai/RunningHub 可验证证据边界。详见 `docs/research/h3-double-sampling-community-2026-08-13.md`。
+
 - **P0–P3 UI 与性能收口**：Image/H3 Studio 工作台增加前后端 UI contract 握手，ComfyUI 未重启导致旧 Python 节点与新 JS 混用时会明确阻止输入并提示重启；清除节点名称中已删除的“宽松 / 严格”。Studio 默认高度由 438px 降为 320px，帮助和历史按需展开，当前提示词可一键复制，会话仅渲染最近 6 条。输入采用 200ms 防抖且 Queue/失焦前 flush，不再每字符重复触发全图重绘。Profiles/Supplements 注册表共享 TTL/in-flight 缓存；设置工作台改为档案、能力、运行时、Markdown/日志四分区懒加载，增加原生按钮入口、Esc 关闭、Tab 焦点循环、焦点恢复和可读错误状态。
 
 - **Studio 单一路径重构**：基于基元与 LM Studio 的 16 次质量对照，删除 Image/H3 Studio 的 `execution_mode`、strict Plan/ChangeSet/Diff Guard/事务分支及其 mock-only 测试。PromptSession 升级 3.2：旧 lenient 会话迁移为 single，旧 strict 明确要求新会话。唯一主路径维护真正传给下游的完整 Prompt，协议垃圾或确定性硬错误最多保真修复一次；ANIMA 同时迁入官方质量前缀、基础 negative、用户显式排除项与英语/身份检查，H3 保留官方字段、媒体、引用、时长、身份和运镜校验。更新前端帮助、示例工作流、验收矩阵、README、约束修订与 ADR 0008。
