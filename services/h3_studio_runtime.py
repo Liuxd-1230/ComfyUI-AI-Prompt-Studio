@@ -107,7 +107,8 @@ def _register_images(manifest: ReferenceManifest, count: int) -> None:
         manifest.add_asset(AssetRef(
             asset_id=f"image_{index}", asset_type="image", data_ref="images",
             source="APS_H3PromptStudio", h3_labels=[f"Picture {index}"],
-            note=f"connected picture reference {index}"))
+            note=(f"unanalysed connected picture reference {index}; "
+                  "raw pixels are unavailable to the prompt-writing model")))
 
 
 def _register_media(manifest: ReferenceManifest, kind: str,

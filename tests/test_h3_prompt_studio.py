@@ -149,6 +149,22 @@ def test_h3_lenient_repairs_pan_when_user_requested_truck(monkeypatch, store) ->
     assert "一镜到底/单镜头" in SequenceGateway.requests[0].system
 
 
+def test_h3_format_repair_caps_high_reasoning_at_medium(monkeypatch, store) -> None:
+    SequenceGateway.responses = [
+        "malformed first response",
+        f"<PROMPT>{_valid_prompt()}</PROMPT><SUMMARY>Repaired.</SUMMARY>",
+    ]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+    profile = _profile(store)
+    profile["reasoning"] = "high"
+
+    studio_mod.APS_H3PromptStudio().run(
+        profile, "woman waits", "T2VA", 8.0, message_nonce="repair-reasoning")
+
+    assert SequenceGateway.requests[1].reasoning == "medium"
+
+
 def test_h3_lenient_failure_exposes_bounded_raw_and_exact_format_contract(
         monkeypatch, store) -> None:
     SequenceGateway.responses = ["first malformed H3 text", "second malformed H3 text"]
@@ -165,6 +181,149 @@ def test_h3_lenient_failure_exposes_bounded_raw_and_exact_format_contract(
         assert "non_diegetic_music:" in request.system
         assert "Never generalize or substitute a concrete location" in request.system
         assert "Distinguish zoom from push, pan from truck" in request.system
+
+
+@pytest.mark.parametrize("mode, required", [
+    ("I2VA", (
+        "Copy this exact skeleton",
+        "integrated_multimodal_description: [Shot 1]",
+        "The alignment line is not a shot",
+        "Do not write a timestamp after [Shot 1]",
+    )),
+    ("FL2VA", (
+        "Copy this exact skeleton",
+        "How the reference pictures align with the target video —",
+        "integrated_multimodal_description: [Shot 1]",
+        "Do not switch to the six-section Ref2VA format",
+    )),
+    ("Ref2VA", (
+        "summary: [reference generation]",
+        "<Picture 1>: fully_preserved",
+        "Do not define visual contents that are absent from task data",
+    )),
+])
+def test_h3_public_request_contains_small_model_mode_skeleton(
+        monkeypatch, store, mode, required) -> None:
+    SequenceGateway.responses = [
+        f"<PROMPT>{_valid_prompt()}</PROMPT><SUMMARY>Created.</SUMMARY>",
+        f"<PROMPT>{_valid_prompt()}</PROMPT><SUMMARY>Repaired.</SUMMARY>",
+    ]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+
+    try:
+        studio_mod.APS_H3PromptStudio().run(
+            _profile(store), "one woman dances in a livestream", mode, 8.0,
+            message_nonce=f"skeleton-{mode}")
+    except ValueError:
+        # The fixture prompt is intentionally T2VA-shaped. This test observes the
+        # public node's real assembled request, not validation of that fixture.
+        pass
+
+    system = SequenceGateway.requests[0].system
+    for marker in required:
+        assert marker in system
+    assert "cannot inspect raw connected media pixels" in system
+
+
+def test_h3_protocol_normalizer_recovers_i2va_prose_after_alignment() -> None:
+    raw = (
+        "For the target video, at 0.00 seconds into the target video, "
+        "<Picture 1> (from [Shot 2]) is fully referenced. The handheld camera "
+        "frames a woman dancing while pedestrians glance at her.\n"
+        "overall_soundscape: footsteps and traffic\n"
+        "non_diegetic_music: N/A")
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "I2VA")
+
+    assert normalized.startswith(
+        "For the target video, at 0.00 seconds into the target video, "
+        "<Picture 1> (from [Shot 1]) is fully referenced.\n")
+    assert "integrated_multimodal_description: [Shot 1] The handheld camera" in normalized
+    assert "[Shot 2]" not in normalized
+
+
+def test_h3_protocol_normalizer_removes_compact_zero_timestamp_from_shot_one() -> None:
+    raw = (
+        "How the reference pictures align with the target video — Picture 1 at "
+        "0.00 seconds and Picture 2 at 8.00 seconds.\n"
+        "integrated_multimodal_description: [Shot 1] At 0.00s; A handheld view.\n"
+        "overall_soundscape: traffic\nnon_diegetic_music: N/A")
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "FL2VA")
+
+    assert "[Shot 1] A handheld view." in normalized
+    assert "[Shot 1] At 0.00s" not in normalized
+
+
+def test_h3_protocol_normalizer_reindexes_body_and_normalizes_second_timestamps() -> None:
+    raw = (
+        "For the target video, at 0.00 seconds into the target video, "
+        "<Picture 1> (from [Shot 1]) is fully referenced.\n"
+        "integrated_multimodal_description: [Shot 2] At 0.04 seconds into the "
+        "target video, the woman begins dancing. [Shot 3] At 4.2s; pedestrians "
+        "glance and continue walking.\n"
+        "overall_soundscape: traffic\nnon_diegetic_music: N/A")
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "I2VA")
+
+    assert "integrated_multimodal_description: [Shot 1] the woman begins dancing." in normalized
+    assert "[Shot 2] At 00:04.200 pedestrians" in normalized
+    assert "[Shot 3]" not in normalized
+
+
+def test_h3_protocol_normalizer_removes_repeated_i2va_alignment_from_body() -> None:
+    raw = (
+        "For the target video, at 0.00 seconds into the target video, "
+        "<Picture 1> (from [Shot 1]) is fully referenced.\n"
+        "integrated_multimodal_description: [Shot 2] At 0.04 seconds into the "
+        "target video, <Picture 1> (from [Shot 1]) is fully referenced. "
+        "A handheld camera frames the dancer.\n"
+        "overall_soundscape: traffic\nnon_diegetic_music: N/A")
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "I2VA")
+
+    assert normalized.count("fully referenced") == 1
+    assert "integrated_multimodal_description: [Shot 1] A handheld camera" in normalized
+    assert "[Shot 0]" not in normalized
+
+
+def test_h3_protocol_normalizer_converts_decimal_second_phrases_in_body() -> None:
+    raw = (
+        "How the reference pictures align with the target video — Picture 1 at "
+        "0.00 seconds and Picture 2 at 8.00 seconds.\n"
+        "integrated_multimodal_description: [Shot 1] At 0.000s, she starts. "
+        "At 8.000s, she finishes.\n"
+        "overall_soundscape: traffic\nnon_diegetic_music: N/A")
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "FL2VA")
+
+    assert "[Shot 1] she starts." in normalized
+    assert "At 00:08.000, she finishes." in normalized
+
+
+def test_h3_protocol_normalizer_removes_bare_template_placeholder() -> None:
+    raw = _valid_prompt().replace(
+        "A woman waits", "A woman dances as <PARTICLE> dust crosses the frame")
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "T2VA")
+
+    assert "<PARTICLE>" not in normalized
+    assert "dust crosses the frame" in normalized
+
+
+def test_h3_public_validation_rejects_hundredth_second_duration_confusion() -> None:
+    parsed = studio_mod.LenientPromptOutput(
+        prompt=_valid_prompt().replace(
+            "A woman waits", "A woman dances and ends at 0.08 seconds"),
+        summary="", kind="tagged")
+
+    report = studio_mod._validate_lenient_h3(
+        parsed, "T2VA", 8.0, ReferenceManifest(), 0, [], "a woman dances")
+
+    assert not report.valid
+    assert any(issue.code == "h3_decimal_second_confusion"
+               for issue in report.issues)
 
 
 def test_h3_lenient_missing_connected_identity_repairs_once_then_rejects(

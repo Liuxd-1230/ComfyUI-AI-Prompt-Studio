@@ -253,7 +253,8 @@ class APS_H3PromptStudio:
             output_contract=LENIENT_PROMPT_CONTRACT)
         req = GenerateRequest(
             system=assembly.system, messages=[task_message(assembly)], web_search="off",
-            reasoning="low", max_tokens=8192, timeout=profile.timeout,
+            reasoning=("medium" if profile.reasoning == "high" else profile.reasoning),
+            max_tokens=8192, timeout=profile.timeout,
             output_contract=assembly.output_contract,
             assembly_report=report_payload(assembly))
         result = Gateway().generate(profile, api_key, req)
@@ -311,6 +312,9 @@ def _validate_lenient_h3(
     if mode == "Ref2VA" and r2v_english_issue(parsed.prompt):
         report.add("error", "h3_ref2va_english",
                    "Ref2VA 语义描述必须使用英文；对白/歌词/画面文字除外")
+    decimal_issue = _decimal_second_confusion(parsed.prompt, duration)
+    if decimal_issue:
+        report.add("error", "h3_decimal_second_confusion", decimal_issue)
     _append_identity_anchor_errors(report, parsed.prompt, source_bibles)
     camera_issue = _camera_motion_intent_issue(instruction, parsed.prompt)
     if camera_issue:
@@ -319,6 +323,29 @@ def _validate_lenient_h3(
     if shot_count_issue:
         report.add("error", "h3_shot_count_mismatch", shot_count_issue)
     return report
+
+
+def _h3_section(prompt: str, heading: str) -> str:
+    start = prompt.find(f"{heading}:")
+    if start < 0:
+        return ""
+    start += len(heading) + 1
+    positions = [prompt.find(f"{name}:", start) for name in (
+        "subject_definitions", "summary", "retention_analysis",
+        "detailed_description", "integrated_multimodal_description",
+        "overall_soundscape", "non_diegetic_music") if name != heading]
+    positions = [value for value in positions if value >= 0]
+    return prompt[start:min(positions) if positions else len(prompt)].strip()
+
+
+def _decimal_second_confusion(prompt: str, duration: float) -> str:
+    body = _h3_section(prompt, "integrated_multimodal_description") or _h3_section(
+        prompt, "detailed_description")
+    for value in re.findall(r"(?<!:)\b(0\.\d{2,3})\s+seconds?\b", body, re.I):
+        if 0 < float(value) < min(1.0, float(duration)):
+            return (f"正文中的 {value} seconds 疑似把目标时长的小数格式误当成秒数；"
+                    "请使用真实秒数或 MM:SS.mmm")
+    return ""
 
 
 def _normalize_lenient_h3_output(
@@ -344,6 +371,7 @@ def _normalize_lenient_h3_protocol(prompt: str, mode: str) -> str:
         "detailed_description", "overall_soundscape", "non_diegetic_music",
     ]
     result = str(prompt or "")
+    result = re.sub(r"<(?:PARTICLE|PLACEHOLDER|TODO)>", "", result, flags=re.I)
     for heading in headings:
         result = re.sub(
             rf"(?is)<{re.escape(heading)}>\s*(.*?)\s*</{re.escape(heading)}>",
@@ -363,6 +391,70 @@ def _normalize_lenient_h3_protocol(prompt: str, mode: str) -> str:
     result = re.sub(
         r"(?im)(\[Shot 1\])\s+At\s+0{1,2}:00\.000\s*[;,]?\s*",
         r"\1 ", result)
+    result = re.sub(
+        r"(?im)(\[Shot 1\])\s+At\s+0(?:\.0+)?s\s*[;,]?\s*",
+        r"\1 ", result)
+    if mode == "I2VA":
+        # The alignment sentence is a protocol header, not editable scene prose.
+        # Small local models sometimes drift its internal shot label or append the
+        # whole shot to that same line. Restore the fixed header and move only the
+        # appended prose into the required body field.
+        alignment = (
+            "For the target video, at 0.00 seconds into the target video, "
+            "<Picture 1> (from [Shot 1]) is fully referenced.")
+        match = re.match(
+            r"(?is)^For the target video, at 0\.00 seconds into the target video,\s*"
+            r"<Picture 1>\s*\(from \[Shot \d+\]\) is fully referenced\."
+            r"[^\S\r\n]*([^\r\n]*)\r?\n",
+            result)
+        if match:
+            appended = match.group(1).strip()
+            rest = result[match.end():].lstrip("\r\n")
+            if appended and "integrated_multimodal_description:" not in rest:
+                result = (alignment + "\nintegrated_multimodal_description: "
+                          "[Shot 1] " + appended + "\n" + rest)
+            else:
+                result = alignment + "\n" + appended + ("\n" if appended else "") + rest
+    if mode != "Ref2VA":
+        # Normalize unambiguous small-model variants inside the semantic body.
+        # Alignment headers are excluded so their decimal seconds remain prose.
+        field_start = result.find("integrated_multimodal_description:")
+        field_end = result.find("\noverall_soundscape:", field_start)
+        if field_start >= 0 and field_end > field_start:
+            prefix = result[:field_start]
+            body = result[field_start:field_end]
+            suffix = result[field_end:]
+            body = re.sub(
+                r"(?i)(integrated_multimodal_description:\s*\[Shot\s+\d+\])"
+                r"\s+At\s+\d+(?:\.\d+)?\s*"
+                r"(?:seconds? into the target video|s)\s*[;,]?\s*",
+                r"\1 ", body, count=1)
+            if mode == "I2VA":
+                body = re.sub(
+                    r"(?i)(integrated_multimodal_description:\s*\[Shot\s+\d+\]\s*)"
+                    r"<Picture 1>\s*\(from \[Shot\s+\d+\]\) is fully referenced\.\s*",
+                    r"\1", body, count=1)
+            def _compact_timestamp(match: re.Match[str]) -> str:
+                seconds = float(match.group(2))
+                minutes = int(seconds // 60)
+                remainder = seconds - minutes * 60
+                return f"[Shot {match.group(1)}] At {minutes:02d}:{remainder:06.3f} "
+            body = re.sub(
+                r"(?i)\[Shot\s+(\d+)\]\s+At\s+(\d+(?:\.\d+)?)s\s*[;,]?\s*",
+                _compact_timestamp, body)
+            body = re.sub(
+                r"(?i)\bAt\s+(\d+(?:\.\d+)?)s\b",
+                lambda match: (
+                    f"At {int(float(match.group(1)) // 60):02d}:"
+                    f"{float(match.group(1)) % 60:06.3f}"), body)
+            numbers = [int(value) for value in re.findall(
+                r"\[Shot\s+(\d+)\]", body, re.I)]
+            if numbers and numbers[0] > 1:
+                offset = numbers[0] - 1
+                body = re.sub(
+                    r"(?i)\[Shot\s+(\d+)\]",
+                    lambda match: f"[Shot {max(1, int(match.group(1)) - offset)}]", body)
+            result = prefix + body + suffix
     if mode != "Ref2VA":
         alignment_end = result.find("\n") + 1 if mode != "T2VA" else 0
         shot_pos = result.find("[Shot 1]", alignment_end)

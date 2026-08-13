@@ -282,6 +282,48 @@ def test_r2v_retention_marker():
     assert any(i.code == "h3_retention_marker" for i in r.issues)
 
 
+def test_ref2va_rejects_generic_asset_labels_and_malformed_retention() -> None:
+    prompt = R2V_OK.replace("<Picture 1>", "<Asset 1>")
+
+    report = validate_h3(prompt, "Ref2VA")
+
+    assert not report.valid
+    assert any(issue.code == "h3_reference_unknown" and issue.severity == "error"
+               for issue in report.issues)
+
+
+def test_ref2va_rejects_retention_text_between_label_and_colon() -> None:
+    prompt = R2V_OK.replace(
+        "<Picture 1>: fully_preserved",
+        "<Picture 1> (appears in [Shot 1]): fully_preserved")
+
+    report = validate_h3(prompt, "Ref2VA")
+
+    assert not report.valid
+    assert any(issue.code == "h3_retention_marker" and issue.severity == "error"
+               for issue in report.issues)
+
+
+def test_ref2va_unanalysed_picture_cannot_claim_full_preservation() -> None:
+    from aps.schemas.references import AssetRef, ReferenceManifest
+
+    manifest = ReferenceManifest(assets=[AssetRef(
+        asset_id="image_1", asset_type="image", h3_labels=["Picture 1"],
+        note="unanalysed connected picture reference; contents unavailable")])
+
+    prompt = R2V_OK.replace(
+        "<Audio 1>: fully_copy - keep the original track",
+        "<Picture 1>: fully_preserved - preserves the dancer pose\n"
+        "<Audio 1>: fully_copy - keep the original track")
+    report = validate_h3(prompt, "Ref2VA", manifest=manifest)
+
+    assert not report.valid
+    assert any(issue.code == "h3_unanalysed_reference_claim"
+               for issue in report.issues)
+
+
+
+
 def test_xml_style_closing_reference_tags_are_not_unknown_labels() -> None:
     prompt = FOUR_MODE_OK + "\n</Subject 1> </Picture 1>"
 

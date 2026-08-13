@@ -97,7 +97,7 @@ GENERIC_IMAGE_CORE = ModelCore(
 
 H3_CORE = ModelCore(
     core_id="model-core.minimax-h3",
-    version="2026.08-8d8824e",
+    version="2026.08-8d8824e+aps.1",
     target_family="minimax_h3",
     target_variant="*",
     verified_sources=(
@@ -137,7 +137,29 @@ H3_CORE = ModelCore(
         "a requested one-take/一镜到底/单镜头 structure unless the user asks for a cut. "
         "keep the on-screen speaker's lips closed. Use <scenetrans> across cuts and "
         "<cutoff> when speech is truncated by the video end. Preserve visible text "
-        "inside English double quotes. Retention markers must match the asset modality."
+        "inside English double quotes. Retention markers must match the asset modality. "
+        "Make each action playable within the duration by showing a starting state, "
+        "visible motion progression, and end state; prefer one coherent action arc over "
+        "a static adjective list or too many beats. For an observational or live-stream "
+        "viewpoint, use plausible handheld framing and only useful focus or exposure "
+        "response; do not invent platform UI, brands, viewer comments, cuts, cinematic "
+        "camera choreography, or a music-video treatment. Background passersby remain "
+        "secondary and move with spatial and causal continuity; avoid making a whole "
+        "crowd change state at the same instant without a visible cause. "
+        "Do not claim that an unanalysed reference depicts a person, outfit, place, pose, "
+        "lighting, or style; use only facts present in task data and otherwise describe "
+        "the reference by its narrow structural role. Use plain observable description: "
+        "who or what is where, what moves first, the path and physical result of the "
+        "movement, how nearby subjects react, and how the action ends. Avoid decorative, "
+        "evaluative, or mood-only adjectives such as beautiful, stunning, mysterious, "
+        "dreamlike, cinematic, lively, or whimsical when they do not specify a visible "
+        "fact. Keep only concrete attributes needed to identify or stage the image. "
+        "Replace vague motion such as 'dances fluidly' with a few concrete, physically "
+        "continuous body actions that fit the duration. Unspecified incidental reactions, "
+        "ambience, camera correction, and minor connective motion may be added when they "
+        "make the scene coherent, but they must not interrupt or replace the requested "
+        "main action. Choose one definite action and ending; never leave alternatives such "
+        "as 'either/or', 'perhaps', 'likely', or 'could' in the finished prompt."
     ),
 )
 

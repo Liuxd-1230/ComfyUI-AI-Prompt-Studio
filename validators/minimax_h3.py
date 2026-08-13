@@ -56,7 +56,7 @@ def validate_h3(prompt: str, mode: str = "T2VA", *, duration: float | None = Non
     if mode in {"R2V", "Ref2VA"}:
         _check_section_order(report, prompt, R2V_SECTION_HEADINGS, "h3_section")
         _check_r2v_style_opening(report, prompt)
-        _check_retention_markers(report, prompt)
+        _check_retention_markers(report, prompt, mode)
         _check_summary_prefix(report, prompt)
         _check_ref_detail_density(report, prompt)
         bad = r2v_english_issue(prompt)
@@ -86,7 +86,8 @@ def validate_h3(prompt: str, mode: str = "T2VA", *, duration: float | None = Non
     _check_music(report, prompt, mode)
     if manifest is not None and mode in {"R2V", "Ref2VA"}:
         _check_reference_limits(report, manifest)
-    _check_unresolved_references(report, prompt)
+        _check_unanalysed_reference_claims(report, prompt, manifest)
+    _check_unresolved_references(report, prompt, mode)
     # T2VA is text-only. A manifest may still travel through a larger workflow,
     # but its assets are not mandatory references for this generation mode.
     if plan is not None and mode != "T2VA":
@@ -295,7 +296,7 @@ def _check_r2v_style_opening(report, prompt) -> None:
                    "R2V detailed_description 建议在 [Shot 1] 前有 1-2 句风格开场")
 
 
-def _check_retention_markers(report, prompt) -> None:
+def _check_retention_markers(report, prompt, mode: str) -> None:
     visual = {"fully_preserved", "partially_preserved", "attribute_transfer", "weak_reference"}
     audio = {"fully_copy", "partially_copy", "reference", "weak_reference"}
     markers = visual | audio
@@ -305,7 +306,8 @@ def _check_retention_markers(report, prompt) -> None:
             continue
         match = re.search(r"<(Subject|Picture|Video|Audio)\s+\d+>\s*:\s*([a-z_]+)", line)
         if not match or match.group(2) not in markers:
-            report.add("warning", "h3_retention_marker",
+            report.add("error" if mode == "Ref2VA" else "warning",
+                       "h3_retention_marker",
                        f"retention_analysis 行缺少合法 marker：{line.strip()[:60]}")
             continue
         label_type, marker = match.groups()
@@ -374,7 +376,29 @@ def _check_reference_limits(report, manifest) -> None:
                    f"Ref2VA 音频参考累计 {totals['audio']:.2f} 秒，最多为 15 秒")
 
 
-def _check_unresolved_references(report, prompt: str) -> None:
+def _check_unanalysed_reference_claims(report, prompt: str, manifest) -> None:
+    definitions = _section_text(prompt, "subject_definitions")
+    retention = _section_text(prompt, "retention_analysis")
+    for asset in getattr(manifest, "assets", []):
+        note = str(getattr(asset, "note", "") or "").casefold()
+        if "unanalysed" not in note and "contents unavailable" not in note:
+            continue
+        for label in getattr(asset, "h3_labels", []):
+            escaped = re.escape(f"<{label}>")
+            retained = re.search(
+                rf"(?im)^{escaped}:\s*(fully_preserved|partially_preserved|"
+                r"attribute_transfer|fully_copy|partially_copy)", retention)
+            described = re.search(
+                rf"(?im)^{escaped}\s+(?:is|shows|depicts|contains|provides)\b",
+                definitions)
+            if retained or described:
+                report.add(
+                    "error", "h3_unanalysed_reference_claim",
+                    f"<{label}> 未经过视觉分析，不能声称保留或提供具体人物、姿态、"
+                    "服装、场景、光线等内容；请先连接 Reference Analyzer/Manifest")
+
+
+def _check_unresolved_references(report, prompt: str, mode: str) -> None:
     for label in re.findall(r"<([^>]+)>", prompt):
         label = label.strip()
         if label.startswith("/"):
@@ -382,7 +406,8 @@ def _check_unresolved_references(report, prompt: str) -> None:
         if label in {"scenetrans", "/scenetrans", "cutoff", "/cutoff", "d", "/d"}:
             continue
         if not re.fullmatch(r"(?:Subject|Picture|Video|Audio) \d+", label):
-            report.add("warning", "h3_reference_unknown", f"无法识别的引用标签 <{label}>")
+            severity = "error" if mode == "Ref2VA" else "warning"
+            report.add(severity, "h3_reference_unknown", f"无法识别的引用标签 <{label}>")
 
 
 def _check_plan_references(report, plan, mode: str = "Ref2VA") -> None:

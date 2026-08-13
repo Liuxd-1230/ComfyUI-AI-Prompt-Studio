@@ -16,6 +16,7 @@
 - **Image Prompt Studio**：`APS_PromptStudio` 覆盖 ANIMA、Z-Image Turbo、Qwen-Image-Edit-2511 与 Generic Image。节点只维护可直接交给下游的完整提示词，自动从 Session 判断首次创建或继续修改。ANIMA 会确定性补齐质量前缀、输出基础负面词并合并用户明确写出的排除项；最近保留 10 个成功版本。
 - **图片引用提示词**：连接图片后在输入框键入 `@`，带缩略图选择 `@图1`；自动转换为 Qwen `Figure 1` 或 H3 `<Picture 1>`。
 - **MiniMax H3 Prompt Studio**：T2VA / I2VA / FL2VA / L2VA / Ref2VA（读取旧 R2V 值时归一化），支持图片、视频和音频参考，只维护完整官方 H3 文本。
+- **H3 白描与动作连续性**：优先写主体位置、动作起点/路径/结果、路人反应与明确结尾，避免没有可视信息的堆砌形容词；未规定的小动作与环境细节可为连贯性补足。H3 文本节点不会直接看裸图片像素，Ref2VA 要获得可靠人物/场景细节应连接 Reference Analyzer 输出的 Manifest。
 - **输出容错**：模型返回半截 JSON、半截标签或不满足确定性硬规则时，在不修改当前 revision 的前提下最多保真修复一次；仍失败会显示截断原文并保留上一版。
 - **P5 持久会话恢复**：Session 提交先以 transaction/base/result revision 原子写入按节点实例隔离的 Recovery Journal，再回写工作流。异常退出后打开旧工作流时会明确询问是否恢复后端较新版本；复制节点会保留当前成品并建立独立 lineage，旧请求不能覆盖新 revision。日志位于 ComfyUI `user/ai_prompt_studio/recovery-journal.json`，最多保留最近 100 个节点会话。
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。

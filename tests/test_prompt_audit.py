@@ -56,6 +56,24 @@ def test_h3_model_core_protocol_layer():
                    "fully_preserved", "task data", "subject_definitions"):
         assert marker in sys, f"H3 system 缺少 {marker!r}"
     assert "never invent" in sys.lower()  # 禁止自造 S 号
+
+
+def test_h3_model_core_requires_playable_observational_motion_without_invention():
+    """H3 成品要可拍，同时不能把未分析的参考图或普通实拍改成 MV。"""
+    sys = model_core_prompt("minimax_h3")
+
+    for marker in (
+            "starting state, visible motion progression, and end state",
+            "observational or live-stream viewpoint",
+            "do not invent platform UI",
+            "Background passersby remain secondary",
+            "Do not claim that an unanalysed reference depicts",
+            "Use plain observable description",
+            "Avoid decorative, evaluative, or mood-only adjectives",
+            "few concrete, physically continuous body actions"):
+        assert marker in sys
+    assert "Unspecified incidental reactions" in sys
+    assert "Choose one definite action and ending" in sys
 # ---------------------------------------------------------------- Storyboard
 
 def test_storyboard_prompt_boundaries():

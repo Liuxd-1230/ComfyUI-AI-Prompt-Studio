@@ -1,5 +1,7 @@
 # Changelog
 
+- **H3 白描质量与三模式本地实测**：以同一“亚洲女生直播跳舞、路人大爷大妈打量”输入在真实 LM Studio 9B 上对照当前核心、基础版 Markdown、R2VA 加强版，覆盖 I2VA/FL2VA/Ref2VA。新增小模型可照抄的模式骨架、白描与动作连续性规则、裸参考不可脑补边界及无歧义协议归一；Ref2VA 未知标签/非法 retention/未分析内容声明不再假绿。三种模式均取得可交付样本，Ref2VA 需连接已分析 Manifest，本地端点仍有偶发 120 秒超时。详见 `docs/testing/h3-dance-prompt-quality-audit-2026-08-13.md`。
+
 - **H3 社区模板与双采样调研**：对照用户提供的基础/加强 Ref2VA 模板、MiniMax 官方固定 Skill 与当前 Model Core/validator，拆解 123 节点双模型二采工作流的像素放大、影音 latent 重编码和第二 UNet 重绘链路；补充人物模糊的时序恢复、跟踪裁脸局部二采与渐进放大建议，并明确 Civitai/RunningHub 可验证证据边界。详见 `docs/research/h3-double-sampling-community-2026-08-13.md`。
 
 - **P0–P3 UI 与性能收口**：Image/H3 Studio 工作台增加前后端 UI contract 握手，ComfyUI 未重启导致旧 Python 节点与新 JS 混用时会明确阻止输入并提示重启；清除节点名称中已删除的“宽松 / 严格”。Studio 默认高度由 438px 降为 320px，帮助和历史按需展开，当前提示词可一键复制，会话仅渲染最近 6 条。输入采用 200ms 防抖且 Queue/失焦前 flush，不再每字符重复触发全图重绘。Profiles/Supplements 注册表共享 TTL/in-flight 缓存；设置工作台改为档案、能力、运行时、Markdown/日志四分区懒加载，增加原生按钮入口、Esc 关闭、Tab 焦点循环、焦点恢复和可读错误状态。

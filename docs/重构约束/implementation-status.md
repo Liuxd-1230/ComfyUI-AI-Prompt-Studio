@@ -14,6 +14,14 @@
 > profile/supplement registry requests. The Settings workbench uses four lazy panes
 > with keyboard dialog semantics. Source-level regressions and live ComfyUI browser
 > QA cover the supported entry, input, history/help disclosure, copy, and settings flows.
+>
+> **2026-08-13 H3 quality follow-up:** The public H3 Studio was exercised against the
+> local 9B profile for I2VA, FL2VA, and Ref2VA using one fixed live-action dance brief.
+> Mode-specific copyable skeletons, plain observable motion guidance, safe protocol
+> normalization, and analysed-vs-raw reference boundaries are executable in
+> `tests/test_h3_prompt_studio.py` and `tests/test_validators_h3.py`; provider evidence
+> and remaining timeout/wording limits are recorded in
+> `docs/testing/h3-dance-prompt-quality-audit-2026-08-13.md`.
 
 This table tracks the binding Persistent contract §108 at the current HEAD.
 “Partial” means the invariant has an executable base but the named end-to-end
