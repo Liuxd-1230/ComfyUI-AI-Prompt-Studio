@@ -5113,3 +5113,10 @@ Compatibility belongs at the boundary, not at the architectural core.
 最终目标不是“多了两个节点”，而是让 APS 成为：
 
 > **一个以 Semantic Plan 为核心、支持事务式多轮编辑、依赖与逻辑一致性维护、模型专属编译、版本控制、安全 Skill Package、艺术风格预设以及真实生成反馈闭环的 Prompt 创作系统。**
+> **2026-08-13 单一路径修订（后写优先）**：用户基于基元与本地 9B 的真实质量对比，
+> 决定删除 Studio 的 `lenient/strict` 双轨。Image/H3 Studio 现在只维护可直接交给
+> 下游的成品 Prompt；每轮一次主调用，只有协议垃圾或确定性硬错误才允许一次保真修复。
+> Session/revision、指纹、恢复、来源数据、ANIMA 英语检查、H3 官方格式/媒体/身份/运镜
+> 校验继续有效。下文要求 Studio 使用 typed Plan、ChangeSet、Diff Guard、Semantic
+> Transaction、Critic 或 `execution_mode` 的条款均由本修订取代，保留正文仅作历史设计依据。
+> 不得保留无生产调用的 strict 分支或 mock-only 事务实现。

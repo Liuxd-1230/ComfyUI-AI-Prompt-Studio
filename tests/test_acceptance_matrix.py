@@ -6,8 +6,7 @@ from pathlib import Path
 
 import aps
 from aps.nodes.character_bible import APS_CharacterBible, MERGE_STRATEGIES
-from aps.nodes.h3_prompt_studio import EXECUTION_MODES as H3_EXECUTION_MODES
-from aps.nodes.prompt_studio import EXECUTION_MODES, TARGET_OPTIONS
+from aps.nodes.prompt_studio import TARGET_OPTIONS
 from aps.nodes.reference_analyzer import MODE_PROMPTS, _PROMPT_GUARDRAIL
 from aps.nodes.storyboard_select import APS_StoryboardSelect
 from aps.schemas.character import CharacterBible, CharacterCandidate, CharacterTrait
@@ -26,11 +25,8 @@ def _catalog() -> dict:
 
 def test_acceptance_catalog_covers_every_public_mode() -> None:
     data = _catalog()
-    assert {tuple(item) for item in data["image_studio"]} == {
-        (target, mode) for target in TARGET_OPTIONS for mode in EXECUTION_MODES}
-    assert {tuple(item) for item in data["h3_studio"]} == {
-        (mode, execution) for mode in H3_UI_MODES
-        for execution in H3_EXECUTION_MODES}
+    assert set(data["image_studio"]) == set(TARGET_OPTIONS)
+    assert set(data["h3_studio"]) == set(H3_UI_MODES)
     assert set(data["reference_analysis"]) == set(ANALYSIS_MODES)
     assert set(data["character_merge"]) == set(MERGE_STRATEGIES)
     assert set(data["storyboard_split"]) == set(SPLIT_MODES)

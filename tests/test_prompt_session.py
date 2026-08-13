@@ -19,8 +19,8 @@ VALID = {"valid": True, "issues": [], "checks": ["non_empty"]}
 
 def test_v3_defaults_to_empty_lenient_session() -> None:
     session = PromptSession()
-    assert session.schema_version == "3.1"
-    assert session.execution_mode == "lenient"
+    assert session.schema_version == "3.2"
+    assert session.execution_mode == "single"
     assert session.current_payload_kind == "empty"
     assert session.has_current_state is False
 
@@ -32,7 +32,7 @@ def test_v2_workflow_state_resets_instead_of_becoming_editable_v3() -> None:
         "current_plan": {"scene": "old"},
     }
     session = PromptSession.from_json(old)
-    assert session.schema_version == "3.1"
+    assert session.schema_version == "3.2"
     assert session.id != "old-session"
     assert session.revision == 0
     assert session.current_prompt == ""
@@ -41,15 +41,15 @@ def test_v2_workflow_state_resets_instead_of_becoming_editable_v3() -> None:
 
 def test_freeform_commit_and_restore_share_atomic_revision_interface() -> None:
     session = PromptSession(
-        target_family="anima", execution_mode="lenient")
+        target_family="anima", execution_mode="single")
     session.commit(
         {}, "first English prompt", VALID, "create", "created",
         expected_revision=0, message_id="m1", payload_kind="freeform",
-        execution_mode="lenient", context_changes=["source:character_book"])
+        execution_mode="single", context_changes=["source:character_book"])
     session.commit(
         {}, "second English prompt", VALID, "make it warmer", "changed light",
         expected_revision=1, message_id="m2", payload_kind="freeform",
-        execution_mode="lenient")
+        execution_mode="single")
     assert session.has_current_state is True
     assert session.current_payload_kind == "freeform"
     assert session.revisions[0].context_changes == ["source:character_book"]
@@ -59,14 +59,14 @@ def test_freeform_commit_and_restore_share_atomic_revision_interface() -> None:
 
 
 def test_restore_recovers_revision_locked_constraints_atomically() -> None:
-    session = PromptSession(target_family="minimax_h3", execution_mode="strict")
+    session = PromptSession(target_family="minimax_h3", execution_mode="single")
     session.commit(
         {"h3_plan": {"version": 1}}, "prompt one", VALID, "create", "one",
-        expected_revision=0, execution_mode="strict", payload_kind="structured",
+        expected_revision=0, execution_mode="single", payload_kind="structured",
         locked_constraints=["fact:speaker-one"])
     session.commit(
         {"h3_plan": {"version": 2}}, "prompt two", VALID, "change", "two",
-        expected_revision=1, execution_mode="strict", payload_kind="structured",
+        expected_revision=1, execution_mode="single", payload_kind="structured",
         locked_constraints=["fact:speaker-two"])
     assert session.revert_previous() is True
     assert session.current_prompt == "prompt one"
@@ -237,7 +237,7 @@ def test_oversized_workflow_session_is_rejected_on_load():
     oversized = "x" * (MAX_SESSION_SERIALIZED_BYTES + 1)
     with pytest.raises(SchemaError, match="序列化大小"):
         PromptSession.from_json({
-            "schema_version": "3.1", "id": "too-large",
+            "schema_version": "3.2", "id": "too-large",
             "current_payload_kind": "freeform", "current_prompt": oversized,
             "revision": 1, "validation": VALID,
         })
@@ -255,7 +255,7 @@ def test_legacy_v1_session_resets_to_empty_v3_state():
                        "user_instruction": "create", "change_summary": "v1"}],
     }
     restored = PromptSession.from_json(legacy)
-    assert restored.schema_version == "3.1"
+    assert restored.schema_version == "3.2"
     assert restored.current_plan == {}
     assert restored.current_prompt == ""
     assert restored.revisions == []
@@ -274,7 +274,7 @@ def test_future_or_malformed_session_is_rejected_instead_of_silently_downgraded(
         PromptSession.from_json({"schema_version": "4.0", "current_plan": {}})
     with pytest.raises(SchemaError, match=r"revisions\[0\]"):
         PromptSession.from_json({
-            "schema_version": "3.1", "revisions": ["not a revision"]})
+            "schema_version": "3.2", "revisions": ["not a revision"]})
 
 
 def test_v30_session_migrates_without_losing_stable_state() -> None:
@@ -285,7 +285,7 @@ def test_v30_session_migrates_without_losing_stable_state() -> None:
 
     restored = PromptSession.from_json(payload)
 
-    assert restored.schema_version == "3.1"
+    assert restored.schema_version == "3.2"
     assert restored.current_prompt == "rain"
     assert restored.revision == 1
     assert restored.node_instance_id == ""

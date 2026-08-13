@@ -1,28 +1,22 @@
-"""ADR 0007 Image Prompt Studio with lenient and strict execution lanes."""
+"""Persistent Image Prompt Studio with one resilient execution path."""
 from __future__ import annotations
 
-import json
 import re
 from typing import Any
 
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
 from ..prompting.operation_policies import OperationKind, operation_source
-from ..prompting.output_contracts import LENIENT_PROMPT_CONTRACT, schema_contract
+from ..prompting.output_contracts import LENIENT_PROMPT_CONTRACT
 from ..prompting.studio_policies import (
     UNTRUSTED_TASK_DATA_POLICY,
     image_target_policy,
 )
-from ..renderers.anima import ANIMA_BASE_NEGATIVE, ANIMA_QUALITY_NEGATIVE
-from ..renderers.anima import render_anima_plan
-from ..renderers.generic import render_generic
-from ..renderers.special_image import render_special_image
-from ..domain.impact_analysis import analyze_image_impacts, validate_image_candidate
-from ..domain.plan_adapters import get_session_plan_adapter
-from ..domain.transactions import SemanticTransaction
-from ..schemas.anima import AnimaPromptPlan
-from ..schemas.image_semantic_plan import ImageSemanticPlan
-from ..schemas.text_prompt import TextPromptPlan
+from ..renderers.anima import (
+    ANIMA_BASE_NEGATIVE,
+    ANIMA_BASE_PREFIX,
+    ANIMA_QUALITY_NEGATIVE,
+)
 from ..schemas import types
 from ..schemas.character import CharacterBible, CharacterBook
 from ..schemas.profile import AIProfile
@@ -33,90 +27,19 @@ from ..services.gateway import Gateway, GenerateRequest
 from ..services.prompt_protocol import LenientPromptOutput, parse_lenient_output
 from ..services.recovery import get_recovery_journal
 from ..services.prompt_session import (
-    assert_session_fingerprints,
     build_session_fingerprints,
     message_identity,
     node_execution_result,
-    request_changeset,
 )
-from ..services.structured_output import raw_excerpt
-from ..services.reference import extract_json_object
 from ..services.supplements import supplement_sources as load_supplement_sources
 from ..validators.anima import anima_english_issue, validate_anima
 from ._helpers import require_api_key, resolve_profile_input
 
 
-EXECUTION_MODES = ["lenient", "strict"]
 TARGET_OPTIONS = [
     "anima_base", "anima_aesthetic", "anima_turbo",
     "z_image_turbo", "qwen_image_edit_2511", "generic_image",
 ]
-
-_STRING_ARRAY = {"type": "array", "items": {"type": "string"}}
-_ANIMA_CHARACTER_SCHEMA = {
-    "type": "object", "additionalProperties": False,
-    "properties": {
-        "character_id": {"type": "string", "description": "Stable unique identifier."},
-        "name": {"type": "string", "description": "Display name only."},
-        "required_traits": {**_STRING_ARRAY, "description":
-            "Stable visible appearance facts owned only here; no style, action, or position."},
-        "variable_traits": {**_STRING_ARRAY, "description":
-            "Optional changeable visible appearance facts owned only here."},
-        "action": {"type": "string", "description": "Observable behavior owned only here."},
-        "position": {"type": "string", "description":
-            "Subject placement only, such as left foreground. Never include shot size, "
-            "camera framing, environment, or subject identity here."},
-        "creative_notes": {**_STRING_ARRAY, "description":
-            "Return [] unless a character fact cannot fit traits, action, or position; never repeat."},
-    },
-    "required": ["character_id", "name", "required_traits", "variable_traits",
-                 "action", "position", "creative_notes"],
-}
-_ANIMA_CONTENT_SCHEMA = {
-    "type": "object", "additionalProperties": False,
-    "properties": {
-        "scene_description": {"type": "string", "description":
-            "Only residual drawable scene prose not owned by characters, environment, composition, lighting, or style. Usually return an empty string."},
-        "creative_notes": {**_STRING_ARRAY, "description":
-            "Return [] unless a unique drawable fact fits no structured field; never repeat."},
-        "characters": {"type": "array", "items": _ANIMA_CHARACTER_SCHEMA},
-        "control_tags": {**_STRING_ARRAY, "description":
-            "Return [] for natural-language Studio; never duplicate prose or structured facts."},
-        "series_tags": {**_STRING_ARRAY, "description":
-            "Return [] for natural-language Studio unless an explicit unique series token is required."},
-        "artist_tags": {**_STRING_ARRAY, "description":
-            "Return [] for natural-language Studio unless an explicit unique artist token is required."},
-        "supplemental_tags": {**_STRING_ARRAY, "description":
-            "Return [] for natural-language Studio; never duplicate another field."},
-        "style": {**_STRING_ARRAY, "description":
-            "Rendering and aesthetic style facts owned only here."},
-        "environment": {**_STRING_ARRAY, "description":
-            "Location, weather, physical setting, and background facts owned only here."},
-        "composition": {"type": "string", "description":
-            "Framing, camera viewpoint, and layout only. Do not repeat subjects or "
-            "character placement. Do not repeat environment, lighting, or style facts."},
-        "lighting": {"type": "string", "description":
-            "Light sources, color, direction, contrast, and exposure owned only here."},
-        "negative_constraints": {**_STRING_ARRAY, "description":
-            "Negative-only constraints. These are not positive scene facts."},
-    },
-    "required": ["scene_description", "creative_notes", "characters",
-                 "control_tags", "series_tags", "artist_tags",
-                 "supplemental_tags", "style", "environment", "composition",
-                 "lighting", "negative_constraints"],
-}
-_TEXT_CONTENT_SCHEMA = {
-    "type": "object", "additionalProperties": False,
-    "properties": {"clauses": {
-        "type": "array", "items": {
-            "type": "object", "additionalProperties": False,
-            "properties": {"text": {"type": "string"},
-                           "separator": {"type": "string"}},
-            "required": ["text", "separator"],
-        }}},
-    "required": ["clauses"],
-}
-
 
 class APS_PromptStudio:
     @classmethod
@@ -126,8 +49,6 @@ class APS_PromptStudio:
             "text": ("STRING", {"default": "", "multiline": True,
                                 "tooltip": "第一次写生成要求；之后只写本轮修改意见"}),
             "target": (TARGET_OPTIONS, {"default": "anima_base"}),
-            "execution_mode": (EXECUTION_MODES, {"default": "lenient",
-                                "tooltip": "lenient=稳定提示词改写；strict=结构化事务"}),
             "session_action": (["continue", "previous", "new"],
                                {"default": "continue"}),
         }, "optional": {
@@ -148,22 +69,15 @@ class APS_PromptStudio:
     FUNCTION = "run"
     CATEGORY = "AI Prompt Studio"
     OUTPUT_NODE = True
-    DESCRIPTION = "默认宽松、可选严格的持续图像提示词工作台。"
+    DESCRIPTION = "持续维护可直接交给下游模型的图像提示词。"
 
     def run(self, AI_PROFILE: Any, text: str, target: str,
-            execution_mode: str = "lenient", session_action: str = "continue",
+            session_action: str = "continue",
             story_item: Any = None, character_bible: Any = None,
             character_book: Any = None, reference_manifest: Any = None,
             prompt_session: str = "", message_nonce: str = "",
             prompt_supplements: str = "",
             unique_id: Any = None) -> Any:
-        if execution_mode not in EXECUTION_MODES:
-            raise ValueError("execution_mode 必须是 lenient 或 strict")
-        if execution_mode == "strict":
-            return self._run_strict(
-                AI_PROFILE, text, target, session_action, story_item,
-                character_bible, character_book, reference_manifest,
-                prompt_session, message_nonce, prompt_supplements, unique_id)
         return self._run_lenient(
             AI_PROFILE, text, target, session_action, story_item,
             character_bible, character_book, reference_manifest,
@@ -189,11 +103,10 @@ class APS_PromptStudio:
         journal = get_recovery_journal() if node_id else None
         if node_id:
             session, _ = session.for_node(node_id)
-        if session_action == "new" or (
-                session.has_current_state and session.execution_mode != "lenient"):
+        if session_action == "new":
             session = PromptSession(
                 target_family=family, target_variant=variant,
-                execution_mode="lenient", node_instance_id=node_id)
+                node_instance_id=node_id)
         if session_action == "previous":
             if not session.revert_previous(
                     node_instance_id=node_id, recovery_journal=journal):
@@ -216,8 +129,8 @@ class APS_PromptStudio:
         manifest = (ReferenceManifest.from_json(reference_manifest)
                     if reference_manifest else ReferenceManifest())
         fingerprints = build_session_fingerprints(
-            target_signature=f"{family}:{variant}:lenient",
-            model_core_components=("image-studio-lenient", family, variant,
+            target_signature=f"{family}:{variant}:single",
+            model_core_components=("image-studio-single", family, variant,
                                    image_target_policy(family, variant)),
             sources={"story_item": story_item, "character_bible": bible,
                      "character_book": book, "reference_manifest": manifest},
@@ -229,6 +142,7 @@ class APS_PromptStudio:
             profile, api_key, family, variant, instruction, current_prompt,
             bible, book, manifest, supplement_sources)
         parsed = parse_lenient_output(raw)
+        parsed = _normalize_image_output(parsed, family, variant)
         report = _validate_lenient_image(
             parsed, family, variant, bible, book, manifest)
         repair_count = 0
@@ -239,6 +153,7 @@ class APS_PromptStudio:
                 [*parsed.issues, *[issue.message for issue in report.issues]],
                 supplement_sources)
             parsed = parse_lenient_output(raw)
+            parsed = _normalize_image_output(parsed, family, variant)
             report = _validate_lenient_image(
                 parsed, family, variant, bible, book, manifest)
         if parsed.kind == "protocol_garbage" or not report.valid:
@@ -258,10 +173,10 @@ class APS_PromptStudio:
             {}, parsed.prompt, report, instruction, summary,
             expected_revision=session.revision, message_id=message_id,
             fingerprints=fingerprints, repair_count=repair_count,
-            execution_mode="lenient", payload_kind="freeform",
+            execution_mode="single", payload_kind="freeform",
             context_changes=context_changes, node_instance_id=node_id,
             recovery_journal=journal)
-        negative = _negative_for(family, variant)
+        negative = _negative_for(family, variant, instruction)
         result = (parsed.prompt, negative, session.to_json_string(),
                   report.as_text(), summary)
         return node_execution_result(
@@ -331,186 +246,12 @@ class APS_PromptStudio:
             raise ValueError(result.error.as_text)
         return result.text
 
-    def _run_strict(
-            self, AI_PROFILE: Any, text: str, target: str, session_action: str,
-            story_item: Any, character_bible: Any, character_book: Any,
-            reference_manifest: Any, prompt_session: str,
-            message_nonce: str, prompt_supplements: str = "",
-            unique_id: Any = None) -> Any:
-        incoming = AIProfile.from_json(AI_PROFILE or {})
-        if not incoming.profile_id:
-            raise ValueError("未收到 AI_PROFILE：请先连接 AI Model Profile 节点")
-        profile = resolve_profile_input(AI_PROFILE)
-        api_key = require_api_key(profile)
-        family, variant = _split_target(target)
-        supplement_sources, supplement_hashes = load_supplement_sources(
-            prompt_supplements, family=family, node_id=str(unique_id or "").strip())
-        stable = (PromptSession.from_json(prompt_session)
-                  if prompt_session else PromptSession())
-        node_id = str(unique_id or "").strip()
-        journal = get_recovery_journal() if node_id else None
-        if node_id:
-            stable, _ = stable.for_node(node_id)
-        starts_new = (session_action == "new" or
-                      (stable.has_current_state
-                       and stable.execution_mode != "strict"))
-        session = (PromptSession(target_family=family, target_variant=variant,
-                                 execution_mode="strict",
-                                 node_instance_id=node_id)
-                   if starts_new else stable)
-        bible, book = _character_sources(character_bible, character_book)
-        manifest = (ReferenceManifest.from_json(reference_manifest)
-                    if reference_manifest else ReferenceManifest())
-        fingerprints = build_session_fingerprints(
-            target_signature=f"{family}:{variant}:strict",
-            model_core_components=("image-studio-strict", family, variant,
-                                   image_target_policy(family, variant)),
-            sources={"story_item": story_item, "character_bible": bible,
-                     "character_book": book, "reference_manifest": manifest},
-            supplement_hashes=supplement_hashes)
-        if session_action == "previous" and not starts_new:
-            assert_session_fingerprints(session, fingerprints)
-            if not session.revert_previous(
-                    node_instance_id=node_id, recovery_journal=journal):
-                raise ValueError("当前会话尚无可恢复的成功版本；至少需要两个成功 revision")
-            return self._strict_result(session, "已恢复上一版结构化提示词。")
-        instruction = _input_text(text, story_item)
-        if session.has_current_state:
-            assert_session_fingerprints(session, fingerprints)
-        if not instruction.strip():
-            if session.has_current_state:
-                return self._strict_result(
-                    session, "没有新的消息；沿用当前提示词，未调用模型。")
-            raise ValueError("text 与 story_item 均为空，请至少提供一个")
-        message_id = message_identity(message_nonce, instruction)
-        if session.has_current_state and session.has_processed_message(message_id):
-            return self._strict_result(
-                session, "没有新的消息；沿用当前提示词，未调用模型。")
-        if not session.has_current_plan:
-            session.target_family, session.target_variant = family, variant
-            plan, repair_count = self._create_strict_plan(
-                profile, api_key, family, variant, instruction,
-                bible, book, manifest, supplement_sources)
-            summary = "已创建第一版严格结构化提示词。"
-            changeset = None
-        else:
-            changeset = request_changeset(
-                Gateway(), profile, api_key, session, instruction)
-            adapter = get_session_plan_adapter(family)
-            current = adapter.load(session.current_plan.get("model_plan", {}))
-            tx = SemanticTransaction(adapter).execute(
-                current, changeset, current_revision=session.revision,
-                impact_analyzer=analyze_image_impacts,
-                semantic_check=validate_image_candidate,
-                allowed_roots=("content", "negative"),
-                locked_paths=tuple(session.locked_constraints),
-                broad_only_roots=("content",),
-                allow_broad=changeset.change_category == "broad_rewrite")
-            plan = tx.plan
-            repair_count = 0
-            summary = changeset.summary
-        positive, negative, report = _render_validate_strict_image(
-            plan, family, variant, bible, book, manifest)
-        if not report.valid:
-            raise ValueError(
-                "严格模式校验未通过；上一版保持不变：\n" + report.as_text())
-        current_plan = {"model_plan": plan.to_json()}
-        session.commit(
-            current_plan, positive, report, instruction, summary,
-            expected_revision=session.revision, message_id=message_id,
-            fingerprints=fingerprints, execution_mode="strict",
-            payload_kind="structured", repair_count=repair_count,
-            requested_paths=([item.path for item in changeset.requested_changes]
-                             if changeset else []),
-            dependent_paths=([item.path for item in changeset.dependent_changes]
-                             if changeset else []),
-            invalidated_paths=([item.path for item in changeset.invalidated_facts]
-                               if changeset else []),
-            renderer_signature=f"{family}:{variant}:strict",
-            node_instance_id=node_id, recovery_journal=journal)
-        result = (positive, negative, session.to_json_string(),
-                  report.as_text(), summary)
-        return node_execution_result(
-            result, session.to_json_string(), positive, summary, session.revision,
-            report.as_text())
-
-    def _create_strict_plan(
-            self, profile: Any, api_key: str, family: str, variant: str,
-            instruction: str, bible: CharacterBible | None,
-            book: CharacterBook | None,
-            manifest: ReferenceManifest,
-            supplements: list[PromptSource] | None = None) -> tuple[ImageSemanticPlan, int]:
-        schema = _strict_image_schema(family)
-        task_data = [StructuredTaskData("latest_instruction", instruction,
-                                        "text/plain")]
-        task_data.extend(_source_task_data(bible, book, manifest))
-        raw = ""
-        issues: list[str] = []
-        contract = schema_contract("image-semantic-plan", schema)
-        for attempt in range(2):
-            retry_data = list(task_data)
-            if attempt:
-                retry_data.extend([
-                    StructuredTaskData("rejected_output", raw, "text/plain"),
-                    StructuredTaskData("protocol_issues", issues),
-                ])
-            assembly = assemble_prompt(
-                [PromptSource("runtime.studio-strict", "1.0", PromptLayer.RUNTIME,
-                              "Strict mode stores typed semantic state.\n\n" +
-                              UNTRUSTED_TASK_DATA_POLICY, "prompt-studio"),
-                 PromptSource("model.image-target", "1.0", PromptLayer.MODEL_CORE,
-                              image_target_policy(family, variant), "prompt-studio"),
-                 PromptSource(
-                     "node.image-plan-normal-form", "1.0", PromptLayer.NODE_CORE,
-                     "Create a normalized semantic image plan. Put each fact in exactly "
-                     "one schema field. Stable appearance belongs to character traits; "
-                     "behavior to action; placement to position; physical setting to "
-                     "environment; light to lighting; framing and camera to composition; "
-                     "rendering medium to style. Residual prose and notes must not repeat "
-                     "structured facts. Return the schema object, never rendered prose.",
-                     "prompt-studio"),
-                 operation_source(
-                     OperationKind.PROTOCOL_RETRY if attempt
-                     else OperationKind.CREATE,
-                     scope="prompt-studio"),
-                 *(supplements or [])],
-                task_data=retry_data,
-                output_contract=contract)
-            request = GenerateRequest(
-                system=assembly.system, messages=[task_message(assembly)],
-                web_search="off", reasoning=profile.reasoning,
-                max_tokens=4096, timeout=profile.timeout,
-                output_contract=assembly.output_contract,
-                assembly_report=report_payload(assembly))
-            result = Gateway().generate(profile, api_key, request)
-            if result.has_error():
-                raise ValueError(result.error.as_text)
-            raw = result.text
-            try:
-                parsed = extract_json_object(raw)
-                if not isinstance(parsed, dict):
-                    raise ValueError("没有可解析的 JSON 对象")
-                return _load_strict_image_plan(parsed, family), attempt
-            except (TypeError, ValueError) as exc:
-                issues = [str(exc)]
-        raise ValueError(
-            "严格模式结构化协议在一次修复后仍不可用；上一版保持不变：" +
-            "；".join(issues) + "。模型原始输出（截断）：" + raw_excerpt(raw))
-
-    @staticmethod
-    def _strict_result(session: PromptSession, summary: str) -> Any:
-        plan = ImageSemanticPlan.from_json(
-            session.current_plan.get("model_plan", {}))
-        negative = plan.negative
-        result = (session.current_prompt, negative, session.to_json_string(),
-                  session.validation.as_text(), summary)
-        return node_execution_result(
-            result, session.to_json_string(), session.current_prompt, summary,
-            session.revision, session.validation.as_text())
-
     @staticmethod
     def _freeform_result(session: PromptSession, summary: str) -> Any:
-        negative = _negative_for(session.target_family, session.target_variant)
+        instruction = (session.revisions[-1].user_instruction
+                       if session.revisions else "")
+        negative = _negative_for(
+            session.target_family, session.target_variant, instruction)
         result = (session.current_prompt, negative, session.to_json_string(),
                   session.validation.as_text(), summary)
         return node_execution_result(
@@ -530,85 +271,6 @@ def _split_target(target: str) -> tuple[str, str]:
     if target not in mapping:
         raise ValueError(f"不支持的 target: {target!r}")
     return mapping[target]
-
-
-def _strict_image_schema(family: str) -> dict[str, Any]:
-    content = (_ANIMA_CONTENT_SCHEMA if family == "anima"
-               else _TEXT_CONTENT_SCHEMA)
-    return {
-        "type": "object", "additionalProperties": False,
-        "properties": {
-            "content": content,
-            "negative": {
-                "type": "string",
-                "description": (
-                    "Optional comma-separated undesired artifacts or defects only. "
-                    "Never place a requested subject, identity trait, action, object, "
-                    "location, composition, style, or reference fact here. Return an "
-                    "empty string when the user supplied no independent negative constraint."
-                ),
-            },
-        },
-        "required": ["content", "negative"],
-    }
-
-
-def _load_strict_image_plan(payload: dict[str, Any],
-                            family: str) -> ImageSemanticPlan:
-    if not isinstance(payload.get("content"), dict):
-        raise ValueError("content 必须是结构化对象")
-    content_adapter = get_session_plan_adapter(family).content_adapter
-    content = content_adapter.load(payload["content"])
-    normalized = content_adapter.normalize(content)
-    if family == "anima":
-        ownership = normalized.validate()
-        if ownership:
-            raise ValueError("ANIMA Plan 所有权冲突：" + "；".join(ownership))
-    elif isinstance(normalized, TextPromptPlan) and not normalized.render().strip():
-        raise ValueError("结构化提示词 clauses 不能为空")
-    return ImageSemanticPlan(
-        content=content_adapter.dump(normalized),
-        negative=str(payload.get("negative", "")).strip())
-
-
-def _render_validate_strict_image(
-        plan: ImageSemanticPlan, family: str, variant: str,
-        bible: CharacterBible | None, book: CharacterBook | None,
-        manifest: ReferenceManifest) -> tuple[str, str, ValidationReport]:
-    report = ValidationReport()
-    report.checks.extend(["strict_plan", f"strict_{family}"])
-    candidate_issues = validate_image_candidate(plan)
-    for issue in candidate_issues:
-        report.add("error", "positive_negative_conflict", issue)
-    if family == "anima":
-        semantic = AnimaPromptPlan.from_json(plan.content).normalized()
-        for issue in semantic.validate():
-            report.add("error", "anima_plan_owner_conflict", issue)
-        rendered = render_anima_plan(
-            semantic, variant=variant, prompt_mode="natural_language",
-            safety_tag="none", negative_override=plan.negative)
-        positive, negative = rendered.positive, rendered.negative
-    else:
-        body = TextPromptPlan.from_json(plan.content).render().strip()
-        if family in {"z_image", "qwen_image_edit"}:
-            rendered_dict = render_special_image(
-                body, family=family, variant=variant,
-                negative_override=plan.negative)
-        else:
-            rendered_dict = render_generic(
-                body, family=family, variant=variant,
-                prompt_mode="natural_language", negative_override=plan.negative,
-                bible=bible, book=book)
-        positive = str(rendered_dict["positive"])
-        negative = str(rendered_dict["negative"])
-        for index, warning in enumerate(rendered_dict.get("warnings", [])):
-            report.add("warning", f"renderer_warning_{index + 1}", str(warning))
-    hard_report = _validate_lenient_image(
-        LenientPromptOutput(prompt=positive, summary="", kind="tagged_prompt"),
-        family, variant, bible, book, manifest)
-    report.issues.extend(hard_report.issues)
-    report.valid = report.valid and hard_report.valid
-    return positive, negative, report
 
 
 def _input_text(text: str, story_item: Any) -> str:
@@ -727,7 +389,39 @@ def _identity_anchor_covered(anchor: str, prompt: str) -> bool:
     return True
 
 
-def _negative_for(family: str, variant: str) -> str:
-    if family != "anima":
-        return ""
-    return ANIMA_BASE_NEGATIVE if variant == "base" else ANIMA_QUALITY_NEGATIVE
+def _normalize_image_output(
+        parsed: LenientPromptOutput, family: str,
+        variant: str) -> LenientPromptOutput:
+    """Apply only target syntax that is deterministic and cannot change intent."""
+    prompt = parsed.prompt.strip()
+    if family == "anima":
+        prefix = ANIMA_BASE_PREFIX if variant == "base" else "masterpiece, best quality, "
+        lowered = prompt.casefold()
+        if not (lowered.startswith("masterpiece,")
+                or lowered.startswith("best quality,")):
+            prompt = prefix + prompt
+    return LenientPromptOutput(
+        prompt=prompt, summary=parsed.summary, kind=parsed.kind,
+        warnings=list(parsed.warnings), issues=list(parsed.issues))
+
+
+def _negative_for(family: str, variant: str, instruction: str = "") -> str:
+    base = (ANIMA_BASE_NEGATIVE if family == "anima" and variant == "base"
+            else ANIMA_QUALITY_NEGATIVE if family == "anima" else "")
+    explicit = _explicit_negative_constraints(instruction)
+    return ", ".join(part for part in (base, *explicit) if part)
+
+
+def _explicit_negative_constraints(instruction: str) -> list[str]:
+    """Keep explicit user exclusions in the dedicated negative output."""
+    results: list[str] = []
+    for sentence in re.split(r"[\n。.!！；;]+", str(instruction or "")):
+        match = re.match(
+            r"^\s*(?:avoid|exclude|without|no|不要|避免|排除|不能有)\s*[:：]?\s*(.+?)\s*$",
+            sentence, flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = match.group(1).strip(" ,，。")
+        if value and value.casefold() not in {item.casefold() for item in results}:
+            results.append(value)
+    return results

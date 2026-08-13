@@ -42,13 +42,13 @@
 
 ## APS_PromptStudio · 图像提示词工作台
 
-输入：`AI_PROFILE`；`text` 第一次写完整要求、之后只写最新修改；`target` 选择 ANIMA、Z-Image、Qwen Edit 或 Generic；`execution_mode` 默认 `lenient`，也可选 `strict`；`session_action` 控制继续、恢复或新会话。可选 `story_item`、`character_bible`、`character_book`、`reference_manifest` 提供当前权威上下文；`prompt_session` 与 `message_nonce` 由前端自动维护。
+输入：`AI_PROFILE`；`text` 第一次写完整要求、之后只写最新修改；`target` 选择 ANIMA、Z-Image、Qwen Edit 或 Generic；`session_action` 控制继续、恢复或新会话。可选 `story_item`、`character_bible`、`character_book`、`reference_manifest` 提供当前权威上下文；`prompt_session` 与 `message_nonce` 由前端自动维护。节点只维护最终成品提示词，不需要选择执行模式。
 
 输出：`positive` / `negative` 直接接下游；`prompt_session` 保存最近 10 个成功 revision；`validation` 显示硬检查和警告；`change_summary` 说明本轮结果。内部 Plan 不再作为公开端口。
 
 ## APS_H3PromptStudio · H3 提示词工作台
 
-输入：`AI_PROFILE`；`text` 第一次写完整导演任务、之后只写本轮修改；`mode` 是 T2VA/I2VA/FL2VA/L2VA/Ref2VA；`duration` 必须 4–15 秒；`execution_mode` 默认 `lenient`，也可选 `strict`；`session_action` 控制继续、恢复和新会话。可选接 `storyboard`、`character_bible`、`character_book`、`reference_manifest`、`images`、`video_1`/`video_2`/`video_3`、`audio_1`/`audio_2`/`audio_3`；`prompt_session`、`message_nonce` 由前端维护。
+输入：`AI_PROFILE`；`text` 第一次写完整导演任务、之后只写本轮修改；`mode` 是 T2VA/I2VA/FL2VA/L2VA/Ref2VA；`duration` 必须 4–15 秒；`session_action` 控制继续、恢复和新会话。可选接 `storyboard`、`character_bible`、`character_book`、`reference_manifest`、`images`、`video_1`/`video_2`/`video_3`、`audio_1`/`audio_2`/`audio_3`；`prompt_session`、`message_nonce` 由前端维护。节点只维护完整官方 H3 文本。
 
 输出：`prompt` 是可接 MiniMax H3 生成节点的最终 STRING；`prompt_session` 保存会话；`REFERENCE_MANIFEST` 是同步后的媒体清单；`validation` 是规则报告；`change_summary` 是本轮摘要。内部 H3 Plan 不作为公开端口。
 

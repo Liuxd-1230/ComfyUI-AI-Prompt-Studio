@@ -245,6 +245,12 @@ def _check_soundscape(report, prompt) -> None:
     if soundscape and "<d>" in soundscape:
         report.add("warning", "h3_soundscape_dialogue",
                    "overall_soundscape 不应重复对白/歌词内容")
+    if re.search(
+            r"\b(?:smell|smells|scent|scented|odor|odour|aroma|taste|tastes)\b",
+            soundscape, flags=re.IGNORECASE):
+        report.add(
+            "error", "h3_soundscape_non_audible",
+            "overall_soundscape 只能描述可听见的声音，不能写气味或味觉")
 
 
 def _check_music(report, prompt, mode: str) -> None:

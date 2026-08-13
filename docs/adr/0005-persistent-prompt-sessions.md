@@ -3,7 +3,7 @@
 > **2026-08-11 amendment:** ADR 0007 supersedes the mandatory single structured
 > execution path and v2 migration behavior. This document remains the lineage and
 > atomic-commit foundation for the strict lane; the default lenient lane persists a
-> prompt payload in PromptSession v3.1 without requiring a semantic Plan.
+> prompt payload in PromptSession v3.2 without requiring a semantic Plan.
 
 Prompt Composer and MiniMax H3 Director use `PromptSession` as the current-state fact source. Conversation explains why revisions changed; it is not replayed to reconstruct the current prompt.
 
@@ -21,7 +21,7 @@ current structured plan + latest instruction
 → atomic revision commit
 ```
 
-`PromptSession` v3.1 stores target family/variant, current plan and prompt, validation,
+`PromptSession` v3.2 stores target family/variant, current plan and prompt, validation,
 locked constraints, the last processed message nonce, target/source/model/Model Core and Markdown supplement
 fingerprints, bounded conversation messages, and the latest ten synchronized
 plan/prompt revisions. A ChangeSet declares `base_revision`; stale updates, illegal

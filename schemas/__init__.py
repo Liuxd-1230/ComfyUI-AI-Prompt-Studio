@@ -48,8 +48,6 @@ from .prompt_plan import (
 )
 from .prompt_session import PromptRevision, PromptSession, SessionFingerprints
 from .prompt_supplement import MAX_PROMPT_SUPPLEMENT_BYTES, PromptSupplement
-from .image_semantic_plan import ImageSemanticPlan
-from .text_prompt import TextPromptPlan
 from .references import (
     ANALYSIS_MODES,
     ASSET_TYPES,
@@ -128,7 +126,6 @@ __all__ = [
     "PromptSession", "PromptRevision", "SessionFingerprints",
     "PromptSupplement",
     "MAX_PROMPT_SUPPLEMENT_BYTES",
-    "ImageSemanticPlan", "TextPromptPlan",
     # h3
     "H3PromptPlan", "H3Shot", "H3Speaker", "H3Subject", "H3Asset",
     "H3Dialogue", "H3Retention", "H3AudioField",

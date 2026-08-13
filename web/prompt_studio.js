@@ -13,10 +13,6 @@ const H3_MODE_HELP = {
   L2VA: "尾帧生成视频｜接 1 张图，作为视频最终帧；提示词设计前序动作并收敛到该图。",
   Ref2VA: "多模态参考生成｜可组合图片、视频、音频来约束人物、风格、动作和声音；不是首尾帧模式。",
 };
-const EXECUTION_HELP = {
-  lenient: "宽松：直接生成并继续修改完整成品提示词，速度快、兼容本地模型；只检查明确硬错误。",
-  strict: "严格：维护结构化 Plan，每次修改走 ChangeSet、Diff Guard、锁和校验；更稳但更挑模型格式。",
-};
 const byName = (node, name) => (node.widgets || []).find((widget) => widget.name === name);
 const newMessageNonce = () => globalThis.crypto?.randomUUID?.()
   || `msg-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -61,7 +57,7 @@ function studioElement(node) {
     <header><strong>Prompt Studio</strong><span class="aps-studio-revision">v0</span></header>
     <div class="aps-studio-help" hidden>
       <div><strong>生成模式：</strong><span class="aps-studio-mode-help"></span></div>
-      <div><strong>执行模式：</strong><span class="aps-studio-execution-help"></span></div>
+      <div><strong>执行方式：</strong>直接维护成品提示词；格式异常时仅自动修复一次，失败保留上一版。</div>
       <div class="aps-studio-legacy-note">旧工作流里的 R2V 等同 Ref2VA；新建工作流统一使用 Ref2VA。</div>
     </div>
     <div class="aps-studio-chat" aria-label="会话记录"></div>
@@ -112,11 +108,8 @@ function renderInlineHelp(node, root) {
   }
   help.hidden = false;
   const mode = String(byName(node, "mode")?.value || "T2VA");
-  const executionMode = String(byName(node, "execution_mode")?.value || "lenient");
   root.querySelector(".aps-studio-mode-help").textContent =
     H3_MODE_HELP[mode] || H3_MODE_HELP.Ref2VA;
-  root.querySelector(".aps-studio-execution-help").textContent =
-    EXECUTION_HELP[executionMode] || EXECUTION_HELP.lenient;
 }
 
 function watchHelpWidget(node, root, name) {
@@ -208,7 +201,6 @@ function attachStudio(node) {
   renderSession(node, root);
   renderInlineHelp(node, root);
   watchHelpWidget(node, root, "mode");
-  watchHelpWidget(node, root, "execution_mode");
 
   const previousExecuted = node.onExecuted;
   node.onExecuted = function onExecuted(message) {

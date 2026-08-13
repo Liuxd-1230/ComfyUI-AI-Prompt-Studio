@@ -3787,3 +3787,9 @@ user prompt
 本任务的目标是：
 
 > **让整个 APS 节点库拥有可验证、可追踪、可扩展、官方规范驱动的 Prompt 架构；同时允许用户通过安全、分层、受 Scope 与 Context Budget 控制的 Markdown 文件补充内置 Prompt，而不破坏 Model Core、Semantic Plan、Validator 和运行时硬边界。**
+> **2026-08-13 单一路径修订（后写优先）**：Prompt Studio 不再提供宽松/严格选择。
+> 唯一生产路径输出完整目标 Prompt，以轻量 `<PROMPT>/<SUMMARY>` 为首选协议并接受
+> 明确可用的无标签文本；损坏 JSON、半截标签或硬规则失败最多保真修复一次。ANIMA
+> 质量前缀/负面输出与英语规则、H3 官方字段/引用/媒体/身份规则由确定性代码守住。
+> 下文涉及 Studio strict Plan/ChangeSet/事务/Critic 的要求已被本修订取代；其他节点的
+> JSON Schema 输出、Reference/Storyboard 结构化契约不受影响。

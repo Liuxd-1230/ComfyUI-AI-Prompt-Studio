@@ -142,7 +142,7 @@ def test_prompt_studio_dom_widget_has_bounded_layout_contract():
     assert "max-height: 438px" in styles
     assert "overflow: hidden" in styles
     assert "H3_MODE_HELP" in source
-    assert "EXECUTION_HELP" in source
+    assert "执行方式：" in source
     assert "widget.hidden = true" in source
 
 
@@ -166,13 +166,12 @@ def test_studio_session_widgets_follow_public_inputs(loaded):
     module, _, _ = loaded
     composer_inputs = module.NODE_CLASS_MAPPINGS["APS_PromptStudio"].INPUT_TYPES()
     assert "operation" not in composer_inputs["required"] | composer_inputs["optional"]
-    assert list(composer_inputs["required"])[-2:] == [
-        "execution_mode", "session_action"]
+    assert list(composer_inputs["required"])[-2:] == ["target", "session_action"]
     assert list(composer_inputs["optional"])[-3:] == [
         "prompt_session", "message_nonce", "prompt_supplements"]
     h3_inputs = module.NODE_CLASS_MAPPINGS["APS_H3PromptStudio"].INPUT_TYPES()
     assert "operation" not in h3_inputs["required"] | h3_inputs["optional"]
-    assert list(h3_inputs["required"])[-2:] == ["execution_mode", "session_action"]
+    assert list(h3_inputs["required"])[-2:] == ["duration", "session_action"]
     assert list(h3_inputs["optional"])[-3:] == [
         "prompt_session", "message_nonce", "prompt_supplements"]
     assert composer_inputs["optional"]["prompt_supplements"][1]["advanced"] is True

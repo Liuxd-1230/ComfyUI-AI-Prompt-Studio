@@ -42,7 +42,7 @@ def test_llm_generate_custom_system_and_text_attachment(monkeypatch, store) -> N
     assert Gateway.request.attachments[0].content == "附件数据内容"
 
 
-def test_reference_to_bible_to_strict_anima_studio(monkeypatch, store) -> None:
+def test_reference_to_bible_to_anima_studio(monkeypatch, store) -> None:
     profile = _profile(store)
     class ReferenceGateway:
         def generate(self, profile, api_key, request):
@@ -71,19 +71,14 @@ def test_reference_to_bible_to_strict_anima_studio(monkeypatch, store) -> None:
     class StudioGateway:
         def generate(self, profile, api_key, request):
             del profile, api_key, request
-            return LLMResult(text=json.dumps({
-                "content": {
-                    "scene_description": "Rin waits beside a rain-streaked window.",
-                    "characters": [{"character_id": bible.character_id,
-                                    "name": "Rin",
-                                    "required_traits": ["long black hair"],
-                                    "action": "waiting"}],
-                    "environment": ["quiet cafe"], "lighting": "warm light",
-                }, "negative": "watermark"}))
+            return LLMResult(text=(
+                "<PROMPT>Rin with long black hair waits beside a rain-streaked "
+                "window in a quiet cafe under warm light.</PROMPT>"
+                "<SUMMARY>Created from the character anchor.</SUMMARY>"))
 
     monkeypatch.setattr(studio_mod, "Gateway", StudioGateway)
     created = studio_mod.APS_PromptStudio().run(
-        profile, "Rin waits in a cafe", "anima_base", "strict",
+        profile, "Rin waits in a cafe", "anima_base",
         character_bible=bible_json, message_nonce="flow-create")
     assert "Rin" in created["result"][0]
     assert "long black hair" in created["result"][0]
@@ -109,7 +104,7 @@ def test_image_studio_explicit_markdown_supplement_is_injected(monkeypatch, stor
 
     monkeypatch.setattr(studio_mod, "Gateway", StudioGateway)
     result = studio_mod.APS_PromptStudio().run(
-        _profile(store), "a portrait", "anima_base", "lenient",
+        _profile(store), "a portrait", "anima_base",
         prompt_supplements=record.supplement_id, message_nonce="supplement-flow")
     assert "A clear English anime portrait." in result["result"][0]
     assert "Keep visual prose in clear English." in captured["request"].system

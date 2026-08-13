@@ -1,5 +1,7 @@
 # Changelog
 
+- **Studio 单一路径重构**：基于基元与 LM Studio 的 16 次质量对照，删除 Image/H3 Studio 的 `execution_mode`、strict Plan/ChangeSet/Diff Guard/事务分支及其 mock-only 测试。PromptSession 升级 3.2：旧 lenient 会话迁移为 single，旧 strict 明确要求新会话。唯一主路径维护真正传给下游的完整 Prompt，协议垃圾或确定性硬错误最多保真修复一次；ANIMA 同时迁入官方质量前缀、基础 negative、用户显式排除项与英语/身份检查，H3 保留官方字段、媒体、引用、时长、身份和运镜校验。更新前端帮助、示例工作流、验收矩阵、README、约束修订与 ADR 0008。
+
 - **基元 vs LM 双通道质量对比**：以相同高约束 ANIMA 与 H3 任务完成 16 次真实调用，覆盖两个模型、宽松/严格和两次重复。Image 最高质量为基元 strict，最快忠实路径为 LM lenient；H3 最高质量为基元 lenient，LM lenient 最快。LM strict H3 虽 2/2 通过结构校验，却两次大量丢失人物、服装、道具和地点，确认现有严格 H3 缺少 source-fact coverage，当前明确不可推荐。详见 `docs/prompt-architecture/jiyuan-vs-lm-lane-quality-2026-08-13.md`。
 
 - **本地压力复核补完**：继续补跑 H3 五模式宽松/严格重复 CREATE、多轮事实保持、恢复/重复执行、640.jpg 十一种 Reference 语义质量，以及真实图片+6 秒视频+6 秒音频 Ref2VA。新增 SSE 原始行级总截止时间，避免服务端持续心跳/残片绕过档案 timeout 无限占队列；宽松 H3 仅对方括号/XML 官方字段、单数字分钟、零时刻 Shot 1 和缺失开标签做确定性协议归一化。实测证明本地 9B 严格模式仍有质量假绿，Reference 非人物模式仍受共用 CharacterCandidate Schema 污染，均在验收报告中如实记录。

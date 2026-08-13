@@ -11,7 +11,8 @@ from aps.schemas.character import CharacterBible, CharacterTrait
 from aps.schemas.prompt_session import PromptSession
 from aps.schemas.references import AssetRef, ReferenceManifest
 from aps.schemas.results import LLMResult
-from aps.services.h3_studio_runtime import normalize_plan
+from aps.services.h3_plan import parse_plan_json
+from aps.services.h3_studio_runtime import normalize_plan, render_validate
 
 
 def _profile(store):
@@ -58,7 +59,7 @@ def _valid_prompt(soundscape: str = "Rain falls on the roof.") -> str:
 def test_h3_normalizer_removes_first_shot_zero_timestamp() -> None:
     payload = json.loads(json.dumps(PLAN))
     payload["shots"][0]["start_time"] = 0.0
-    plan = studio_mod.parse_plan_json(json.dumps(payload), "T2VA", 8.0)
+    plan = parse_plan_json(json.dumps(payload), "T2VA", 8.0)
 
     normalized = normalize_plan(
         plan, ReferenceManifest(), image_count=0, mode="T2VA", duration=8.0)
@@ -68,7 +69,7 @@ def test_h3_normalizer_removes_first_shot_zero_timestamp() -> None:
 
 def test_h3_studio_public_interface_removes_operation_and_plan_port() -> None:
     inputs = studio_mod.APS_H3PromptStudio.INPUT_TYPES()
-    assert inputs["required"]["execution_mode"][1]["default"] == "lenient"
+    assert "execution_mode" not in inputs["required"] | inputs["optional"]
     assert "operation" not in inputs["required"] | inputs["optional"]
     assert studio_mod.APS_H3PromptStudio.RETURN_NAMES == (
         "prompt", "prompt_session", "REFERENCE_MANIFEST", "validation",
@@ -91,8 +92,7 @@ def test_h3_public_node_persists_recoverable_session(
     monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
 
     result = studio_mod.APS_H3PromptStudio().run(
-        _profile(store), "woman waits for a train", "T2VA", 10.0,
-        "lenient", message_nonce="h-journal", unique_id="h3-8")
+        _profile(store), "woman waits for a train", "T2VA", 10.0, message_nonce="h-journal", unique_id="h3-8")
     session = PromptSession.from_json(result["result"][1])
     restored = DurableRecoveryJournal(journal_path).latest(session.id, "h3-8")
 
@@ -111,13 +111,12 @@ def test_h3_lenient_create_and_refine_commit_freeform(monkeypatch, store) -> Non
     monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
     node = studio_mod.APS_H3PromptStudio()
     created = node.run(
-        _profile(store), "woman waits for a train", "T2VA", 10.0,
-        "lenient", message_nonce="h1")
+        _profile(store), "woman waits for a train", "T2VA", 10.0, message_nonce="h1")
     session = PromptSession.from_json(created["result"][1])
     assert session.current_payload_kind == "freeform" and session.revision == 1
     refined = node.run(
         store.get_profile("h3-studio").node_payload(),
-        "make the ambience windier", "T2VA", 10.0, "lenient",
+        "make the ambience windier", "T2VA", 10.0,
         prompt_session=created["result"][1], message_nonce="h2")
     session2 = PromptSession.from_json(refined["result"][1])
     assert session2.revision == 2
@@ -139,8 +138,7 @@ def test_h3_lenient_repairs_pan_when_user_requested_truck(monkeypatch, store) ->
     monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
 
     result = studio_mod.APS_H3PromptStudio().run(
-        _profile(store), "单镜头缓慢向右横移", "T2VA", 10.0,
-        "lenient", message_nonce="truck")
+        _profile(store), "单镜头缓慢向右横移", "T2VA", 10.0, message_nonce="truck")
     session = PromptSession.from_json(result["result"][1])
 
     assert "truck right" in result["result"][0]
@@ -151,91 +149,6 @@ def test_h3_lenient_repairs_pan_when_user_requested_truck(monkeypatch, store) ->
     assert "一镜到底/单镜头" in SequenceGateway.requests[0].system
 
 
-def test_h3_strict_create_and_refine_use_one_call_each(monkeypatch, store) -> None:
-    SequenceGateway.responses = [
-        json.dumps(PLAN),
-        json.dumps({
-            "base_revision": 1, "plan_type": "minimax_h3",
-            "change_category": "minimal_refine", "intent_scope": ["soundscape"],
-            "requested_changes": [{
-                "path": "soundscape", "operation": "set",
-                "value_json": json.dumps("Wind moves through the station."),
-                "reason": "The user requested stronger wind ambience.",
-            }],
-            "dependent_changes": [], "invalidated_facts": [],
-            "constraint_conflicts": [], "summary": "Changed the soundscape.",
-        }),
-    ]
-    SequenceGateway.requests = []
-    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
-    node = studio_mod.APS_H3PromptStudio()
-    created = node.run(
-        _profile(store), "woman waits for a train", "T2VA", 10.0,
-        "strict", message_nonce="s1")
-    session = PromptSession.from_json(created["result"][1])
-    assert session.current_payload_kind == "structured" and session.revision == 1
-    refined = node.run(
-        store.get_profile("h3-studio").node_payload(), "stronger wind ambience",
-        "T2VA", 10.0, "strict", prompt_session=created["result"][1],
-        message_nonce="s2")
-    assert "Wind moves through" in refined["result"][0]
-    assert PromptSession.from_json(refined["result"][1]).revision == 2
-    assert len(SequenceGateway.requests) == 2
-
-
-def test_h3_strict_delete_middle_shot_reindexes_public_output(monkeypatch, store) -> None:
-    payload = json.loads(json.dumps(PLAN))
-    payload["shots"] = [
-        {"index": 1, "start_time": None,
-         "description": ["First shot."], "camera": "Static wide shot."},
-        {"index": 2, "start_time": 3.0,
-         "description": ["Middle shot to remove."], "camera": "Medium shot."},
-        {"index": 3, "start_time": 6.0,
-         "description": ["Last shot remains."], "camera": "Close-up."},
-    ]
-    changeset = {
-        "base_revision": 1, "plan_type": "minimax_h3",
-        "change_category": "minimal_refine", "intent_scope": ["shots/1"],
-        "requested_changes": [{
-            "path": "shots/1", "operation": "delete", "value_json": "null",
-            "reason": "The user explicitly removed the middle shot.",
-        }],
-        "dependent_changes": [], "invalidated_facts": [],
-        "constraint_conflicts": [], "summary": "Removed the middle shot.",
-    }
-    SequenceGateway.responses = [json.dumps(payload), json.dumps(changeset)]
-    SequenceGateway.requests = []
-    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
-    node = studio_mod.APS_H3PromptStudio()
-    created = node.run(
-        _profile(store), "create three shots", "T2VA", 10.0,
-        "strict", message_nonce="delete-create")
-    refined = node.run(
-        store.get_profile("h3-studio").node_payload(), "remove the middle shot",
-        "T2VA", 10.0, "strict", prompt_session=created["result"][1],
-        message_nonce="delete-middle")
-    session = PromptSession.from_json(refined["result"][1])
-    plan_after = session.current_plan["h3_plan"]
-    assert [shot["index"] for shot in plan_after["shots"]] == [1, 2]
-    assert [shot["description"][0] for shot in plan_after["shots"]] == [
-        "First shot.", "Last shot remains."]
-    assert "[Shot 1]" in refined["result"][0]
-    assert "[Shot 2]" in refined["result"][0]
-    assert "[Shot 3]" not in refined["result"][0]
-
-
-def test_h3_strict_protocol_repairs_once_then_fails_without_state(
-        monkeypatch, store) -> None:
-    SequenceGateway.responses = ["{broken", "still broken"]
-    SequenceGateway.requests = []
-    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
-    with pytest.raises(ValueError, match="H3 严格结构化协议"):
-        studio_mod.APS_H3PromptStudio().run(
-            _profile(store), "woman waits", "T2VA", 10.0, "strict",
-            message_nonce="bad")
-    assert len(SequenceGateway.requests) == 2
-
-
 def test_h3_lenient_failure_exposes_bounded_raw_and_exact_format_contract(
         monkeypatch, store) -> None:
     SequenceGateway.responses = ["first malformed H3 text", "second malformed H3 text"]
@@ -243,7 +156,7 @@ def test_h3_lenient_failure_exposes_bounded_raw_and_exact_format_contract(
     monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
     with pytest.raises(ValueError, match="second malformed H3 text"):
         studio_mod.APS_H3PromptStudio().run(
-            _profile(store), "woman waits", "T2VA", 10.0, "lenient",
+            _profile(store), "woman waits", "T2VA", 10.0,
             message_nonce="bad-lenient")
     assert len(SequenceGateway.requests) == 2
     for request in SequenceGateway.requests:
@@ -252,53 +165,6 @@ def test_h3_lenient_failure_exposes_bounded_raw_and_exact_format_contract(
         assert "non_diegetic_music:" in request.system
         assert "Never generalize or substitute a concrete location" in request.system
         assert "Distinguish zoom from push, pan from truck" in request.system
-
-
-def test_h3_strict_validator_failure_does_not_creatively_repair(
-        monkeypatch, store) -> None:
-    invalid = dict(PLAN)
-    invalid["soundscape"] = ""
-    SequenceGateway.responses = [json.dumps(invalid)]
-    SequenceGateway.requests = []
-    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
-    with pytest.raises(ValueError, match="H3 严格模式校验未通过"):
-        studio_mod.APS_H3PromptStudio().run(
-            _profile(store), "silent-looking station", "T2VA", 10.0,
-            "strict", message_nonce="invalid")
-    assert len(SequenceGateway.requests) == 1
-
-
-def test_h3_successful_mode_switch_starts_new_strict_lineage(
-        monkeypatch, store) -> None:
-    SequenceGateway.responses = [
-        f"<PROMPT>{_valid_prompt()}</PROMPT><SUMMARY>Created.</SUMMARY>",
-        json.dumps(PLAN),
-    ]
-    SequenceGateway.requests = []
-    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
-    node = studio_mod.APS_H3PromptStudio()
-    lenient = node.run(_profile(store), "woman waits", "T2VA", 10.0,
-                       "lenient", message_nonce="l1")
-    old = PromptSession.from_json(lenient["result"][1])
-    strict = node.run(
-        store.get_profile("h3-studio").node_payload(), "rebuild strictly",
-        "T2VA", 10.0, "strict", prompt_session=lenient["result"][1],
-        message_nonce="s1")
-    new = PromptSession.from_json(strict["result"][1])
-    assert new.id != old.id
-    assert new.execution_mode == "strict" and new.revision == 1
-
-
-def test_h3_strict_i2va_requires_connected_image_before_commit(
-        monkeypatch, store) -> None:
-    SequenceGateway.responses = [json.dumps(PLAN)]
-    SequenceGateway.requests = []
-    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
-    with pytest.raises(ValueError, match="I2VA.*1"):
-        studio_mod.APS_H3PromptStudio().run(
-            _profile(store), "animate the supplied first frame", "I2VA", 10.0,
-            "strict", message_nonce="missing-image")
-    assert len(SequenceGateway.requests) == 1
 
 
 def test_h3_lenient_missing_connected_identity_repairs_once_then_rejects(
@@ -314,7 +180,7 @@ def test_h3_lenient_missing_connected_identity_repairs_once_then_rejects(
     monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
     with pytest.raises(ValueError, match="身份锚点"):
         studio_mod.APS_H3PromptStudio().run(
-            _profile(store), "Rin waits", "T2VA", 10.0, "lenient",
+            _profile(store), "Rin waits", "T2VA", 10.0,
             character_bible=bible.to_json(), message_nonce="identity")
     assert len(SequenceGateway.requests) == 2
 
@@ -357,12 +223,12 @@ def test_h3_strict_normalization_injects_locked_bible_traits() -> None:
                        category="stable", locked=True),
         CharacterTrait(name="eyes", value="amber-green eyes",
                        category="stable", locked=True)])
-    plan = studio_mod.parse_plan_json(json.dumps(PLAN), "T2VA", 5.0)
+    plan = parse_plan_json(json.dumps(PLAN), "T2VA", 5.0)
 
     normalized = normalize_plan(
         plan, ReferenceManifest(), image_count=0, mode="T2VA", duration=5.0,
         source_bibles=[bible])
-    rendered, _ = studio_mod.render_validate(
+    rendered, _ = render_validate(
         normalized, ReferenceManifest(), image_count=0, mode="T2VA", duration=5.0)
 
     assert "Rose's locked visual identity: long wavy black hair, amber-green eyes." in rendered
@@ -383,13 +249,13 @@ def test_h3_rejects_near_copy_display_name_drift() -> None:
 
 def test_h3_i2va_alignment_consumes_picture_without_ref2va_retention() -> None:
     """Base-mode alignment is the reference contract; retention belongs to Ref2VA."""
-    plan = studio_mod.parse_plan_json(json.dumps(PLAN), "I2VA", 5.0)
+    plan = parse_plan_json(json.dumps(PLAN), "I2VA", 5.0)
     manifest = ReferenceManifest(assets=[
         AssetRef(asset_id="img_0", asset_type="image", data_ref="image_tensor")])
 
     normalized = normalize_plan(
         plan, manifest, image_count=1, mode="I2VA", duration=5.0)
-    rendered, report = studio_mod.render_validate(
+    rendered, report = render_validate(
         normalized, manifest, image_count=1, mode="I2VA", duration=5.0)
 
     assert rendered.startswith(

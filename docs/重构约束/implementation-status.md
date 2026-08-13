@@ -1,15 +1,13 @@
 # Persistent Contract Implementation Status
 
-> **ADR 0007 transition:** the 2026-08-11 dual-lane amendments are binding, but the
-> ADR 0007 runtime migration is implemented: PromptSession v3.1, the lenient protocol
-> parser, `APS_PromptStudio`, and `APS_H3PromptStudio` are registered and tested.
-> The former Composer/Director implementations are removed. The 2026-08-11 real
-> ComfyUI/LM Studio prompt-only matrix passed for image/H3 lenient and strict
-> CREATE/REFINE, two consecutive lenient refinements, untagged output, explicit mode
-> switch, and restore. The local model would not emit deliberately truncated JSON/tag
-> output, so that provider-dependent live fault injection remains open; the same public
-> node failure seam is covered deterministically in `test_p41_resilience.py` and
-> `test_h3_prompt_studio.py`. See `docs/prompt-architecture/p4.1-real-acceptance-2026-08-11.md`.
+> **ADR 0008 current runtime:** PromptSession v3.2 and both Studio nodes use one
+> complete-prompt path. The public execution-mode switch and the disconnected strict
+> Plan/ChangeSet/transaction implementation were removed after real 基元/LM comparison
+> showed extra latency, format failures, and H3 semantic false positives. Old lenient
+> sessions migrate to the single path; old strict sessions require a new conversation.
+> Historical P0-P4 rows below document completed architecture experiments, not current
+> production APIs. Current acceptance is tracked by `test_single_lane_studio.py`, public
+> Studio flow tests, and the prompt matrix.
 
 This table tracks the binding Persistent contract §108 at the current HEAD.
 “Partial” means the invariant has an executable base but the named end-to-end
@@ -32,7 +30,7 @@ surface is not complete; it must not be described as finished functionality.
 | 108.13 No New Message | done | nonce/empty zero-call tests in both Studio nodes |
 | 108.14 Stale Concurrent Result | done | revision CAS, durable fresh-read journal CAS, node commit-spy tests, and real 9B stale-result rejection |
 | 108.15 Restore | done | immutable restore-as-new-revision tests in `test_prompt_session.py` |
-| 108.16 Workflow Reload | done | serialized v3.1 Session regression plus real ComfyUI journal recovery into a workflow widget |
+| 108.16 Workflow Reload | done | serialized v3.2 Session regression plus real ComfyUI journal recovery into a workflow widget |
 | 108.17 Node Copy | done | public node copy forks a distinct session ID/origin lineage while retaining the stable prompt and revision |
 | 108.18 Supplement Changed | done | bound supplement fingerprint mismatch tests; Model Core hash remains separate |
 | 108.19 CharacterBible Changed | done | same-nonce mismatch-before-Gateway production test |

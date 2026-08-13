@@ -2,62 +2,308 @@
   "schema_version": "1.0",
   "scope": "All type-compatible APS public-node connections and every public mode/target. Invalid boundary cases are expected to fail clearly; arbitrary third-party node combinations are out of scope.",
   "image_studio": [
-    ["anima_base", "lenient"], ["anima_base", "strict"],
-    ["anima_aesthetic", "lenient"], ["anima_aesthetic", "strict"],
-    ["anima_turbo", "lenient"], ["anima_turbo", "strict"],
-    ["z_image_turbo", "lenient"], ["z_image_turbo", "strict"],
-    ["qwen_image_edit_2511", "lenient"], ["qwen_image_edit_2511", "strict"],
-    ["generic_image", "lenient"], ["generic_image", "strict"]
+    "anima_base",
+    "anima_aesthetic",
+    "anima_turbo",
+    "z_image_turbo",
+    "qwen_image_edit_2511",
+    "generic_image"
   ],
   "h3_studio": [
-    ["T2VA", "lenient"], ["T2VA", "strict"],
-    ["I2VA", "lenient"], ["I2VA", "strict"],
-    ["FL2VA", "lenient"], ["FL2VA", "strict"],
-    ["L2VA", "lenient"], ["L2VA", "strict"],
-    ["Ref2VA", "lenient"], ["Ref2VA", "strict"]
+    "T2VA",
+    "I2VA",
+    "FL2VA",
+    "L2VA",
+    "Ref2VA"
   ],
-  "reference_analysis": ["character_identity", "character_full", "clothing", "pose_expression", "scene", "composition", "style", "object", "anima_reference", "h3_reference", "custom"],
-  "character_merge": ["manual_priority", "text_priority", "image_priority", "consensus", "fill_missing_only"],
-  "storyboard_split": ["scene", "shot", "beat", "auto"],
-  "storyboard_select": ["scene", "shot", "range", "all"],
-  "llm_output": ["text", "json", "json_schema"],
-  "llm_history": ["append", "replace", "off"],
+  "reference_analysis": [
+    "character_identity",
+    "character_full",
+    "clothing",
+    "pose_expression",
+    "scene",
+    "composition",
+    "style",
+    "object",
+    "anima_reference",
+    "h3_reference",
+    "custom"
+  ],
+  "character_merge": [
+    "manual_priority",
+    "text_priority",
+    "image_priority",
+    "consensus",
+    "fill_missing_only"
+  ],
+  "storyboard_split": [
+    "scene",
+    "shot",
+    "beat",
+    "auto"
+  ],
+  "storyboard_select": [
+    "scene",
+    "shot",
+    "range",
+    "all"
+  ],
+  "llm_output": [
+    "text",
+    "json",
+    "json_schema"
+  ],
+  "llm_history": [
+    "append",
+    "replace",
+    "off"
+  ],
   "connections": [
-    ["APS_CharacterBible", "CHARACTER_BIBLE", "APS_CharacterBible", "existing_bible", "CHARACTER_BIBLE"],
-    ["APS_CharacterBible", "CHARACTER_BIBLE", "APS_H3PromptStudio", "character_bible", "CHARACTER_BIBLE"],
-    ["APS_CharacterBible", "CHARACTER_BIBLE", "APS_PromptStudio", "character_bible", "CHARACTER_BIBLE"],
-    ["APS_CharacterBible", "CHARACTER_BIBLE", "APS_ReferenceAnalyzer", "character_bible", "CHARACTER_BIBLE"],
-    ["APS_CharacterBible", "CHARACTER_BIBLE", "APS_StoryboardBuilder", "character_bible", "CHARACTER_BIBLE"],
-    ["APS_CharacterBible", "CHARACTER_BOOK", "APS_CharacterBible", "existing_book", "CHARACTER_BOOK"],
-    ["APS_CharacterBible", "CHARACTER_BOOK", "APS_H3PromptStudio", "character_book", "CHARACTER_BOOK"],
-    ["APS_CharacterBible", "CHARACTER_BOOK", "APS_PromptStudio", "character_book", "CHARACTER_BOOK"],
-    ["APS_CharacterBible", "CHARACTER_BOOK", "APS_StoryboardBuilder", "character_book", "CHARACTER_BOOK"],
-    ["APS_H3PromptStudio", "REFERENCE_MANIFEST", "APS_H3PromptStudio", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_H3PromptStudio", "REFERENCE_MANIFEST", "APS_PromptStudio", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_H3PromptStudio", "REFERENCE_MANIFEST", "APS_StoryboardBuilder", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_LLMGenerate", "CHAT_SESSION", "APS_LLMGenerate", "session", "CHAT_SESSION"],
-    ["APS_ModelProfile", "AI_PROFILE", "APS_H3PromptStudio", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_ModelProfile", "AI_PROFILE", "APS_LLMGenerate", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_ModelProfile", "AI_PROFILE", "APS_PromptStudio", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_ModelProfile", "AI_PROFILE", "APS_ReferenceAnalyzer", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_ModelProfile", "AI_PROFILE", "APS_RuntimeControl", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_ModelProfile", "AI_PROFILE", "APS_StoryboardBuilder", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_ReferenceAnalyzer", "CHARACTER_CANDIDATE", "APS_CharacterBible", "character_candidate", "CHARACTER_CANDIDATE"],
-    ["APS_ReferenceAnalyzer", "REFERENCE_MANIFEST", "APS_H3PromptStudio", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_ReferenceAnalyzer", "REFERENCE_MANIFEST", "APS_PromptStudio", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_ReferenceAnalyzer", "REFERENCE_MANIFEST", "APS_StoryboardBuilder", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_ReferencePrompt", "REFERENCE_MANIFEST", "APS_H3PromptStudio", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_ReferencePrompt", "REFERENCE_MANIFEST", "APS_PromptStudio", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_ReferencePrompt", "REFERENCE_MANIFEST", "APS_StoryboardBuilder", "reference_manifest", "REFERENCE_MANIFEST"],
-    ["APS_RuntimeControl", "AI_PROFILE", "APS_H3PromptStudio", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_RuntimeControl", "AI_PROFILE", "APS_LLMGenerate", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_RuntimeControl", "AI_PROFILE", "APS_PromptStudio", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_RuntimeControl", "AI_PROFILE", "APS_ReferenceAnalyzer", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_RuntimeControl", "AI_PROFILE", "APS_StoryboardBuilder", "AI_PROFILE", "AI_PROFILE"],
-    ["APS_StoryboardBuilder", "STORYBOARD", "APS_H3PromptStudio", "storyboard", "STORYBOARD"],
-    ["APS_StoryboardBuilder", "STORYBOARD", "APS_StoryboardSelect", "storyboard", "STORYBOARD"],
-    ["APS_StoryboardSelect", "STORY_ITEM", "APS_PromptStudio", "story_item", "STORY_ITEM"],
-    ["APS_StoryboardSelect", "STORY_ITEMS", "APS_PromptStudio", "story_item", "STORY_ITEM"]
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BIBLE",
+      "APS_CharacterBible",
+      "existing_bible",
+      "CHARACTER_BIBLE"
+    ],
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BIBLE",
+      "APS_H3PromptStudio",
+      "character_bible",
+      "CHARACTER_BIBLE"
+    ],
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BIBLE",
+      "APS_PromptStudio",
+      "character_bible",
+      "CHARACTER_BIBLE"
+    ],
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BIBLE",
+      "APS_ReferenceAnalyzer",
+      "character_bible",
+      "CHARACTER_BIBLE"
+    ],
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BIBLE",
+      "APS_StoryboardBuilder",
+      "character_bible",
+      "CHARACTER_BIBLE"
+    ],
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BOOK",
+      "APS_CharacterBible",
+      "existing_book",
+      "CHARACTER_BOOK"
+    ],
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BOOK",
+      "APS_H3PromptStudio",
+      "character_book",
+      "CHARACTER_BOOK"
+    ],
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BOOK",
+      "APS_PromptStudio",
+      "character_book",
+      "CHARACTER_BOOK"
+    ],
+    [
+      "APS_CharacterBible",
+      "CHARACTER_BOOK",
+      "APS_StoryboardBuilder",
+      "character_book",
+      "CHARACTER_BOOK"
+    ],
+    [
+      "APS_H3PromptStudio",
+      "REFERENCE_MANIFEST",
+      "APS_H3PromptStudio",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_H3PromptStudio",
+      "REFERENCE_MANIFEST",
+      "APS_PromptStudio",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_H3PromptStudio",
+      "REFERENCE_MANIFEST",
+      "APS_StoryboardBuilder",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_LLMGenerate",
+      "CHAT_SESSION",
+      "APS_LLMGenerate",
+      "session",
+      "CHAT_SESSION"
+    ],
+    [
+      "APS_ModelProfile",
+      "AI_PROFILE",
+      "APS_H3PromptStudio",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_ModelProfile",
+      "AI_PROFILE",
+      "APS_LLMGenerate",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_ModelProfile",
+      "AI_PROFILE",
+      "APS_PromptStudio",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_ModelProfile",
+      "AI_PROFILE",
+      "APS_ReferenceAnalyzer",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_ModelProfile",
+      "AI_PROFILE",
+      "APS_RuntimeControl",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_ModelProfile",
+      "AI_PROFILE",
+      "APS_StoryboardBuilder",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_ReferenceAnalyzer",
+      "CHARACTER_CANDIDATE",
+      "APS_CharacterBible",
+      "character_candidate",
+      "CHARACTER_CANDIDATE"
+    ],
+    [
+      "APS_ReferenceAnalyzer",
+      "REFERENCE_MANIFEST",
+      "APS_H3PromptStudio",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_ReferenceAnalyzer",
+      "REFERENCE_MANIFEST",
+      "APS_PromptStudio",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_ReferenceAnalyzer",
+      "REFERENCE_MANIFEST",
+      "APS_StoryboardBuilder",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_ReferencePrompt",
+      "REFERENCE_MANIFEST",
+      "APS_H3PromptStudio",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_ReferencePrompt",
+      "REFERENCE_MANIFEST",
+      "APS_PromptStudio",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_ReferencePrompt",
+      "REFERENCE_MANIFEST",
+      "APS_StoryboardBuilder",
+      "reference_manifest",
+      "REFERENCE_MANIFEST"
+    ],
+    [
+      "APS_RuntimeControl",
+      "AI_PROFILE",
+      "APS_H3PromptStudio",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_RuntimeControl",
+      "AI_PROFILE",
+      "APS_LLMGenerate",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_RuntimeControl",
+      "AI_PROFILE",
+      "APS_PromptStudio",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_RuntimeControl",
+      "AI_PROFILE",
+      "APS_ReferenceAnalyzer",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_RuntimeControl",
+      "AI_PROFILE",
+      "APS_StoryboardBuilder",
+      "AI_PROFILE",
+      "AI_PROFILE"
+    ],
+    [
+      "APS_StoryboardBuilder",
+      "STORYBOARD",
+      "APS_H3PromptStudio",
+      "storyboard",
+      "STORYBOARD"
+    ],
+    [
+      "APS_StoryboardBuilder",
+      "STORYBOARD",
+      "APS_StoryboardSelect",
+      "storyboard",
+      "STORYBOARD"
+    ],
+    [
+      "APS_StoryboardSelect",
+      "STORY_ITEM",
+      "APS_PromptStudio",
+      "story_item",
+      "STORY_ITEM"
+    ],
+    [
+      "APS_StoryboardSelect",
+      "STORY_ITEMS",
+      "APS_PromptStudio",
+      "story_item",
+      "STORY_ITEM"
+    ]
   ],
   "live_cases": [
     {
@@ -65,63 +311,131 @@
       "path": "ModelProfile -> LLMGenerate(text)",
       "prompt": "用中文写三条可直接执行的雨夜摄影构图建议，每条一句。",
       "expected_effect": "Three concise Chinese suggestions; no JSON requirement.",
-      "expected_checks": ["non-empty text", "Chinese response", "no provider error"],
+      "expected_checks": [
+        "non-empty text",
+        "Chinese response",
+        "no provider error"
+      ],
       "status": "passed",
-      "evidence": {"run_type": "live-production-node", "profile": "基元", "date": "2026-08-13", "result": "non-empty Chinese text; 3 numbered suggestions"}
+      "evidence": {
+        "run_type": "live-production-node",
+        "profile": "基元",
+        "date": "2026-08-13",
+        "result": "non-empty Chinese text; 3 numbered suggestions"
+      }
     },
     {
       "id": "llm-json-schema",
       "path": "ModelProfile -> LLMGenerate(json_schema)",
       "prompt": "提取地点和天气：雨夜的上海外滩。",
       "expected_effect": "A JSON object matching the requested location/weather schema.",
-      "expected_checks": ["parseable JSON", "required keys", "no provider error"],
+      "expected_checks": [
+        "parseable JSON",
+        "required keys",
+        "no provider error"
+      ],
       "status": "passed",
-      "evidence": {"run_type": "live-production-node", "profile": "基元", "date": "2026-08-13", "result": "JSON parsed; location=上海外滩; weather=雨"}
+      "evidence": {
+        "run_type": "live-production-node",
+        "profile": "基元",
+        "date": "2026-08-13",
+        "result": "JSON parsed; location=上海外滩; weather=雨"
+      }
     },
     {
       "id": "reference-text-bible-storyboard",
       "path": "ReferenceAnalyzer(text) -> CharacterBible -> StoryboardBuilder -> StoryboardSelect",
       "prompt": "林澈，黑色短发，琥珀色眼睛，深蓝长风衣。她在雨夜车站捡起一封信，抬头看见列车驶来。",
       "expected_effect": "Stable character anchor, model-neutral storyboard, and selectable scene/shot items.",
-      "expected_checks": ["named character", "stable visible traits", "at least one scene", "select all succeeds"],
+      "expected_checks": [
+        "named character",
+        "stable visible traits",
+        "at least one scene",
+        "select all succeeds"
+      ],
       "status": "passed",
-      "evidence": {"run_type": "live-production-chain", "profile": "基元", "date": "2026-08-13", "result": "1 scene, 2 shots, select-all returned 2 items"}
+      "evidence": {
+        "run_type": "live-production-chain",
+        "profile": "基元",
+        "date": "2026-08-13",
+        "result": "1 scene, 2 shots, select-all returned 2 items"
+      }
     },
     {
       "id": "reference-image-bible",
       "path": "LoadImage -> ReferenceAnalyzer(image) -> CharacterBible",
       "prompt": "Analyze 640.jpg as a character reference and preserve observable identity only.",
       "expected_effect": "Visible hair, eyes, outfit, and accessories are shown in the anchor preview.",
-      "expected_checks": ["vision call succeeds", "non-empty traits", "caption visible", "manifest has Picture source"],
+      "expected_checks": [
+        "vision call succeeds",
+        "non-empty traits",
+        "caption visible",
+        "manifest has Picture source"
+      ],
       "status": "passed",
-      "evidence": {"run_type": "live-comfyui-chain", "profiles": "LM vision + 基元", "date": "2026-08-12", "result": "640.jpg produced visible anchor, Bible and manifest"}
+      "evidence": {
+        "run_type": "live-comfyui-chain",
+        "profiles": "LM vision + 基元",
+        "date": "2026-08-12",
+        "result": "640.jpg produced visible anchor, Bible and manifest"
+      }
     },
     {
       "id": "image-studio-all-targets",
       "path": "ModelProfile/CharacterBible/StoryItem/Manifest -> PromptStudio",
       "prompt": "A young woman with a right-side ponytail reads a letter beside a rain-covered train window; medium shot, cool fluorescent light, preserve identity and do not add text.",
       "expected_effect": "Every public image target in both lanes returns a usable target-specific prompt; ANIMA output is English.",
-      "expected_checks": ["12 target/lane cases", "non-empty positive", "validation has no errors", "session revision 1"],
+      "expected_checks": [
+        "12 target/lane cases",
+        "non-empty positive",
+        "validation has no errors",
+        "session revision 1"
+      ],
       "status": "passed",
-      "evidence": {"run_type": "live-production-matrix", "profile": "基元", "date": "2026-08-13", "result": "12/12 target-lane combinations returned validated prompts"}
+      "evidence": {
+        "run_type": "live-production-matrix",
+        "profile": "基元",
+        "date": "2026-08-13",
+        "result": "12/12 target-lane combinations returned validated prompts"
+      }
     },
     {
       "id": "h3-all-modes",
       "path": "ModelProfile/Storyboard/CharacterBible/Manifest/media -> H3PromptStudio",
       "prompt": "Single continuous shot: the reference woman turns in a rose garden while the camera slowly orbits; preserve face, hair, clothing and accessories; only petals and fabric ambience.",
       "expected_effect": "Every H3 mode in both lanes returns the correct three-field or six-section protocol and legal media alignment.",
-      "expected_checks": ["10 mode/lane cases", "[Shot 1]", "soundscape", "no validation errors", "mode-specific alignment"],
+      "expected_checks": [
+        "10 mode/lane cases",
+        "[Shot 1]",
+        "soundscape",
+        "no validation errors",
+        "mode-specific alignment"
+      ],
       "status": "passed",
-      "evidence": {"run_type": "live-production-matrix", "profile": "基元", "date": "2026-08-13", "result": "10/10 mode-lane combinations; FL2VA and Ref2VA strict rerun after asset canonicalization"}
+      "evidence": {
+        "run_type": "live-production-matrix",
+        "profile": "基元",
+        "date": "2026-08-13",
+        "result": "Historical dual-lane run: 10/10; current matrix uses five single-lane modes"
+      }
     },
     {
       "id": "session-refine-restore",
       "path": "PromptStudio/H3PromptStudio prompt_session feedback loop",
       "prompt": "Create, refine one local fact, restore the previous successful revision, and requeue the same nonce.",
       "expected_effect": "Revision history is stable; restore creates a new revision; same nonce makes zero new model calls.",
-      "expected_checks": ["create", "refine", "restore-as-new", "same nonce no-op"],
+      "expected_checks": [
+        "create",
+        "refine",
+        "restore-as-new",
+        "same nonce no-op"
+      ],
       "status": "passed",
-      "evidence": {"run_type": "automated-production-regression-plus-live-p5", "date": "2026-08-13", "result": "create/refine/restore/no-op and fingerprint failures covered"}
+      "evidence": {
+        "run_type": "automated-production-regression-plus-live-p5",
+        "date": "2026-08-13",
+        "result": "create/refine/restore/no-op and fingerprint failures covered"
+      }
     }
   ]
 }

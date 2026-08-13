@@ -14,9 +14,13 @@ Prompt content has one authoritative owner per semantic layer. Rendered request 
 
 ## Domain State Ownership
 
+> ADR 0008 replaces the Studio-specific formal Plan/ChangeSet ownership below with
+> one complete-prompt Session source of truth. Reference/Storyboard schemas and other
+> structured output contracts remain current.
+
 - `CharacterBook`, `CharacterBible`, `Storyboard`, and `ReferenceManifest` own source facts.
 - Formal target plans own generation semantics; they reference source IDs instead of copying unlocked prose as competing truth.
-- `PromptStudioSession`, revisions, `ChangeSet`, transaction records, and observations own execution history.
+- `PromptSession`, immutable revisions, fingerprints, and recovery records own Studio execution history.
 - `RenderedPrompt`, `GenerationProfile`, `ValidationReport`, and `PromptAssemblyReport` are derived results.
 
 ## Compatibility Boundary

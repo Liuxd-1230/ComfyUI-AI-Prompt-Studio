@@ -1,7 +1,7 @@
-"""Operation and output policies for the two Prompt Studio lanes.
+"""Operation and output policies for the persistent Prompt Studios.
 
 Target-specific hard rules live in :mod:`prompting.model_cores`; this module
-only owns lane behavior and mode-specific formatting choices.
+only owns session behavior and mode-specific formatting choices.
 """
 from __future__ import annotations
 

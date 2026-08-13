@@ -20,9 +20,8 @@ def test_every_creative_gateway_call_has_an_inventory_owner() -> None:
         "nodes/llm_chat.py": ("llm.generate", 2),
         "nodes/reference_analyzer.py": ("reference.text", 1),
         "nodes/storyboard_builder.py": ("storyboard.create", 1),
-        "nodes/prompt_studio.py": ("studio.image", 3),
-        "nodes/h3_prompt_studio.py": ("studio.h3", 3),
-        "services/prompt_session.py": ("session.changeset", 1),
+        "nodes/prompt_studio.py": ("studio.image", 2),
+        "nodes/h3_prompt_studio.py": ("studio.h3", 2),
     }
     inventory = INVENTORY.read_text(encoding="utf-8")
     discovered = {

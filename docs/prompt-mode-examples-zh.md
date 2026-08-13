@@ -56,14 +56,14 @@ Storyboard Builder 会在模型返回后确定性收敛：`max_scenes` 是硬上
 
 ## Image Prompt Studio
 
-`execution_mode=lenient` 期待模型返回 `<PROMPT>完整目标提示词</PROMPT>` 与
-`<SUMMARY>简短摘要</SUMMARY>`；适合普通创建和反复修改。`strict` 的 CREATE 使用
-结构化 Plan，REFINE 使用 ChangeSet，适合需要字段级变更审计的任务。两者都不再使用
-operation；Session 为空时创建，已有成功 Session 时修改。
+唯一执行路径期待模型返回 `<PROMPT>完整目标提示词</PROMPT>` 与
+`<SUMMARY>简短摘要</SUMMARY>`；Session 为空时创建，已有成功 Session 时修改。
+无标签但明确可用的完整提示词会带 warning 接收；半截 JSON/标签或硬规则失败最多
+保真修复一次，仍失败就保留上一版。
 
 ### ANIMA Base / Aesthetic / Turbo
 
-ANIMA 最终视觉提示词使用英文。中文可以作为 `text` 输入；两种执行模式都会检查最终视觉正文。角色名、专有名词、引用标签和引号内画面文字允许保留原文。
+ANIMA 最终视觉提示词使用英文。中文可以作为 `text` 输入；节点会检查最终视觉正文。角色名、专有名词、引用标签和引号内画面文字允许保留原文。
 
 原始构想：`红发少女在雨夜车站回头，看见远处驶来的列车。`
 
@@ -96,7 +96,7 @@ Studio 当前统一期待完整 `natural_language` 成品，例如：`A red-hair
 
 ## MiniMax H3 mode
 
-H3 输入是“导演任务”。宽松模式直接维护完整官方文本，严格模式由 Plan 和渲染器生成；两者都不接受一半 JSON、一半六段文本。总时长只能 4–15 秒。
+H3 输入是“导演任务”。节点直接维护完整官方文本，不接受一半 JSON、一半字段文本。总时长只能 4–15 秒。
 
 ### T2VA · 纯文本
 

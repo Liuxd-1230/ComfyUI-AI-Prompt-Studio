@@ -104,8 +104,8 @@ class PromptRevision(Schema):
     change_summary: str = ""
     message_id: str = ""
     transaction_id: str = ""
-    execution_mode: str = "lenient"
-    payload_kind: str = "structured"
+    execution_mode: str = "single"
+    payload_kind: str = "freeform"
     event_source: str = "user"
     repair_attempted: bool = False
     repair_count: int = 0
@@ -134,7 +134,7 @@ class PromptRevision(Schema):
                 self, "timestamp", time.strftime("%Y-%m-%dT%H:%M:%S"))
         object.__setattr__(self, "repair_count", max(0, int(self.repair_count)))
         object.__setattr__(self, "repair_attempted", self.repair_count > 0)
-        if self.execution_mode not in {"lenient", "strict"}:
+        if self.execution_mode != "single":
             raise SchemaError("PromptRevision.execution_mode 非法")
         if self.payload_kind not in {"freeform", "structured"}:
             raise SchemaError("PromptRevision.payload_kind 非法")
@@ -149,18 +149,29 @@ class PromptRevision(Schema):
         return self
 
 
-def _reset_legacy_session_to_v31(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Legacy state is intentionally not rebound to either ADR 0007 lane."""
+def _reset_legacy_session_to_v32(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Pre-Studio state cannot be rebound to the current prompt safely."""
     del data
     return {
-        "schema_version": "3.1", "execution_mode": "lenient",
+        "schema_version": "3.2", "execution_mode": "single",
         "current_payload_kind": "empty", "fingerprint_state": "bound",
     }
 
 
-def _migrate_v30_to_v31(data: Dict[str, Any]) -> Dict[str, Any]:
+def _migrate_single_lane(data: Dict[str, Any]) -> Dict[str, Any]:
     migrated = dict(data)
-    migrated["schema_version"] = "3.1"
+    if migrated.get("execution_mode") == "strict":
+        raise ValueError("旧 strict 会话不能安全转换为单一路径，请开始新会话")
+    migrated["schema_version"] = "3.2"
+    migrated["execution_mode"] = "single"
+    migrated["current_payload_kind"] = (
+        "freeform" if migrated.get("current_prompt") else "empty")
+    migrated["current_plan"] = {}
+    for revision in migrated.get("revisions", []):
+        if isinstance(revision, dict):
+            revision["execution_mode"] = "single"
+            revision["payload_kind"] = "freeform"
+            revision["plan"] = {}
     migrated.setdefault("node_instance_id", "")
     migrated.setdefault("origin_session_id", "")
     return migrated
@@ -170,18 +181,19 @@ def _migrate_v30_to_v31(data: Dict[str, Any]) -> Dict[str, Any]:
 class PromptSession(Schema):
     """Source of truth for one persistent CREATE/REFINE lifecycle."""
 
-    CURRENT_SCHEMA_VERSION: ClassVar[str] = "3.1"
+    CURRENT_SCHEMA_VERSION: ClassVar[str] = "3.2"
     MIGRATIONS: ClassVar[Dict[str, Dict[str, Any]]] = {
-        "1.0": {"3.1": _reset_legacy_session_to_v31},
-        "2.0": {"3.1": _reset_legacy_session_to_v31},
-        "3.0": {"3.1": _migrate_v30_to_v31},
+        "1.0": {"3.2": _reset_legacy_session_to_v32},
+        "2.0": {"3.2": _reset_legacy_session_to_v32},
+        "3.0": {"3.2": _migrate_single_lane},
+        "3.1": {"3.2": _migrate_single_lane},
     }
 
-    schema_version: str = "3.1"
+    schema_version: str = "3.2"
     id: str = ""
     node_instance_id: str = ""
     origin_session_id: str = ""
-    execution_mode: str = "lenient"
+    execution_mode: str = "single"
     current_payload_kind: str = "empty"
     target_family: str = ""
     target_variant: str = ""
@@ -211,7 +223,7 @@ class PromptSession(Schema):
                     f"PromptSession.conversation[{index}] 必须是 ChatMessage")
         if not isinstance(self.fingerprints, SessionFingerprints):
             raise SchemaError("PromptSession.fingerprints 必须是 SessionFingerprints")
-        if self.execution_mode not in {"lenient", "strict"}:
+        if self.execution_mode != "single":
             raise SchemaError("PromptSession.execution_mode 非法")
         if self.current_payload_kind not in {"empty", "freeform", "structured"}:
             raise SchemaError("PromptSession.current_payload_kind 非法")
@@ -248,7 +260,8 @@ class PromptSession(Schema):
                 candidate = None
         if isinstance(candidate, dict):
             version = str(candidate.get("schema_version", "1.0"))
-            if version not in {"1.0", "2.0", "3.0", cls.CURRENT_SCHEMA_VERSION}:
+            if version not in {"1.0", "2.0", "3.0", "3.1",
+                               cls.CURRENT_SCHEMA_VERSION}:
                 raise SchemaError(
                     f"PromptSession future schema_version {version!r} 无法安全编辑")
         restored = super().from_json(data)
@@ -295,8 +308,8 @@ class PromptSession(Schema):
             raise ValueError("validation 未通过，不能提交 PromptSession revision")
         next_mode = execution_mode or self.execution_mode
         next_payload = payload_kind or ("structured" if plan else "freeform")
-        if next_mode not in {"lenient", "strict"}:
-            raise ValueError("execution_mode 必须是 lenient 或 strict")
+        if next_mode != "single":
+            raise ValueError("execution_mode 仅支持 single")
         if next_payload not in {"freeform", "structured"}:
             raise ValueError("payload_kind 必须是 freeform 或 structured")
         if (not isinstance(plan, dict) or not str(prompt or "").strip()

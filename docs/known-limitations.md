@@ -42,7 +42,7 @@
 ## 6. 结构化输出 / 解析
 
 - LLM 输出解析是**容错但不保证 100%**：`extract_json_object` 支持裸 JSON / ```json 围栏 / 花括号块；失败即报可读错误，不静默返回空结果伪装成功。
-- Prompt Studio 默认宽松协议；损坏 JSON/标签/Schema 说明最多做一次内容保真的协议修复。严格模式的 Plan/ChangeSet 同样只修协议一次。renderer/validator 或语义硬检查失败时不做创意改写，直接保留上一 revision 并报错。
+- Prompt Studio 只维护成品提示词；损坏 JSON/标签/Schema 说明或确定性硬规则失败最多做一次内容保真的修复。仍失败时不做创意改写，直接保留上一 revision 并报错。
 
 ## 7. 前端 / 设置
 

@@ -1,5 +1,8 @@
 # ADR 0007: Prompt Studios Use Lenient and Strict Execution Lanes
 
+> **Superseded by ADR 0008 on 2026-08-13.** This is historical evaluation evidence,
+> not the current runtime or usage contract.
+
 - Status: Accepted
 - Date: 2026-08-11
 - Supersedes: the single mandatory structured transaction path in ADR 0005/0006
