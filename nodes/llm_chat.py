@@ -15,6 +15,7 @@ from ..services.gateway import Gateway, GenerateRequest
 from ..services.supplements import supplement_sources as load_supplement_sources
 from ..prompting.assembly import PromptLayer, PromptSource, StructuredTaskData
 from ..prompting.node_requests import assemble_prompt, report_payload, task_message
+from ..prompting.operation_policies import OperationKind, operation_source
 from ..prompting.output_contracts import (
     OutputContract,
     json_object_contract,
@@ -200,6 +201,42 @@ class APS_LLMGenerate:
         if result.has_error():
             raise ValueError(result.error.as_text)
 
+        json_repair_warning = ""
+        if (output_contract is not None and output_contract.wants_json
+                and not _valid_json_for_contract(result.text, output_contract)):
+            repair_assembly = assemble_prompt(
+                [PromptSource(
+                    "runtime.llm-json-repair", "1.0", PromptLayer.RUNTIME,
+                    "Repair only the JSON protocol. Preserve all supported values; "
+                    "do not add facts.", "llm.generate"),
+                 operation_source(OperationKind.FORMAT_REPAIR,
+                                  scope="llm.generate")],
+                task_data=[StructuredTaskData(
+                    "rejected_output", result.text, "text/plain")],
+                output_contract=output_contract)
+            repair_req = GenerateRequest(
+                system=repair_assembly.system,
+                messages=[task_message(repair_assembly)],
+                web_search="off", reasoning="low",
+                max_tokens=int(prof.max_tokens) if prof.max_tokens else None,
+                temperature=prof.temperature, top_p=prof.top_p,
+                frequency_penalty=prof.frequency_penalty,
+                presence_penalty=prof.presence_penalty,
+                output_contract=repair_assembly.output_contract,
+                assembly_report=report_payload(repair_assembly),
+                timeout=prof.timeout)
+            repaired = Gateway().generate(prof, api_key, repair_req)
+            if repaired.has_error():
+                json_repair_warning = (
+                    "模型输出不是合法 JSON；一次格式修复请求失败：" +
+                    repaired.error.as_text)
+            elif _valid_json_for_contract(repaired.text, output_contract):
+                result = repaired
+            else:
+                json_repair_warning = (
+                    "模型输出不是合法 JSON，一次格式修复后仍不合法；"
+                    "text 原样返回（可改用 text 模式）")
+
         # 会话更新
         if history_mode != "off":
             if history_mode == "replace":
@@ -212,7 +249,10 @@ class APS_LLMGenerate:
 
         # JSON 输出校验
         warnings = list(file_warnings) + list(result.warnings) + schema_warnings
-        if output_contract is not None and output_contract.wants_json \
+        if json_repair_warning:
+            warnings.append(json_repair_warning)
+        if not json_repair_warning \
+                and output_contract is not None and output_contract.wants_json \
                 and result.text.strip():
             try:
                 json.loads(result.text)
@@ -221,6 +261,19 @@ class APS_LLMGenerate:
 
         return (result.text, result.reasoning, sess.to_json(), result.to_json(),
                 result.citations_as_text(), result.usage_as_text(), "\n".join(warnings))
+
+
+def _valid_json_for_contract(text: str, contract: OutputContract) -> bool:
+    try:
+        value = json.loads(str(text or ""))
+    except ValueError:
+        return False
+    schema_type = (contract.schema or {}).get("type")
+    if schema_type == "array":
+        return isinstance(value, list)
+    if schema_type == "object" or contract.schema is None:
+        return isinstance(value, dict)
+    return True
 
 
 def _add_usage(a, b):

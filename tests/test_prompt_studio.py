@@ -253,6 +253,9 @@ def test_strict_create_and_refine_use_structured_plan_and_one_call_each(
     properties = SequenceGateway.requests[0].output_contract.native_schema()["properties"]["content"]["properties"]
     assert "Usually return an empty string" in properties["scene_description"]["description"]
     assert "Return []" in properties["control_tags"]["description"]
+    assert "Never include shot size" in properties["characters"]["items"]["properties"]["position"]["description"]
+    assert "Do not repeat subjects" in properties["composition"]["description"]
+    assert "Do not repeat environment" in properties["composition"]["description"]
 
 
 def test_strict_protocol_failure_repairs_format_once_without_commit(

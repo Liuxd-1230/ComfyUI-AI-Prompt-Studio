@@ -370,6 +370,9 @@ def _check_reference_limits(report, manifest) -> None:
 
 def _check_unresolved_references(report, prompt: str) -> None:
     for label in re.findall(r"<([^>]+)>", prompt):
+        label = label.strip()
+        if label.startswith("/"):
+            label = label[1:].strip()
         if label in {"scenetrans", "/scenetrans", "cutoff", "/cutoff", "d", "/d"}:
             continue
         if not re.fullmatch(r"(?:Subject|Picture|Video|Audio) \d+", label):

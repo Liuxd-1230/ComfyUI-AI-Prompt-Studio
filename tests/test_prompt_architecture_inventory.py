@@ -17,7 +17,7 @@ def _call_lines(relative: str, pattern: str) -> list[int]:
 
 def test_every_creative_gateway_call_has_an_inventory_owner() -> None:
     expected = {
-        "nodes/llm_chat.py": ("llm.generate", 1),
+        "nodes/llm_chat.py": ("llm.generate", 2),
         "nodes/reference_analyzer.py": ("reference.text", 1),
         "nodes/storyboard_builder.py": ("storyboard.create", 1),
         "nodes/prompt_studio.py": ("studio.image", 3),

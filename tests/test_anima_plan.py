@@ -1,5 +1,6 @@
 """ANIMA 结构化 Prompt Plan 回归测试：natural 默认、Bible 自然融入、Hybrid 不重复、多人物绑定。"""
 import json
+import pytest
 
 from aps.renderers.anima import (
     AnimaCharacter,
@@ -10,6 +11,7 @@ from aps.renderers.anima import (
     render_anima_plan,
 )
 from aps.schemas.character import CharacterBible, CharacterTrait
+from aps.schemas.base import SchemaError
 
 
 def make_bible(name="少女", traits=None):
@@ -27,6 +29,14 @@ def test_default_prompt_mode_is_natural_language():
     assert "A girl sits beside a window under the rain." in r.positive
     # natural 模式不出现机械 tag 段
     assert ", 1girl" not in r.positive
+
+
+def test_current_anima_plan_rejects_string_in_list_field() -> None:
+    with pytest.raises(SchemaError, match="style 必须是数组"):
+        AnimaPromptPlan.from_json({
+            "normal_form_version": "2.0",
+            "style": "cinematic",
+        })
 
 
 # ---------------------------------------------------------------- Bible 自然融入

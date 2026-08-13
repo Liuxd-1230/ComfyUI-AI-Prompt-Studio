@@ -334,6 +334,40 @@ def test_h3_display_name_is_not_a_required_visual_anchor() -> None:
                    for issue in report.issues)
 
 
+def test_h3_identity_anchor_accepts_natural_article_insertion() -> None:
+    bible = CharacterBible(character_id="rose", name="Rose", traits=[
+        CharacterTrait(name="dress",
+                       value="ivory Victorian rose dress with black floral sash",
+                       category="stable", locked=True)])
+    parsed = studio_mod.LenientPromptOutput(
+        prompt=_valid_prompt().replace(
+            "A woman", "Rose wears an ivory Victorian rose dress with a black floral sash"),
+        summary="", kind="tagged")
+
+    report = studio_mod._validate_lenient_h3(
+        parsed, "T2VA", 5.0, ReferenceManifest(), 0, [bible], "Rose waits")
+
+    assert not any(issue.code == "h3_identity_anchor_missing"
+                   for issue in report.issues)
+
+
+def test_h3_strict_normalization_injects_locked_bible_traits() -> None:
+    bible = CharacterBible(character_id="rose", name="Rose", speaker_id="S1", traits=[
+        CharacterTrait(name="hair", value="long wavy black hair",
+                       category="stable", locked=True),
+        CharacterTrait(name="eyes", value="amber-green eyes",
+                       category="stable", locked=True)])
+    plan = studio_mod.parse_plan_json(json.dumps(PLAN), "T2VA", 5.0)
+
+    normalized = normalize_plan(
+        plan, ReferenceManifest(), image_count=0, mode="T2VA", duration=5.0,
+        source_bibles=[bible])
+    rendered, _ = studio_mod.render_validate(
+        normalized, ReferenceManifest(), image_count=0, mode="T2VA", duration=5.0)
+
+    assert "Rose's locked visual identity: long wavy black hair, amber-green eyes." in rendered
+
+
 def test_h3_rejects_near_copy_display_name_drift() -> None:
     bible = CharacterBible(character_id="rose", name="玫瑰午睡时")
     parsed = studio_mod.LenientPromptOutput(

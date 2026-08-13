@@ -6,7 +6,7 @@ This inventory is the P0 baseline for every path that can send instructions or t
 
 | ID | Caller | Purpose | System sources | User/task-data sources | Structured contract | Transport |
 |---|---|---|---|---|---|---|
-| `llm.generate` | `nodes/llm_chat.py` | General conversation | internal safety boundary; user `system_prompt`; JSON fallback | history, `user_prompt`, `context`, attachments | optional user JSON Schema | `Gateway.generate` |
+| `llm.generate` | `nodes/llm_chat.py` | General conversation | internal safety boundary; user `system_prompt`; JSON fallback | history, `user_prompt`, `context`, attachments | optional user JSON Schema | `Gateway.generate`; JSON/Schema output gets at most one `FORMAT_REPAIR` Gateway call before a visible warning |
 | `reference.text` | `nodes/reference_analyzer.py` | Extract text-anchor traits | extraction role | mode prompt, CharacterBook, text anchor | `CANDIDATE_SCHEMA` | `Gateway.generate` |
 | `reference.image` | `nodes/reference_analyzer.py` | Extract traits from each image | analysis guard + mode semantics | CharacterBook, image | `reference-candidate` OutputContract | `VisionService.call_vision` |
 | `reference.identity` | `nodes/reference_analyzer.py` | Decide whether images share identity | identity evidence policy | images | `identity-verdict` OutputContract | `VisionService.call_vision` |

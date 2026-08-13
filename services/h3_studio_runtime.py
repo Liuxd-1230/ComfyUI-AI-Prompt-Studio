@@ -10,6 +10,7 @@ from ..domain.plan_adapters import get_plan_adapter
 from ..domain.transactions import SemanticTransaction
 from ..renderers.minimax_h3 import render_h3
 from ..schemas.changeset import ChangeSet, SemanticChange
+from ..schemas.character import CharacterBible
 from ..schemas.h3 import H3PromptPlan
 from ..schemas.prompt_session import PromptSession
 from ..schemas.references import AssetRef, ReferenceManifest
@@ -47,7 +48,8 @@ def prepare_manifest(reference_manifest: Any, images: Any,
 
 
 def normalize_plan(plan: H3PromptPlan, manifest: ReferenceManifest,
-                   image_count: int, mode: str, duration: float) -> H3PromptPlan:
+                   image_count: int, mode: str, duration: float,
+                   source_bibles: list[CharacterBible] | None = None) -> H3PromptPlan:
     previous_indices = [shot.index for shot in plan.shots]
     plan.duration_seconds = float(duration)
     if plan.shots:
@@ -57,6 +59,7 @@ def normalize_plan(plan: H3PromptPlan, manifest: ReferenceManifest,
         [*plan.warnings, *map_image_assets(plan, image_count, mode)]))
     normalize_media_labels(plan)
     normalize_ref2va_summary(plan)
+    _inject_locked_identity(plan, source_bibles or [])
     normalized = get_plan_adapter("minimax_h3").normalize(plan)
     expected_indices = list(range(1, len(normalized.shots) + 1))
     if previous_indices and previous_indices != expected_indices:
@@ -64,6 +67,24 @@ def normalize_plan(plan: H3PromptPlan, manifest: ReferenceManifest,
         if warning not in normalized.warnings:
             normalized.warnings.append(warning)
     return normalized
+
+
+def _inject_locked_identity(
+        plan: H3PromptPlan, source_bibles: list[CharacterBible]) -> None:
+    """Copy authoritative locked drawable traits into a character's first shot."""
+    if not plan.shots:
+        return
+    shot = plan.shots[0]
+    existing = " ".join(shot.description).casefold()
+    for bible in source_bibles:
+        traits = [trait.value.strip() for trait in bible.locked_traits()
+                  if trait.value.strip() and trait.value.casefold() not in existing]
+        if not traits:
+            continue
+        subject = bible.name.strip() or bible.character_id.strip() or "The character"
+        sentence = f"{subject}'s locked visual identity: {', '.join(traits)}."
+        shot.description.insert(0, sentence)
+        existing += " " + sentence.casefold()
 
 
 def render_validate(plan: H3PromptPlan, manifest: ReferenceManifest,

@@ -63,7 +63,9 @@ _ANIMA_CHARACTER_SCHEMA = {
         "variable_traits": {**_STRING_ARRAY, "description":
             "Optional changeable visible appearance facts owned only here."},
         "action": {"type": "string", "description": "Observable behavior owned only here."},
-        "position": {"type": "string", "description": "Frame placement owned only here."},
+        "position": {"type": "string", "description":
+            "Subject placement only, such as left foreground. Never include shot size, "
+            "camera framing, environment, or subject identity here."},
         "creative_notes": {**_STRING_ARRAY, "description":
             "Return [] unless a character fact cannot fit traits, action, or position; never repeat."},
     },
@@ -91,7 +93,8 @@ _ANIMA_CONTENT_SCHEMA = {
         "environment": {**_STRING_ARRAY, "description":
             "Location, weather, physical setting, and background facts owned only here."},
         "composition": {"type": "string", "description":
-            "Framing, camera viewpoint, layout, and spatial composition owned only here."},
+            "Framing, camera viewpoint, and layout only. Do not repeat subjects or "
+            "character placement. Do not repeat environment, lighting, or style facts."},
         "lighting": {"type": "string", "description":
             "Light sources, color, direction, contrast, and exposure owned only here."},
         "negative_constraints": {**_STRING_ARRAY, "description":

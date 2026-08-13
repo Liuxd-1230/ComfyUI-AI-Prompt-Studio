@@ -119,14 +119,70 @@ def test_llm_generate_empty_prompt(store):
 
 def test_llm_generate_json_mode_warns_on_bad_json(monkeypatch, store):
     payload = setup_profile(store)
-    result = LLMResult(text="不是JSON", profile_id="p1")
-    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: FakeGateway(result))
+    class BadGateway:
+        calls = 0
+
+        def generate(self, profile, api_key, req):
+            self.calls += 1
+            return LLMResult(text="不是JSON", profile_id="p1")
+
+    gateway = BadGateway()
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: gateway)
     node = llm_chat_mod.APS_LLMGenerate()
     _, _, _, _, _, _, warnings = node.generate(
         AI_PROFILE=payload, system_prompt="", user_prompt="问", context="",
         session=None, history_mode="off",
         output_mode="json", json_schema="")
     assert "不是合法 JSON" in warnings
+    assert gateway.calls == 2
+
+
+def test_llm_generate_json_repairs_invalid_output_once(monkeypatch, store):
+    payload = setup_profile(store)
+
+    class RepairGateway:
+        def __init__(self):
+            self.responses = ["不是JSON", '{"location":"上海外滩"}']
+            self.requests = []
+
+        def generate(self, profile, api_key, req):
+            self.requests.append(req)
+            return LLMResult(text=self.responses.pop(0), profile_id="p1")
+
+    gateway = RepairGateway()
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: gateway)
+
+    text, _, _, _, _, _, warnings = llm_chat_mod.APS_LLMGenerate().generate(
+        AI_PROFILE=payload, system_prompt="", user_prompt="提取地点", context="",
+        history_mode="replace", output_mode="json", json_schema="")
+
+    assert json.loads(text) == {"location": "上海外滩"}
+    assert warnings == ""
+    assert len(gateway.requests) == 2
+    assert "不是JSON" in gateway.requests[1].messages[-1].content
+
+
+def test_llm_generate_accepts_array_when_schema_requires_array(monkeypatch, store):
+    payload = setup_profile(store)
+
+    class ArrayGateway:
+        calls = 0
+
+        def generate(self, profile, api_key, req):
+            self.calls += 1
+            return LLMResult(text='["上海", "北京"]', profile_id="p1")
+
+    gateway = ArrayGateway()
+    monkeypatch.setattr(llm_chat_mod, "Gateway", lambda: gateway)
+    schema = '{"type":"array","items":{"type":"string"}}'
+
+    text, _, _, _, _, _, warnings = llm_chat_mod.APS_LLMGenerate().generate(
+        AI_PROFILE=payload, system_prompt="", user_prompt="列出地点", context="",
+        history_mode="off", output_mode="json_schema", json_schema=schema)
+
+    assert json.loads(text) == ["上海", "北京"]
+    assert warnings == ""
+    assert gateway.calls == 1
 
 
 def test_llm_generate_json_schema_sets_output_schema(monkeypatch, store):

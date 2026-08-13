@@ -79,6 +79,15 @@ class AnimaPromptPlan(Schema):
                 data = parsed
         if isinstance(data, dict):
             data = _migrate_normal_form(dict(data))
+            for field_name in (
+                    "creative_notes", "characters", "control_tags", "series_tags",
+                    "artist_tags", "supplemental_tags", "style", "environment",
+                    "negative_constraints"):
+                value = data.get(field_name, [])
+                if value is not None and not isinstance(value, (list, tuple)):
+                    raise SchemaError(
+                        f"AnimaPromptPlan.{field_name} 必须是数组，实际是 "
+                        f"{type(value).__name__}")
         loaded = super().from_json(data)
         if not isinstance(loaded, cls):  # defensive typing boundary
             raise TypeError("AnimaPromptPlan migration returned an unexpected type")

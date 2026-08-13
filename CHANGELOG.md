@@ -1,5 +1,7 @@
 # Changelog
 
+- **本地 9B 多轮与边界验收**：使用 LM Studio 的 `qwen3.5-9b-uncensored-hauhaucs-aggressive` 实跑 Image/H3 连续 CREATE→两轮 REFINE、恢复、重复 nonce、锁定冲突、全部 Reference/Storyboard/LLM 公共模式及 H3 媒体边界。修复严格 ANIMA 字符串冒充数组、字段 owner 诱导，H3 自然英文锚点误判、锁定身份未进入 Shot、闭合引用标签误报，以及 LLM JSON/JSON Schema 首次输出不可解析时缺少一次受控格式修复。宽松多轮稳定通过；该 9B 严格 ChangeSet 仍有明显随机失败但会安全不提交。完整证据与质量限制见 `docs/prompt-architecture/local-9b-multiturn-boundary-acceptance-2026-08-13.md`。
+
 - **全模式/全连接提示词验收矩阵**：新增机器可读 `examples/acceptance/prompt_matrix.json` 与中文边界/效果指南，动态枚举并锁定全部 35 条 APS 自定义类型端口连接、Image 12 种 target×lane、H3 10 种 mode×lane，以及 Reference/人物合并/分镜/LLM 的全部公共模式。使用真实“基元”档案且不接生成模型完成 Image 12/12、H3 10/10、LLM text/json-schema、文字锚点→人物书→分镜→选择实跑。修复 StoryItem 旧字段崩溃、严格图像 negative 误放正向事实、H3 Manifest 图片重复注册和 `img_0` 泄漏、Ref2VA 非法任务前缀，以及锁定 Subject 缺失引用/retention；非法边界继续明确拒绝，不以吞错冒充稳定。
 
 - **H3 人物参考实跑修复**：在真实 ComfyUI 8189 + 基元 Responses + LM 视觉链路中复现了 I2VA 首帧已正确对齐 `<Picture 1>`、却被误判为未在 Shot/retention 中使用的问题。I2VA/FL2VA/L2VA 现在以官方首行对齐协议作为图片消费证据，不再错用 Ref2VA 独有的 `retention_analysis` 要求。Character Bible 显示名不再被当成必须逐字出现的可视 trait；显示名若出现则必须精确保留，避免中文字序漂移。无参考 T2VA 和参考图分析→Character Bible→I2VA 两条不接视频模型的真实链路均已验证。

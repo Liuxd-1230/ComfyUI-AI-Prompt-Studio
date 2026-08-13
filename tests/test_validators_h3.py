@@ -282,6 +282,15 @@ def test_r2v_retention_marker():
     assert any(i.code == "h3_retention_marker" for i in r.issues)
 
 
+def test_xml_style_closing_reference_tags_are_not_unknown_labels() -> None:
+    prompt = FOUR_MODE_OK + "\n</Subject 1> </Picture 1>"
+
+    report = validate_h3(prompt, "T2VA", duration=10.0)
+
+    assert not any(issue.code == "h3_reference_unknown"
+                   for issue in report.issues)
+
+
 def test_r2v_style_opening_warning():
     prompt = R2V_OK.replace("A quiet painterly style with soft window light.\n", "")
     r = validate_h3(prompt, "R2V")

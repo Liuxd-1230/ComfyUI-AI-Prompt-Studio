@@ -126,6 +126,14 @@ all 35 type-compatible APS port connections. The 2026-08-13 production-node run 
 the 基元 profile without downstream generation models: Image Studio 12/12, H3 Studio
 10/10, LLM text/schema, and text-reference→Bible→Storyboard→Select passed.
 
+The separate LM Studio 9B acceptance is recorded in
+`docs/prompt-architecture/local-9b-multiturn-boundary-acceptance-2026-08-13.md`.
+It covers production-node multi-turn CREATE/REFINE, restore/no-op, locked edits,
+Reference/Storyboard/LLM public modes, and H3 media boundary classes. The lenient
+Image and H3 lanes passed repeated edits; strict local-9B ChangeSets remain
+provider-quality-limited but preserve stable state on rejection. JSON outputs now
+receive at most one protocol-only repair before a visible warning.
+
 ## Known Phase Gaps Outside §108
 
 - Both Studio nodes use their selected freeform or typed transaction lane end to end;
