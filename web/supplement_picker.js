@@ -1,7 +1,7 @@
 // Compact Advanced selector for Prompt Supplement workflow IDs.
 // Markdown content and policy stay server-side; workflows serialize IDs only.
 import { app } from "../../scripts/app.js";
-import { api } from "../../scripts/api.js";
+import { cachedJson } from "./data_cache.js";
 
 const TARGETS = new Set([
   "APS_LLMGenerate",
@@ -164,9 +164,7 @@ function buildPicker(node, widget) {
     options.classList.remove("is-error");
     retry.hidden = true;
     try {
-      const response = await api.fetchApi("/ai_prompt_studio/supplements");
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+      const payload = await cachedJson("/ai_prompt_studio/supplements");
       records = Array.isArray(payload.supplements) ? payload.supplements : [];
       render();
     } catch (error) {

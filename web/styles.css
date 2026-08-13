@@ -30,6 +30,24 @@
   flex: 1;
   font-size: 16px;
 }
+.aps-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 14px;
+  overflow-x: auto;
+}
+.aps-tab {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid #4a4d55;
+  border-radius: 6px;
+  color: var(--input-text, #ddd);
+  background: var(--comfy-input-bg, #25262b);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.aps-tab.is-active { border-color: #4a90d9; background: rgba(74, 144, 217, .18); }
+.aps-tab-pane[hidden] { display: none; }
 .aps-status-line {
   color: var(--input-text, #aaa);
   font-size: 12px;
@@ -142,7 +160,8 @@
   color: var(--input-text, #ddd);
   border: 1px solid #555;
   border-radius: 4px;
-  padding: 4px 10px;
+  min-height: 32px;
+  padding: 5px 10px;
   cursor: pointer;
   font-size: 12px;
 }
@@ -163,7 +182,8 @@
   padding: 2px 8px;
 }
 .aps-btn-mini {
-  padding: 2px 6px;
+  min-height: 28px;
+  padding: 3px 7px;
   font-size: 11px;
   margin-right: 4px;
 }
@@ -320,14 +340,14 @@
 }
 .aps-prompt-studio {
   display: grid;
-  grid-template-rows: auto auto minmax(48px, 1fr) auto auto auto auto;
-  gap: 8px;
+  grid-template-rows: auto auto auto auto auto auto;
+  gap: 6px;
   box-sizing: border-box;
-  height: 438px;
-  min-height: 438px;
-  max-height: 438px;
+  height: 320px;
+  min-height: 320px;
+  max-height: 410px;
   overflow: hidden;
-  padding: 10px;
+  padding: 9px;
   color: var(--fg-color, #ddd);
   background: rgba(15, 18, 24, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -337,9 +357,18 @@
 .aps-prompt-studio header,
 .aps-studio-actions { display: flex; justify-content: space-between; gap: 8px; }
 .aps-studio-revision { color: #8fc7ff; }
+.aps-studio-state {
+  padding: 1px 5px; border-radius: 999px; color: #bff0ca;
+  background: rgba(46, 160, 67, .18); font-size: 10px;
+}
+.aps-studio-contract {
+  padding: 6px 8px; color: #ffd2d2; background: rgba(180, 45, 45, .18);
+  border: 1px solid rgba(248, 81, 73, .65); border-radius: 5px;
+}
+.aps-studio-contract[hidden] { display: none; }
+.aps-prompt-studio.is-contract-mismatch textarea,
+.aps-prompt-studio.is-contract-mismatch .aps-studio-actions { opacity: .55; }
 .aps-studio-help {
-  display: grid;
-  gap: 3px;
   padding: 7px 8px;
   color: #cbd5e1;
   background: rgba(74, 144, 217, 0.1);
@@ -348,16 +377,22 @@
   font-size: 11px;
   line-height: 1.35;
 }
+.aps-studio-help summary,
+.aps-studio-history summary,
+.aps-studio-output summary { cursor: pointer; }
+.aps-studio-help > div:first-of-type { margin-top: 5px; }
 .aps-studio-help[hidden] { display: none; }
 .aps-studio-legacy-note { color: #9aa7b5; }
 .aps-studio-chat {
-  min-height: 54px;
-  max-height: 84px;
+  max-height: 96px;
   overflow: auto;
   padding: 7px;
   background: rgba(0, 0, 0, 0.24);
   border-radius: 6px;
 }
+.aps-studio-history { min-height: 24px; }
+.aps-studio-history > summary { color: #aeb7c4; }
+.aps-studio-history:not([open]) .aps-studio-chat { display: none; }
 .aps-studio-message { margin: 0 0 6px; white-space: pre-wrap; }
 .aps-studio-message.is-user { color: #b8dcff; }
 .aps-studio-message.is-ai { color: #bff0ca; }
@@ -366,15 +401,25 @@
 .aps-studio-preview {
   box-sizing: border-box;
   width: 100%;
-  min-height: 76px;
-  max-height: 92px;
+  min-height: 58px;
+  max-height: 78px;
   resize: vertical;
   color: inherit;
   background: rgba(0, 0, 0, 0.28);
 }
-.aps-studio-input { min-height: 58px; max-height: 72px; }
+.aps-studio-input { min-height: 54px; max-height: 68px; }
+.aps-studio-output summary { display: flex; justify-content: space-between; align-items: center; }
+.aps-studio-output summary button { min-height: 26px; padding: 2px 8px; cursor: pointer; }
+.aps-studio-output textarea { margin-top: 4px; }
 .aps-studio-summary.is-error { color: #ff9b9b; }
-.aps-studio-actions button { flex: 1; cursor: pointer; }
+.aps-studio-actions button { flex: 1; min-height: 32px; cursor: pointer; }
+
+.aps-overlay :focus-visible,
+.aps-prompt-studio :focus-visible,
+.aps-supplement-picker :focus-visible {
+  outline: 2px solid #69b1ff;
+  outline-offset: 2px;
+}
 
 .aps-supplement-picker {
   box-sizing: border-box;

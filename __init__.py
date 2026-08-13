@@ -75,8 +75,8 @@ else:
         "APS_CharacterBible": "角色设定集",
         "APS_StoryboardBuilder": "分镜构建器",
         "APS_StoryboardSelect": "分镜选择 / 批处理",
-        "APS_PromptStudio": "图像提示词工作台（宽松 / 严格）",
-        "APS_H3PromptStudio": "MiniMax H3 提示词工作台（宽松 / 严格）",
+        "APS_PromptStudio": "图像提示词工作台",
+        "APS_H3PromptStudio": "MiniMax H3 提示词工作台",
         "APS_RuntimeControl": "本地模型运行控制",
         "APS_UnloadModel": "LLM 后卸载 LM Studio（提示词透传）",
     }

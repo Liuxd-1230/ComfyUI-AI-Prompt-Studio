@@ -114,7 +114,9 @@ def test_prompt_studio_frontend_persists_backend_session_in_widget():
     assert "message.prompt_session" in source
     assert "current_prompt" in source
     assert "aps-studio-input" in source
-    assert 'setWidget(node, "text", chatInput.value)' in source
+    assert "INPUT_DEBOUNCE_MS = 200" in source
+    assert "root._flushInput = flushInput" in source
+    assert "textWidget.value = chatInput.value" in source
     assert 'addEventListener("execution_error"' in source
     assert 'classList.remove("is-error")' in source
     assert "继续上次方案" not in source
@@ -136,14 +138,54 @@ def test_prompt_studio_dom_widget_has_bounded_layout_contract():
     source = (PROJECT_ROOT / "web" / "prompt_studio.js").read_text(encoding="utf-8")
     styles = (PROJECT_ROOT / "web" / "styles.css").read_text(encoding="utf-8")
     assert "getMinHeight: () => STUDIO_HEIGHT" in source
-    assert "getMaxHeight: () => STUDIO_HEIGHT" in source
+    assert "getMaxHeight: () => studioWidget?._apsHeight" in source
     assert "studioWidget.computeSize" in source
-    assert "height: 438px" in styles
-    assert "max-height: 438px" in styles
+    assert "height: 320px" in styles
+    assert "max-height: 410px" in styles
     assert "overflow: hidden" in styles
     assert "H3_MODE_HELP" in source
     assert "执行方式：" in source
     assert "widget.hidden = true" in source
+
+
+def test_studio_frontend_detects_stale_backend_contract():
+    source = (PROJECT_ROOT / "web" / "prompt_studio.js").read_text(encoding="utf-8")
+    routes = (PROJECT_ROOT / "server" / "routes.py").read_text(encoding="utf-8")
+    assert 'UI_CONTRACT_VERSION = "single-lane-ui-v2"' in source
+    assert 'UI_CONTRACT_VERSION = "single-lane-ui-v2"' in routes
+    assert "verifyUiContract(node, root)" in source
+    assert "请重启 ComfyUI" in source
+    assert "item.disabled = true" in source
+
+
+def test_studio_display_names_do_not_advertise_removed_dual_modes(loaded):
+    module, _, _ = loaded
+    for node_name in ("APS_PromptStudio", "APS_H3PromptStudio"):
+        display_name = module.NODE_DISPLAY_NAME_MAPPINGS[node_name]
+        assert "宽松" not in display_name
+        assert "严格" not in display_name
+
+
+def test_settings_workbench_is_tabbed_lazy_and_keyboard_accessible():
+    source = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    assert 'role: "dialog"' in source and '"aria-modal": "true"' in source
+    assert 'event.key === "Escape"' in source
+    assert 'event.key !== "Tab"' in source
+    assert "showPanelTab(activePanelTab)" in source
+    assert 'tabId === "resources"' in source
+    assert 'id: "AI Prompt Studio.General.openWorkbench"' in source
+    assert 'text: "打开 AI Prompt Studio 设置工作台"' in source
+    assert "onClick: openPanel" in source
+
+
+def test_frontend_registries_use_shared_request_cache():
+    cache = (PROJECT_ROOT / "web" / "data_cache.js").read_text(encoding="utf-8")
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    supplements = (PROJECT_ROOT / "web" / "supplement_picker.js").read_text(
+        encoding="utf-8")
+    assert "current?.promise" in cache
+    assert 'cachedJson("/ai_prompt_studio/profiles")' in settings
+    assert 'cachedJson("/ai_prompt_studio/supplements")' in supplements
 
 
 def test_binding_refactor_contracts_are_present_and_referenced():
@@ -189,7 +231,8 @@ def test_supplement_picker_is_advanced_and_preserves_workflow_ids(loaded):
     source = (PROJECT_ROOT / "web" / "supplement_picker.js").read_text(encoding="utf-8")
     assert "hideSerializedWidget(widget)" in source
     assert 'widget.serializeValue = async () => widget.value' in source
-    assert 'api.fetchApi("/ai_prompt_studio/supplements")' in source
+    assert 'cachedJson("/ai_prompt_studio/supplements")' in source
+    assert 'from "./data_cache.js"' in source
     assert "不适用于当前节点/目标" in source
     assert "资料已删除或注册表中不存在" in source
     assert 'APS_LLMGenerate: { family: "generic_llm", nodeId: "llm.generate", auto: false }' in source

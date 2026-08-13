@@ -8,6 +8,12 @@
 > Historical P0-P4 rows below document completed architecture experiments, not current
 > production APIs. Current acceptance is tracked by `test_single_lane_studio.py`, public
 > Studio flow tests, and the prompt matrix.
+>
+> **2026-08-13 UI P0–P3:** Studio now detects stale backend/frontend contracts,
+> uses a compact 320px workbench with debounced workflow updates, and shares
+> profile/supplement registry requests. The Settings workbench uses four lazy panes
+> with keyboard dialog semantics. Source-level regressions and live ComfyUI browser
+> QA cover the supported entry, input, history/help disclosure, copy, and settings flows.
 
 This table tracks the binding Persistent contract §108 at the current HEAD.
 “Partial” means the invariant has an executable base but the named end-to-end

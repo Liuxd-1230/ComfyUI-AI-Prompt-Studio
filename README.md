@@ -20,11 +20,11 @@
 - **P5 持久会话恢复**：Session 提交先以 transaction/base/result revision 原子写入按节点实例隔离的 Recovery Journal，再回写工作流。异常退出后打开旧工作流时会明确询问是否恢复后端较新版本；复制节点会保留当前成品并建立独立 lineage，旧请求不能覆盖新 revision。日志位于 ComfyUI `user/ai_prompt_studio/recovery-journal.json`，最多保留最近 100 个节点会话。
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
 - **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
-- **设置工作台**：ComfyUI 内嵌面板，提供档案、密钥（脱敏）、API 测试、能力状态、本地运行时和 Markdown 补充资料管理。
+- **设置工作台**：ComfyUI 内嵌面板，按档案、能力、本地运行时、Markdown/日志分区懒加载；支持 Esc 关闭和键盘焦点循环。
 - **Model Core + Markdown 参考**：目标模型的硬规则由仓库内不可编辑 Model Core 持有；用户 Markdown 通过节点默认收起的 **高级设置 · Prompt Supplements** 选择（`auto` 仅用于目标节点），作为带来源/hash 的低优先级参考，不能覆盖协议、Schema、锁定事实或 validator。单份资料最多 256 KiB，每次最多 8 份、总上下文最多 128 KiB；工作流只保存稳定 ID。
 - **统一操作策略**：CREATE、REFINE、格式修复、协议重试和参考观察由同一版本化 Operation Policy 接口提供。REFINE 只表达本轮增量并保留无关内容；修复只处理明确问题且最多一次。旧 operation 和 execution mode 下拉均已删除。
 - **机器输出契约**：JSON Schema、`<PROMPT>/<SUMMARY>` envelope、JSON-only 模式和 provider fallback 由统一 `OutputContract` 持有。支持原生 Structured Output 时发送机器 Schema；不支持时从同一 Schema 自动派生约束，不再手抄 JSON 示例。输出契约是最后一个 system 层，Markdown 资料不能覆盖它。
-- **前端入口（0.2.1c）**：不占用 ComfyUI Sidebar；入口放在 ComfyUI 原生 **Settings** 页面中的 `AI Prompt Studio > General > Settings Workbench`。选择「Open Settings Workbench」打开大型设置工作台；语言也在同一组设置中切换。API Key 不进原生 Settings，仍由工作台填写并只存服务端。
+- **前端入口**：不占用 ComfyUI Sidebar；在 **Settings → AI Prompt Studio** 点击“打开 AI Prompt Studio 设置工作台”即可进入。API Key 不进原生 Settings，仍由工作台填写并只存服务端。Studio 会检查前后端版本；更新节点包后若看到“需重启”，请重启 ComfyUI，不要在新旧代码混用时执行。
 
 ## 安装
 
@@ -42,7 +42,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 
 ## 快速开始
 
-1. 启动 ComfyUI，打开 **Settings（Ctrl+,）** → **AI Prompt Studio** → **General**，选择 **Open Settings Workbench**。
+1. 启动 ComfyUI，打开 **Settings（Ctrl+,）** → **AI Prompt Studio**，点击“打开 AI Prompt Studio 设置工作台”。
 2. 新建档案，选择 provider、API 根地址和模型，保存后填写 API Key（只保存在本机 `user/ai_prompt_studio/secrets.json`）。先点“测试连接”，再点“重新探测”。
 3. “重新探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。
 4. 在节点图中放置 **AI Model Profile**，直接从“档案名称 [ID]”和该档案的模型目录下拉选择。

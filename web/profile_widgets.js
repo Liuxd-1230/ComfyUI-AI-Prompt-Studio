@@ -1,4 +1,6 @@
 // AI Prompt Studio — 前端辅助（DOM 构建 / API 调用 / i18n / 提示）
+import { invalidateCachedJson } from "./data_cache.js";
+
 export const API_BASE = "/api/ai_prompt_studio";
 
 // ---------- i18n ----------
@@ -153,6 +155,12 @@ export async function api(path, options = {}) {
     /* 空响应 */
   }
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  const method = String(opts.method || "GET").toUpperCase();
+  if (method !== "GET") {
+    if (path.startsWith("/profiles")) invalidateCachedJson("/ai_prompt_studio/profiles");
+    if (path.startsWith("/supplements")) invalidateCachedJson("/ai_prompt_studio/supplements");
+    if (path.startsWith("/settings")) invalidateCachedJson("/ai_prompt_studio/status");
+  }
   return data;
 }
 

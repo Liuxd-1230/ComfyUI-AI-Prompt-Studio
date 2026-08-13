@@ -390,4 +390,6 @@ def test_route_handlers(store):
     assert store.get_capabilities("p1").get("responses") is False
     assert store.get_capabilities("p1").get("error")
 
-    assert routes.handle_status(store)["name"] == "AI Prompt Studio"
+    status = routes.handle_status(store)
+    assert status["name"] == "AI Prompt Studio"
+    assert status["ui_contract_version"] == "single-lane-ui-v2"

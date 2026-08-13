@@ -21,6 +21,7 @@ from .config_store import ConfigStore, get_store
 logger = logging.getLogger("ai_prompt_studio.routes")
 
 API_PREFIX = "/ai_prompt_studio"
+UI_CONTRACT_VERSION = "single-lane-ui-v2"
 
 
 # ---------------------------------------------------------------- 处理器（可测）
@@ -58,6 +59,7 @@ def handle_status(store: ConfigStore) -> Dict[str, Any]:
         "anima_booster_detected": detect_anima_booster(),
         "profile_count": len(store.list_profiles()),
         "api_prefix": API_PREFIX,
+        "ui_contract_version": UI_CONTRACT_VERSION,
     }
 
 

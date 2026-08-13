@@ -3,6 +3,7 @@
 // 入口（0.2.1c）：ComfyUI 原生 Settings 页面；设置项触发大型工作台 overlay。
 import { app } from "../../scripts/app.js";
 import { el, api, toast, t, setLang, lang, maskDisplay } from "./profile_widgets.js";
+import { cachedJson, invalidateCachedJson } from "./data_cache.js";
 
 const PROVIDERS = ["deepseek", "openai_compatible", "local"];
 const PROTOCOLS = ["auto", "responses", "chat_completions"];
@@ -15,6 +16,8 @@ const ACTIONS = ["status", "list_models", "load", "unload", "reload", "unload_al
 let panel = null;
 let currentProfileId = "";
 let profileRecords = [];
+let activePanelTab = "profiles";
+let panelReturnFocus = null;
 
 const STYLE_ID = "aps-settings-styles";
 
@@ -84,25 +87,54 @@ function openPanel() {
     panel = buildPanel();
     document.body.appendChild(panel);
   }
+  panelReturnFocus = document.activeElement;
   panel.style.display = "flex";
-  refreshAll();
+  panel.setAttribute("aria-hidden", "false");
+  showPanelTab(activePanelTab);
+  panel.querySelector("[data-aps-tab].is-active")?.focus();
 }
 
 function closePanel() {
-  if (panel) panel.style.display = "none";
+  if (panel) {
+    panel.style.display = "none";
+    panel.setAttribute("aria-hidden", "true");
+  }
+  panelReturnFocus?.focus?.();
 }
 
 function buildPanel() {
-  const overlay = el("div", { class: "aps-overlay" });
+  const overlay = el("div", {
+    class: "aps-overlay", role: "dialog", "aria-modal": "true",
+    "aria-labelledby": "aps-settings-title", "aria-hidden": "true",
+  });
   overlay.id = "aps-overlay";
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) closePanel();
   });
-  const body = el("div", { class: "aps-panel" });
+  const body = el("div", { class: "aps-panel", tabindex: "-1" });
+  overlay.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closePanel();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [...overlay.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]')]
+      .filter((item) => item.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault(); last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault(); first.focus();
+    }
+  });
 
   // header
   const header = el("div", { class: "aps-header" }, [
-    el("h2", { text: t("title") }),
+    el("h2", { id: "aps-settings-title", text: t("title") }),
     el("button", { class: "aps-btn", id: "aps-lang-btn", text: t("lang"), onClick: () => {
       setLang(lang() === "zh" ? "en" : "zh");
       document.querySelector("#aps-lang-btn").textContent = t("lang");
@@ -116,7 +148,20 @@ function buildPanel() {
   const statusLine = el("div", { class: "aps-status-line", id: "aps-status-line" });
   body.appendChild(statusLine);
 
-  body.appendChild(el("section", { class: "aps-guide" }, [
+  const tabs = el("div", { class: "aps-tabs", role: "tablist", "aria-label": "设置分区" });
+  for (const [id, label] of [
+    ["profiles", "模型档案"], ["capabilities", "能力与连接"],
+    ["runtime", "本地运行时"], ["resources", "Markdown 资料与日志"],
+  ]) {
+    tabs.appendChild(el("button", {
+      class: "aps-tab", text: label, role: "tab", "data-aps-tab": id,
+      "aria-controls": `aps-pane-${id}`, onClick: () => showPanelTab(id),
+    }));
+  }
+  body.appendChild(tabs);
+
+  const profilesPane = el("section", { class: "aps-tab-pane", id: "aps-pane-profiles", role: "tabpanel" });
+  profilesPane.appendChild(el("section", { class: "aps-guide" }, [
     el("h3", { text: "LM Studio 自动卸载怎么连接" }),
     el("p", { text: "把节点串在提示词生成和图像/视频生成之间：" }),
     el("code", { text: "LLM 提示词输出 → LLM 后卸载 LM Studio（提示词透传） → 图像/视频节点的 prompt" }),
@@ -129,27 +174,28 @@ function buildPanel() {
   const right = el("div", { class: "aps-col aps-col-editor" }, [el("div", { id: "aps-editor" }, [el("p", { class: "aps-muted", text: t("select_profile") })])]);
   cols.appendChild(left);
   cols.appendChild(right);
-  body.appendChild(cols);
+  profilesPane.appendChild(cols);
+  body.appendChild(profilesPane);
 
-  // bottom sections
-  const bottom = el("div", { class: "aps-bottom" });
-  bottom.appendChild(el("div", { class: "aps-section" }, [
+  const capabilityPane = el("section", { class: "aps-tab-pane", id: "aps-pane-capabilities", role: "tabpanel" }, [
+    el("div", { class: "aps-section" }, [
     el("h3", { text: t("capabilities") }),
     el("div", { id: "aps-capabilities" }),
-  ]));
-  bottom.appendChild(el("div", { class: "aps-section" }, [
+  ])]);
+  const runtimePane = el("section", { class: "aps-tab-pane", id: "aps-pane-runtime", role: "tabpanel" }, [
+    el("div", { class: "aps-section" }, [
     el("h3", { text: t("runtime") }),
     el("div", { id: "aps-runtime" }),
-  ]));
-  bottom.appendChild(el("div", { class: "aps-section" }, [
+  ])]);
+  const resourcesPane = el("section", { class: "aps-tab-pane", id: "aps-pane-resources", role: "tabpanel" }, [
+    el("div", { class: "aps-section" }, [
     el("h3", { text: t("log") }),
     el("div", { id: "aps-log" }),
-  ]));
-  bottom.appendChild(el("div", { class: "aps-section" }, [
+  ]), el("div", { class: "aps-section" }, [
     el("h3", { text: t("supplements") }),
     el("div", { id: "aps-supplements" }),
-  ]));
-  body.appendChild(bottom);
+  ])]);
+  body.append(capabilityPane, runtimePane, resourcesPane);
   overlay.appendChild(body);
   return overlay;
 }
@@ -157,20 +203,42 @@ function buildPanel() {
 // ---------------- 数据刷新 ----------------
 
 async function refreshAll() {
+  showPanelTab(activePanelTab);
+}
+
+async function loadProfilesPane() {
   try {
     const [status, list] = await Promise.all([
-      api("/status"),
-      api("/profiles"),
+      cachedJson("/ai_prompt_studio/status", { ttlMs: 5000 }),
+      cachedJson("/ai_prompt_studio/profiles"),
     ]);
     renderStatus(status);
     renderProfiles(list);
-  } catch (e) {
-    toast(t("error") + ": " + e.message, true);
+    if (currentProfileId) renderEditor(currentProfileId);
+  } catch (error) {
+    toast(t("error") + ": " + error.message, true);
   }
-  renderRuntime();
-  renderLog();
-  renderSupplements();
-  if (currentProfileId) renderEditor(currentProfileId);
+}
+
+function showPanelTab(tabId) {
+  activePanelTab = tabId;
+  if (!panel) return;
+  for (const button of panel.querySelectorAll("[data-aps-tab]")) {
+    const selected = button.dataset.apsTab === tabId;
+    button.classList.toggle("is-active", selected);
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  }
+  for (const pane of panel.querySelectorAll(".aps-tab-pane")) {
+    pane.hidden = pane.id !== `aps-pane-${tabId}`;
+  }
+  if (tabId === "profiles") loadProfilesPane();
+  else if (tabId === "capabilities") renderCapabilities();
+  else if (tabId === "runtime") renderRuntime();
+  else if (tabId === "resources") {
+    renderLog();
+    renderSupplements();
+  }
 }
 
 function renderStatus(info) {
@@ -676,18 +744,9 @@ function openSupplementEditor(box, record = {}) {
 }
 
 // ---------------- 原生 Settings 入口（0.2.1c） ----------------
-// ComfyUI Settings API 没有 button/action 类型；用一次性 combo 作为工作台入口。
-// 选择 "Open Settings Workbench" 后打开现有大型 overlay，再恢复为 idle。
+// ComfyUI 的扩展设置 schema 不提供 action/button 字段，但支持 custom
+// control factory。用真正的 button 避免持久化一个无业务含义的开关状态。
 const PREFIX = "[AI Prompt Studio]";
-const OPEN_WORKBENCH_SETTING_ID = "AI Prompt Studio.General.openWorkbench";
-
-function resetWorkbenchSetting() {
-  const setting = app.extensionManager && app.extensionManager.setting;
-  if (!setting || typeof setting.set !== "function") return;
-  Promise.resolve(setting.set(OPEN_WORKBENCH_SETTING_ID, "idle")).catch((err) => {
-    console.warn(PREFIX + " failed to reset workbench setting", err);
-  });
-}
 
 app.registerExtension({
   name: "AI Prompt Studio Settings",
@@ -709,20 +768,16 @@ app.registerExtension({
       },
     },
     {
-      id: OPEN_WORKBENCH_SETTING_ID,
-      name: "打开 AI Prompt Studio 设置工作台",
+      id: "AI Prompt Studio.General.openWorkbench",
+      name: "设置工作台",
       category: ["AI Prompt Studio", "常规", "设置工作台"],
-      tooltip: "选择“打开完整设置工作台”进入模型档案、本地运行时和 Markdown 补充资料配置。",
-      type: "combo",
-      defaultValue: "idle",
-      options: [
-        { text: "请选择", value: "idle" },
-        { text: "打开完整设置工作台", value: "open" },
-      ],
-      onChange(value, oldValue) {
-        if (value !== "open" || oldValue === "open") return;
-        openPanel();
-        resetWorkbenchSetting();
+      tooltip: "打开模型档案、能力探测、本地运行时与 Markdown 资料。",
+      type() {
+        return el("button", {
+          class: "aps-native-settings-button",
+          text: "打开 AI Prompt Studio 设置工作台",
+          onClick: openPanel,
+        });
       },
     },
   ],
@@ -757,7 +812,7 @@ app.registerExtension({
       modelWidget.options.values = [...new Set(values)];
       node.setDirtyCanvas?.(true, true);
     };
-    api("/profiles").then(({ profiles }) => {
+    cachedJson("/ai_prompt_studio/profiles").then(({ profiles }) => {
       const profileValues = ["", ...profiles.map((profile) =>
         profile.name && profile.name !== profile.profile_id
           ? `${profile.name} [${profile.profile_id}]`

@@ -1,5 +1,7 @@
 # Changelog
 
+- **P0–P3 UI 与性能收口**：Image/H3 Studio 工作台增加前后端 UI contract 握手，ComfyUI 未重启导致旧 Python 节点与新 JS 混用时会明确阻止输入并提示重启；清除节点名称中已删除的“宽松 / 严格”。Studio 默认高度由 438px 降为 320px，帮助和历史按需展开，当前提示词可一键复制，会话仅渲染最近 6 条。输入采用 200ms 防抖且 Queue/失焦前 flush，不再每字符重复触发全图重绘。Profiles/Supplements 注册表共享 TTL/in-flight 缓存；设置工作台改为档案、能力、运行时、Markdown/日志四分区懒加载，增加原生按钮入口、Esc 关闭、Tab 焦点循环、焦点恢复和可读错误状态。
+
 - **Studio 单一路径重构**：基于基元与 LM Studio 的 16 次质量对照，删除 Image/H3 Studio 的 `execution_mode`、strict Plan/ChangeSet/Diff Guard/事务分支及其 mock-only 测试。PromptSession 升级 3.2：旧 lenient 会话迁移为 single，旧 strict 明确要求新会话。唯一主路径维护真正传给下游的完整 Prompt，协议垃圾或确定性硬错误最多保真修复一次；ANIMA 同时迁入官方质量前缀、基础 negative、用户显式排除项与英语/身份检查，H3 保留官方字段、媒体、引用、时长、身份和运镜校验。更新前端帮助、示例工作流、验收矩阵、README、约束修订与 ADR 0008。
 
 - **基元 vs LM 双通道质量对比**：以相同高约束 ANIMA 与 H3 任务完成 16 次真实调用，覆盖两个模型、宽松/严格和两次重复。Image 最高质量为基元 strict，最快忠实路径为 LM lenient；H3 最高质量为基元 lenient，LM lenient 最快。LM strict H3 虽 2/2 通过结构校验，却两次大量丢失人物、服装、道具和地点，确认现有严格 H3 缺少 source-fact coverage，当前明确不可推荐。详见 `docs/prompt-architecture/jiyuan-vs-lm-lane-quality-2026-08-13.md`。
