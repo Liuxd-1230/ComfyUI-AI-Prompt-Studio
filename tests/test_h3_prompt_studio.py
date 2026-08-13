@@ -463,3 +463,80 @@ def test_h3_locked_manifest_subject_gets_deterministic_retention() -> None:
                              if item.label == "Subject 1")
     assert subject_retention.marker == "fully_preserved"
     assert subject_retention.shot_refs == ["Shot 1"]
+
+
+def test_lenient_h3_normalizes_bracketed_official_headings() -> None:
+    raw = (
+        "[integrated_multimodal_description][Shot 1] A woman lifts a rose.\n"
+        "[overall_soundscape]Room tone and cloth rustle.\n"
+        "[non_diegetic_music]N/A"
+    )
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "T2VA")
+
+    assert normalized.startswith(
+        "integrated_multimodal_description: [Shot 1] A woman lifts a rose.")
+    assert "overall_soundscape: Room tone" in normalized
+    assert "non_diegetic_music: N/A" in normalized
+
+
+def test_lenient_h3_normalizes_tagged_headings_and_shot_one_zero_time() -> None:
+    raw = (
+        "<integrated_multimodal_description>\n"
+        "[Shot 1] At 00:00.000; A woman lifts a rose.\n"
+        "</integrated_multimodal_description>\n"
+        "<overall_soundscape>Room tone.</overall_soundscape>\n"
+        "<non_diegetic_music>N/A</non_diegetic_music>"
+    )
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "T2VA")
+
+    assert "integrated_multimodal_description: [Shot 1] A woman" in normalized
+    assert "overall_soundscape: Room tone." in normalized
+    assert "non_diegetic_music: N/A" in normalized
+    assert "</" not in normalized
+
+
+def test_lenient_h3_moves_base_field_before_a_stray_first_shot() -> None:
+    raw = (
+        "How the reference pictures align with the target video — final frame.\n"
+        "[Shot 1] A woman lifts a rose.\n"
+        "integrated_multimodal_description: A continuous shot.\n"
+        "overall_soundscape: Room tone.\n"
+        "non_diegetic_music: N/A"
+    )
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "L2VA")
+
+    assert "integrated_multimodal_description: [Shot 1] A woman lifts a rose." in normalized
+    assert normalized.count("integrated_multimodal_description:") == 1
+
+
+def test_lenient_h3_pads_single_digit_timestamp_minute() -> None:
+    raw = (
+        "subject_definitions:\n<Picture 1> woman\n"
+        "summary:\n[reference generation] shot\nretention_analysis:\n"
+        "<Picture 1>: fully_preserved\n"
+        "detailed_description:\n[Shot 1] At 0:00.000, woman lifts a rose.\n"
+        "overall_soundscape:\nRoom tone.\nnon_diegetic_music:\nN/A"
+    )
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "Ref2VA")
+
+    assert "[Shot 1] woman lifts a rose." in normalized
+    assert "0:00.000" not in normalized
+
+
+def test_lenient_h3_recovers_missing_opening_field_tag() -> None:
+    raw = (
+        "[Shot 1] At 00:00.000; A woman lifts a rose.\n"
+        "</integrated_multimodal_description>\n"
+        "<overall_soundscape>Room tone.</overall_soundscape>\n"
+        "<non_diegetic_music>N/A</non_diegetic_music>"
+    )
+
+    normalized = studio_mod._normalize_lenient_h3_protocol(raw, "T2VA")
+
+    assert normalized.startswith(
+        "integrated_multimodal_description: [Shot 1] A woman lifts a rose.")
+    assert "</integrated" not in normalized

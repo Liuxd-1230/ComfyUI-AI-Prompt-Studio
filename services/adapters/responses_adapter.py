@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -250,8 +251,9 @@ class ResponsesAdapter:
                                  protocol=self.protocol,
                                  error=map_http_error(resp.status_code, body_text[:200]))
             consumer = _StreamConsumer(profile)
+            deadline = time.monotonic() + timeout
             try:
-                for event in sse_events(resp):
+                for event in sse_events(resp, deadline=deadline):
                     if stop_event is not None and stop_event.is_set():
                         raise Canceled()
                     consumer.feed(event)
@@ -259,6 +261,11 @@ class ResponsesAdapter:
                 return LLMResult(profile_id=profile.profile_id, model=profile.model,
                                  protocol=self.protocol,
                                  error=make_error("canceled", "已取消"))
+            except requests.Timeout:
+                return LLMResult(
+                    profile_id=profile.profile_id, model=profile.model,
+                    protocol=self.protocol,
+                    error=make_error("timeout", "请求总时长超过限制"))
             return consumer.finalize()
         finally:
             try:

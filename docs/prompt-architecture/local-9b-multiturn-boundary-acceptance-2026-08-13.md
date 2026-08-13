@@ -65,3 +65,30 @@ Ref2VA 的数量、总数、总时长、首帧/尾帧和引用规则由同一 va
 较高，但会拒绝提交而不会污染稳定版本。档案虽设置 `reasoning=high`，LM Studio 返回
 未包含可观察的 reasoning 文本或 reasoning token，因此只能确认请求配置已开启，不能
 声称服务端实际输出了可审计思考过程。
+
+## 补充压力复核
+
+同日继续按遗漏项补跑后，不再把单次绿灯当作稳定率：五个 H3 mode × 两条 lane
+重复 CREATE 呈现明显随机性。第二轮中宽松 FL2VA/L2VA/Ref2VA 通过，T2VA/I2VA
+被协议校验拒绝；严格 T2VA/FL2VA/Ref2VA 通过，I2VA/L2VA 被拒绝。严格 T2VA
+还出现“validator 通过但丢失服装、玫瑰、动作和地点”的质量假绿，因此该 9B 的严格
+结果不能仅凭 validation 判为可用。
+
+宽松多轮重新按事实保持率检查：T2VA、I2VA、FL2VA、Ref2VA 均完成 CREATE、两次
+局部修改、恢复与重复 nonce，并保留 dark hair、ivory Victorian rose dress、sunlit
+stone conservatory、red rose、truck-right 五项事实；L2VA 首次因字段位置漂移拒绝，
+随后加入只处理官方字段包装、不改变创意的确定性归一化。真实 Ref2VA 使用 640.jpg、
+`visio.mp4` 的 6 秒裁剪和从其提取的 6 秒音频通过：Manifest 实测视频 5.99 秒、音频
+6.00 秒，Picture/Video/Audio 均在成品中引用且 retention marker 模态正确。
+
+压力测试还发现 SSE 只使用 read-timeout 时，服务端持续发送心跳或残片会使 120 秒设置
+永不触发。Chat Completions 与 Responses 现共用原始 SSE 行级总截止时间；现场重试
+不会再无限占住 ComfyUI 队列。宽松 H3 另对本地模型反复出现的方括号字段、XML 字段、
+单数字分钟和缺失开标签做有限确定性归一化；镜头数、时间语义、引用关系和创意内容仍
+交给 validator/模型修复，不会静默放宽。
+
+Reference Analyzer 的 640.jpg 十一模式语义复核显示：人物身份、姿态、构图、风格、
+ANIMA 与自定义颜色模式相关性较好；character_full/clothing 能看到服装细节但字段名
+不稳定；scene/object/h3_reference 明显混入海报文字和人物属性。它们是“结构可运行”，
+尚不是“模式语义纯净”。后续架构工作应为非人物模式采用各自结果 Schema，而不是继续
+用 CharacterCandidate 表示场景、构图、物件和 H3 参考观察。

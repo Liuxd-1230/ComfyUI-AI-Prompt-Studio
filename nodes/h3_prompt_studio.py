@@ -191,6 +191,7 @@ class APS_H3PromptStudio:
             profile, api_key, instruction, current_prompt, mode, duration,
             storyboard, bible, book, manifest, supplements)
         parsed = parse_lenient_output(raw)
+        parsed = _normalize_lenient_h3_output(parsed, mode)
         report = _validate_lenient_h3(
             parsed, mode, duration, manifest, image_count, source_bibles,
             instruction)
@@ -202,6 +203,7 @@ class APS_H3PromptStudio:
                 [*parsed.issues, *[item.message for item in report.issues]],
                 mode, duration, supplements)
             parsed = parse_lenient_output(raw)
+            parsed = _normalize_lenient_h3_output(parsed, mode)
             report = _validate_lenient_h3(
                 parsed, mode, duration, manifest, image_count, source_bibles,
                 instruction)
@@ -479,6 +481,65 @@ def _validate_lenient_h3(
     if shot_count_issue:
         report.add("error", "h3_shot_count_mismatch", shot_count_issue)
     return report
+
+
+def _normalize_lenient_h3_output(
+        parsed: LenientPromptOutput, mode: str) -> LenientPromptOutput:
+    if not parsed.prompt:
+        return parsed
+    normalized = _normalize_lenient_h3_protocol(parsed.prompt, mode)
+    if normalized == parsed.prompt:
+        return parsed
+    return LenientPromptOutput(
+        kind=parsed.kind, prompt=normalized, summary=parsed.summary,
+        warnings=[*parsed.warnings,
+                  "已将方括号形式的官方 H3 字段名确定性归一为冒号格式"],
+        issues=list(parsed.issues))
+
+
+def _normalize_lenient_h3_protocol(prompt: str, mode: str) -> str:
+    headings = [
+        "integrated_multimodal_description", "overall_soundscape",
+        "non_diegetic_music",
+    ] if mode != "Ref2VA" else [
+        "subject_definitions", "summary", "retention_analysis",
+        "detailed_description", "overall_soundscape", "non_diegetic_music",
+    ]
+    result = str(prompt or "")
+    for heading in headings:
+        result = re.sub(
+            rf"(?is)<{re.escape(heading)}>\s*(.*?)\s*</{re.escape(heading)}>",
+            lambda match, name=heading: f"{name}: {match.group(1).strip()}",
+            result)
+        result = re.sub(
+            rf"(?im)^\s*\[{re.escape(heading)}\]\s*",
+            f"{heading}: ", result)
+    if mode != "Ref2VA" and "integrated_multimodal_description:" not in result:
+        closing = re.search(
+            r"(?is)^\s*(.*?)(?:\s*</integrated_multimodal_description>)",
+            result)
+        if closing and "[Shot 1]" in closing.group(1):
+            result = (
+                "integrated_multimodal_description: " + closing.group(1).strip()
+                + result[closing.end():])
+    result = re.sub(
+        r"(?im)(\[Shot 1\])\s+At\s+0{1,2}:00\.000\s*[;,]?\s*",
+        r"\1 ", result)
+    if mode != "Ref2VA":
+        alignment_end = result.find("\n") + 1 if mode != "T2VA" else 0
+        shot_pos = result.find("[Shot 1]", alignment_end)
+        field_pos = result.find("integrated_multimodal_description:", alignment_end)
+        next_field = result.find("\noverall_soundscape:", alignment_end)
+        if 0 <= shot_pos < field_pos and next_field > field_pos:
+            stray_shot = result[shot_pos:field_pos].strip()
+            field_body = result[
+                field_pos + len("integrated_multimodal_description:"):next_field
+            ].strip()
+            replacement = "integrated_multimodal_description: " + stray_shot
+            if field_body and field_body.casefold() not in stray_shot.casefold():
+                replacement += " " + field_body
+            result = result[:shot_pos] + replacement + result[next_field:]
+    return result
 
 
 def _camera_motion_intent_issue(instruction: str, prompt: str) -> str:

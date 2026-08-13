@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, Dict, Iterable, List, Optional
+
+import requests
 
 from ...schemas.results import ErrorInfo, make_error
 
@@ -63,7 +66,8 @@ def is_protocol_unsupported(status: int, body_text: str = "") -> bool:
     return False
 
 
-def sse_events(resp: Any) -> Iterable[Dict[str, Any]]:
+def sse_events(resp: Any, *, deadline: float | None = None
+               ) -> Iterable[Dict[str, Any]]:
     """把 requests.Response 的 iter_lines() 解析为 SSE 事件 dict。
 
     容忍：无 event 行的纯 data 流、非 JSON data、多行 data 拼接、[DONE] 哨兵。
@@ -103,6 +107,8 @@ def sse_events(resp: Any) -> Iterable[Dict[str, Any]]:
     # requests 对未声明 charset 的 text/event-stream 可能按 ISO-8859-1 解码；
     # OpenAI 兼容 JSON/SSE 实际为 UTF-8，因此自行解码，避免中文 mojibake。
     for raw in resp.iter_lines(decode_unicode=False):
+        if deadline is not None and time.monotonic() >= deadline:
+            raise requests.Timeout("SSE total deadline exceeded")
         if raw is None:
             continue
         line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)

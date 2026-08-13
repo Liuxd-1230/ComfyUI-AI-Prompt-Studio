@@ -9,6 +9,9 @@ import threading
 import pytest
 import requests
 
+import aps.services.adapters.chat_adapter as chat_mod
+import aps.services.adapters.responses_adapter as responses_mod
+import aps.services.adapters.base as adapter_base_mod
 from aps.schemas.profile import AIProfile
 from aps.schemas.results import ChatMessage
 from aps.services.adapters.base import ProtocolUnsupported, sse_events
@@ -301,6 +304,58 @@ def test_responses_timeout(monkeypatch):
                                          web_search=False, reasoning="high",
                                          max_tokens=100, temperature=1.0)
     assert result.error.kind == "timeout"
+
+
+def test_responses_stream_has_total_deadline(monkeypatch):
+    """Continuous SSE chunks must not reset the whole-request timeout forever."""
+    response = FakeResponse(200, lines=[
+        b'data: {"type":"response.output_text.delta","delta":"x"}',
+        b'',
+        b'data: {"type":"response.output_text.delta","delta":"y"}',
+        b'',
+    ])
+    monkeypatch.setattr(responses_mod.requests, "post", lambda *a, **kw: response)
+    ticks = iter([10.0, 10.1, 12.1])
+    monkeypatch.setattr(responses_mod.time, "monotonic", lambda: next(ticks))
+
+    result = responses_mod.ResponsesAdapter().generate(
+        AIProfile(profile_id="p", base_url="http://local/v1", model="m"), "key",
+        system="", messages=[ChatMessage(role="user", content="hi")],
+        web_search=False, reasoning="off", max_tokens=None, temperature=None,
+        timeout=2.0)
+
+    assert result.has_error()
+    assert result.error.kind == "timeout"
+
+
+def test_chat_stream_has_total_deadline(monkeypatch):
+    response = FakeResponse(200, lines=[
+        b'data: {"choices":[{"delta":{"content":"x"}}]}',
+        b'',
+        b'data: {"choices":[{"delta":{"content":"y"}}]}',
+        b'',
+    ])
+    monkeypatch.setattr(chat_mod.requests, "post", lambda *a, **kw: response)
+    ticks = iter([20.0, 20.1, 22.1])
+    monkeypatch.setattr(chat_mod.time, "monotonic", lambda: next(ticks))
+
+    result = chat_mod.ChatCompletionsAdapter().generate(
+        AIProfile(profile_id="p", base_url="http://local/v1", model="m"), "key",
+        system="", messages=[ChatMessage(role="user", content="hi")],
+        web_search=False, reasoning="off", max_tokens=None, temperature=None,
+        timeout=2.0)
+
+    assert result.has_error()
+    assert result.error.kind == "timeout"
+
+
+def test_sse_total_deadline_applies_before_a_complete_event(monkeypatch):
+    response = FakeResponse(200, lines=[b': heartbeat', b': heartbeat', b': heartbeat'])
+    ticks = iter([30.1, 32.1])
+    monkeypatch.setattr(adapter_base_mod.time, "monotonic", lambda: next(ticks))
+
+    with pytest.raises(requests.Timeout):
+        list(sse_events(response, deadline=32.0))
 
 
 def test_responses_connection_error(monkeypatch):
