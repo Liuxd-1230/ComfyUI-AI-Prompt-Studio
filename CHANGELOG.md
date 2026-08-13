@@ -1,5 +1,7 @@
 # Changelog
 
+- **基元 vs LM 双通道质量对比**：以相同高约束 ANIMA 与 H3 任务完成 16 次真实调用，覆盖两个模型、宽松/严格和两次重复。Image 最高质量为基元 strict，最快忠实路径为 LM lenient；H3 最高质量为基元 lenient，LM lenient 最快。LM strict H3 虽 2/2 通过结构校验，却两次大量丢失人物、服装、道具和地点，确认现有严格 H3 缺少 source-fact coverage，当前明确不可推荐。详见 `docs/prompt-architecture/jiyuan-vs-lm-lane-quality-2026-08-13.md`。
+
 - **本地压力复核补完**：继续补跑 H3 五模式宽松/严格重复 CREATE、多轮事实保持、恢复/重复执行、640.jpg 十一种 Reference 语义质量，以及真实图片+6 秒视频+6 秒音频 Ref2VA。新增 SSE 原始行级总截止时间，避免服务端持续心跳/残片绕过档案 timeout 无限占队列；宽松 H3 仅对方括号/XML 官方字段、单数字分钟、零时刻 Shot 1 和缺失开标签做确定性协议归一化。实测证明本地 9B 严格模式仍有质量假绿，Reference 非人物模式仍受共用 CharacterCandidate Schema 污染，均在验收报告中如实记录。
 
 - **本地 9B 多轮与边界验收**：使用 LM Studio 的 `qwen3.5-9b-uncensored-hauhaucs-aggressive` 实跑 Image/H3 连续 CREATE→两轮 REFINE、恢复、重复 nonce、锁定冲突、全部 Reference/Storyboard/LLM 公共模式及 H3 媒体边界。修复严格 ANIMA 字符串冒充数组、字段 owner 诱导，H3 自然英文锚点误判、锁定身份未进入 Shot、闭合引用标签误报，以及 LLM JSON/JSON Schema 首次输出不可解析时缺少一次受控格式修复。宽松多轮稳定通过；该 9B 严格 ChangeSet 仍有明显随机失败但会安全不提交。完整证据与质量限制见 `docs/prompt-architecture/local-9b-multiturn-boundary-acceptance-2026-08-13.md`。
