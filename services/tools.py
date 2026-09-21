@@ -59,14 +59,8 @@ def execute_tool(name: str, arguments_json: str, profile: AIProfile) -> Dict[str
 
 
 def _tool_now(args: Dict[str, Any]) -> Dict[str, Any]:
-    import time
+    from datetime import datetime, timezone
 
-    try:
-        from datetime import datetime, timezone
-    except Exception:  # noqa: BLE001
-        from datetime import datetime
-
-        return {"ok": True, "output": datetime.now().isoformat(timespec="seconds")}
     return {
         "ok": True,
         "output": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),

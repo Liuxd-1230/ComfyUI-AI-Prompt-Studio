@@ -272,7 +272,7 @@ async function recoverNewerJournal(node, root) {
 }
 
 function attachStudio(node) {
-  ["operation", "text", "prompt_session", "session_action",
+  ["text", "prompt_session", "session_action",
     "message_nonce"].forEach(
     (name) => hideSerializedWidget(byName(node, name)));
   const root = studioElement(node);

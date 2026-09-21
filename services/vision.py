@@ -110,8 +110,8 @@ def resolve_vision_profile(profile: AIProfile) -> AIProfile:
 
     profile.vision_profile_id 非空 → 视觉使用该档案（其 vision_* 配置与 api_key）；
     留空 → 使用本档案自身的 vision_* 配置。
-    仅做字段回填，不改动原档案；返回 None 表示需要外部解析（未找到目标档案时
-    由调用方报错，避免本模块依赖 ConfigStore 造成循环导入）。
+    仅做字段回填，不改动原档案。目标档案不存在时抛 VisionUnavailable（错误里
+    指明是哪个 id），调用方不需要 None 分支。
     """
     if not (profile.vision_profile_id or "").strip():
         return profile

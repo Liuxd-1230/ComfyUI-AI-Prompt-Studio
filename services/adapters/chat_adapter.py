@@ -26,7 +26,9 @@ from .base import (
 
 logger = logging.getLogger("ai_prompt_studio.adapters.chat")
 
-REASONING_EFFORT = {"off": "none", "low": "low", "medium": "medium", "high": "high"}
+# reasoning=off 时整个字段不发送（见下方守卫），所以表里没有 "off" 条目。
+# Chat 的 reasoning_effort 只对 provider=deepseek 发送（docs/decisions.md D6）。
+REASONING_EFFORT = {"low": "low", "medium": "medium", "high": "high"}
 
 
 class _ChatConsumer:

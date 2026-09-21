@@ -1,5 +1,7 @@
 # Changelog
 
+- **清理五处“文档与代码相反”和不可达分支**：两个 adapter 的 `REASONING_EFFORT` 删掉因前置 `reasoning != "off"` 守卫而永不可用的 `"off"` 条目，并在 Responses 侧写明与 Chat 侧门槛不同是 `docs/decisions.md` D6 的刻意决定（`reasoning.effort` 是 Responses 标准字段，Chat 的 `reasoning_effort` 仅 deepseek 发送）。`_attachment_input_items` 的 docstring 原写“文本并入已有 user 消息、不新增条目”，与紧接着的代码相反，改为描述真实行为并说明 Gateway 已在上游把文本抽成带边界的 system 块。`_tool_now` 删掉自 Python 3.2 起不可能触发的 `except ImportError` 分支（那条路径返回的结构缺 `note` 且是无时区时间，会原样发给模型）与未使用的 `import time`。前端删掉对不存在的 `operation` widget 的隐藏调用；`resolve_vision_profile` 的 docstring 不再声称可能返回 `None`（实际抛 `VisionUnavailable`）。
+
 - **附件按实际选中的协议复核**：带图片/文件附件而两种协议都没通过同格式探针时，`_select_protocol` 不再按文本能力回落到 Responses（工具仍是软要求，没有探针通过时照常退化为不带工具的回答），并在选定协议后用 `vision_chat`/`vision_responses`、`files_chat`/`files_responses` 复核一次。只有聚合 `vision`/`files` 为真不再能放行附件，错误信息点名是哪个协议没通过哪项探针。顺带去掉 `generate()` 里重复的一次能力读取。
 
 - **`web_search` 三档策略真正区分，"未探测"只剩一种表示**：`auto`（档案默认值）此前与 `always` 完全等价，等于每次请求都强行联网；现在 `auto` 只把原生 `web_search` 工具挂给模型按需调用，`always` 才追加 `tool_choice={"type":"web_search"}` 强制本轮联网（只约束首轮，工具续轮不再强制）。端点没有联网能力时 `auto` 静默不搜（此前每个请求都带一条离线降级警告），`always` 才明确告警无法满足。删除生产侧从未写入、只有测试使用的 `"unknown"` 能力值：搜索策略与网关协议选择统一按「缺键＝未探测＝保守不支持」判定，探测明确返回 False 时不再被静态表推翻。节点 tooltip 与 `docs/known-limitations.md` 同步三档语义。

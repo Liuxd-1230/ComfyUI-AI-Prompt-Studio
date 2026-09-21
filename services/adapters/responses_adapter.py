@@ -27,7 +27,11 @@ from .base import (
 
 logger = logging.getLogger("ai_prompt_studio.adapters.responses")
 
-REASONING_EFFORT = {"off": "none", "low": "low", "medium": "medium", "high": "high"}
+# reasoning=off 时整个字段不发送（见下方守卫），所以表里没有 "off" 条目。
+# 与 Chat 侧的差异是刻意的（docs/decisions.md D6）：reasoning.effort 是 Responses
+# 的标准字段，对所有兼容端点发送；Chat 的 reasoning_effort 属扩展字段，只在
+# provider=deepseek 时发送，避免通用端点对未知参数返回 400。
+REASONING_EFFORT = {"low": "low", "medium": "medium", "high": "high"}
 
 
 class _StreamConsumer:
@@ -322,7 +326,8 @@ def _attachment_input_items(attachments) -> List[Dict[str, Any]]:
     - 图片：content part {"type": "input_image", "image_url": data_uri, "filename": ...}
     - 文件：content part {"type": "input_file", "file_data": ..., "filename": ...}
       （file_data/file_id/file_url 三选一）
-    - 文本：直接并入已有 user 消息，不新增条目
+    - 文本：独立的 user 条目，保持顺序可读。Gateway 正常已在发请求前把文本
+      附件抽成带边界的 system 数据块，这里只是直接调用 adapter 时的兜底路径。
     """
     items: List[Dict[str, Any]] = []
     for a in attachments or []:
