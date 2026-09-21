@@ -5,15 +5,20 @@ import threading
 from pathlib import Path
 
 from ..domain.recovery_journal import DurableRecoveryJournal
-from ..server.config_store import default_config_dir
+from ..server.config_store import get_store
 
 _LOCK = threading.RLock()
 _JOURNALS: dict[str, DurableRecoveryJournal] = {}
 
 
 def get_recovery_journal(base_dir: Path | str | None = None) -> DurableRecoveryJournal:
-    """Return the process adapter while keeping durable state in ComfyUI user data."""
-    directory = Path(base_dir) if base_dir is not None else default_config_dir()
+    """恢复日志的唯一目录来源：ConfigStore 的数据目录。
+
+    此前节点走 default_config_dir()、路由走 store.config_dir()；一旦 store 被
+    注入非默认目录（测试或自定义数据目录），节点写 A 文件、路由读 B 文件，
+    UI 永远 found:False 且 discard 变成静默空操作。
+    """
+    directory = Path(base_dir) if base_dir is not None else get_store().config_dir()
     path = directory / "recovery-journal.json"
     key = str(path.resolve())
     with _LOCK:

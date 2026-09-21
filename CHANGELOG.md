@@ -1,5 +1,7 @@
 # Changelog
 
+- **恢复日志只剩一个目录来源；删掉与会话策略相反的死函数**：`get_recovery_journal()` 缺省改用 `ConfigStore` 的数据目录。此前节点侧不传参（走 `default_config_dir()`）、路由侧传 `store.config_dir()`，只要 store 被注入非默认目录（测试或自定义数据目录），节点写 A 文件而路由读 B 文件，UI 永远显示 `found: false`、discard 变成静默空操作；新增测试锁住“节点与路由共用同一个 journal 文件”。同时删除 `assert_session_fingerprints`：全仓无调用方也无测试，且它把“上下文指纹变化”定义成抛错，而两个 Studio 节点的真实策略是 `lenient_context_changed` 警告并继续 —— 一旦被按名字接上就会静默翻转行为。
+
 - **清理五处“文档与代码相反”和不可达分支**：两个 adapter 的 `REASONING_EFFORT` 删掉因前置 `reasoning != "off"` 守卫而永不可用的 `"off"` 条目，并在 Responses 侧写明与 Chat 侧门槛不同是 `docs/decisions.md` D6 的刻意决定（`reasoning.effort` 是 Responses 标准字段，Chat 的 `reasoning_effort` 仅 deepseek 发送）。`_attachment_input_items` 的 docstring 原写“文本并入已有 user 消息、不新增条目”，与紧接着的代码相反，改为描述真实行为并说明 Gateway 已在上游把文本抽成带边界的 system 块。`_tool_now` 删掉自 Python 3.2 起不可能触发的 `except ImportError` 分支（那条路径返回的结构缺 `note` 且是无时区时间，会原样发给模型）与未使用的 `import time`。前端删掉对不存在的 `operation` widget 的隐藏调用；`resolve_vision_profile` 的 docstring 不再声称可能返回 `None`（实际抛 `VisionUnavailable`）。
 
 - **附件按实际选中的协议复核**：带图片/文件附件而两种协议都没通过同格式探针时，`_select_protocol` 不再按文本能力回落到 Responses（工具仍是软要求，没有探针通过时照常退化为不带工具的回答），并在选定协议后用 `vision_chat`/`vision_responses`、`files_chat`/`files_responses` 复核一次。只有聚合 `vision`/`files` 为真不再能放行附件，错误信息点名是哪个协议没通过哪项探针。顺带去掉 `generate()` 里重复的一次能力读取。

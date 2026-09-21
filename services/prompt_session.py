@@ -127,14 +127,3 @@ def build_session_fingerprints(*, target_signature: str,
         model_core_hash=component_fingerprint(*model_core_components),
         source_hashes=source_hashes,
         supplement_hashes=dict(sorted((supplement_hashes or {}).items())))
-
-
-def assert_session_fingerprints(session: PromptSession,
-                                fingerprints: SessionFingerprints) -> None:
-    mismatches = session.fingerprint_mismatches(fingerprints)
-    if mismatches:
-        raise ValueError(
-            "Session 上下文指纹已变化，不能当作普通聊天修改。原因：" +
-            "、".join(mismatches) + "。当前可执行：选择“新会话”；若已有至少"
-            "两个成功版本，也可先恢复上一版。自动 Rebase 尚未实现；当前稳定 "
-            f"revision v{session.revision} 保持不变。")

@@ -14,6 +14,25 @@ from aps.schemas.prompt_session import PromptSession
 VALID = {"valid": True, "issues": []}
 
 
+def test_node_side_and_route_side_share_one_journal_file(store):
+    """节点不传目录、路由按 store 目录读：两边必须落在同一个 journal 文件上。"""
+    from aps.domain.recovery_journal import RecoveryJournalEntry
+    from aps.server import routes
+    from aps.services.recovery import get_recovery_journal
+
+    node_journal = get_recovery_journal()
+    assert node_journal is get_recovery_journal(store.config_dir())
+    node_journal.record_success(RecoveryJournalEntry(
+        session_id="s1", node_instance_id="n1", transaction_id="tx-1",
+        base_revision=0, result_revision=1,
+        session_snapshot={"id": "s1", "revision": 1, "current_prompt": "p"}))
+
+    found = routes.handle_recovery_latest("s1", "n1", store)
+    assert found["found"] is True and found["result_revision"] == 1
+    routes.handle_recovery_discard("s1", "n1", store)
+    assert routes.handle_recovery_latest("s1", "n1", store)["found"] is False
+
+
 def test_commit_can_publish_recoverable_snapshot_through_journal_interface() -> None:
     journal = MemoryRecoveryJournal()
     session = PromptSession(target_family="anima")
