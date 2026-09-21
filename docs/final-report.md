@@ -1,6 +1,6 @@
 # 最终报告（P0/P1 集成修复轮 + Prompt Audit）
 > 历史验收记录（2026-08-07），不是当前功能清单。当前运行时与节点契约以
-> ADR 0007、README 和 `docs/重构约束/implementation-status.md` 为准。
+> ADR 0007 与 README 为准。
 
 日期：2026-08-07 · 仓库：Liuxd-1230/ComfyUI-AI-Prompt-Studio（master）
 范围：规范 §一-六十五 中锁定的 P0/P1 项与 Prompt Audit（§三十七-六十五）。
