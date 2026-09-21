@@ -235,16 +235,6 @@
 .aps-cap-check.ok { border-color: rgba(46, 160, 67, .75); color: #7ee787; }
 .aps-cap-check.no { color: #f97583; }
 .aps-cap-check input { margin: 0; accent-color: #2ea043; }
-.aps-pre {
-  background: #16161a;
-  border-radius: 4px;
-  padding: 8px;
-  font-size: 11px;
-  white-space: pre-wrap;
-  max-height: 200px;
-  overflow: auto;
-  margin: 4px 0;
-}
 .aps-table {
   width: 100%;
   border-collapse: collapse;

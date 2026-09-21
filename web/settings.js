@@ -1,25 +1,18 @@
 // AI Prompt Studio 设置工作台 —— ComfyUI 内嵌面板
 // 界面固定中文；字段说明用 title 属性。
-// 入口：ComfyUI 原生 Settings 页面；设置项触发大型工作台 overlay。
+// 入口：ComfyUI 菜单（左上角 Logo 下拉）里的「AI Prompt Studio 设置工作台」，
+// 也可从原生 Settings 的 AI Prompt Studio 分区打开。
 import { app } from "../../scripts/app.js";
 import { el, api, toast, maskDisplay } from "./profile_widgets.js";
 import { cachedJson } from "./data_cache.js";
+
+const WORKBENCH_COMMAND = "ai.promptstudio.openWorkbench";
 
 const PROVIDERS = ["deepseek", "openai_compatible", "local"];
 const PROTOCOLS = ["auto", "responses", "chat_completions"];
 const REASONING = ["off", "low", "medium", "high"];
 const WEB_SEARCH = ["off", "auto", "always"];
 const UNLOAD = ["never", "after_request", "after_success"];
-const BACKENDS = ["ollama", "llamacpp", "lmstudio", "custom"];
-// 与 services/runtime/control.py::RUNTIME_ACTIONS 同一套动作
-const RUNTIME_ACTIONS = [
-  ["状态", "status"],
-  ["模型列表", "list_models"],
-  ["加载", "load"],
-  ["卸载", "unload"],
-  ["重载", "reload"],
-  ["全部卸载", "unload_all"],
-];
 
 let panel = null;
 let currentProfileId = "";
@@ -152,7 +145,10 @@ function buildPanel() {
   const body = el("div", { class: "aps-panel", tabindex: "-1" });
   overlay.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
+      // 原生 Settings 的 Escape 监听挂在 document 上：不截断的话，
+      // 从设置页里打开工作台后按一次 Esc 会把整个设置页一起关掉。
       event.preventDefault();
+      event.stopPropagation();
       closePanel();
       return;
     }
@@ -184,7 +180,7 @@ function buildPanel() {
   const tabs = el("div", { class: "aps-tabs", role: "tablist", "aria-label": "设置分区" });
   for (const [id, label] of [
     ["profiles", "模型档案"], ["capabilities", "能力与连接"],
-    ["runtime", "本地运行时"], ["resources", "Markdown 资料与日志"],
+    ["resources", "Markdown 资料与日志"],
   ]) {
     tabs.appendChild(el("button", {
       class: "aps-tab", text: label, role: "tab", "data-aps-tab": id,
@@ -215,11 +211,6 @@ function buildPanel() {
     el("h3", { text: "能力状态" }),
     el("div", { id: "aps-capabilities" }),
   ])]);
-  const runtimePane = el("section", { class: "aps-tab-pane", id: "aps-pane-runtime", role: "tabpanel" }, [
-    el("div", { class: "aps-section" }, [
-    el("h3", { text: "本地运行时" }),
-    el("div", { id: "aps-runtime" }),
-  ])]);
   const resourcesPane = el("section", { class: "aps-tab-pane", id: "aps-pane-resources", role: "tabpanel" }, [
     el("div", { class: "aps-section" }, [
     el("h3", { text: "请求日志" }),
@@ -228,7 +219,7 @@ function buildPanel() {
     el("h3", { text: "Markdown 补充资料" }),
     el("div", { id: "aps-supplements" }),
   ])]);
-  body.append(capabilityPane, runtimePane, resourcesPane);
+  body.append(capabilityPane, resourcesPane);
   overlay.appendChild(body);
   return overlay;
 }
@@ -276,8 +267,7 @@ function showPanelTab(tabId) {
   }
   if (tabId === "profiles") return loadProfilesPane();
   if (tabId === "capabilities") return renderCapabilities();
-  if (tabId === "runtime") renderRuntime();
-  else if (tabId === "resources") {
+  if (tabId === "resources") {
     renderLog();
     renderSupplements();
   }
@@ -645,36 +635,6 @@ function renderCapabilityBox(box, p) {
   }
 }
 
-function renderRuntime() {
-  const box = document.querySelector("#aps-runtime");
-  if (!box) return;
-  box.innerHTML = "";
-  const backend = selectInput(BACKENDS, "ollama");
-  const url = textInput("", "");
-  const model = textInput("", "");
-  const out = el("pre", { class: "aps-pre" });
-
-  const act = (action) => async () => {
-    try {
-      const r = await api("/runtime", {
-        method: "POST",
-        body: JSON.stringify({ backend: backend.value, action, url: url.value, model: model.value }),
-      });
-      out.textContent = JSON.stringify(r, null, 2);
-    } catch (e) { out.textContent = e.message; }
-  };
-
-  box.appendChild(inputRow("后端", backend, "Ollama / llama.cpp server / LM Studio / 自定义"));
-  box.appendChild(inputRow("API URL", url, "服务地址；留空使用默认端口"));
-  box.appendChild(inputRow("模型", model, "模型名（加载/卸载需要）"));
-  const row = el("div", { class: "aps-btn-row" });
-  for (const [label, action] of RUNTIME_ACTIONS) {
-    row.appendChild(el("button", { class: "aps-btn", text: label, onClick: act(action) }));
-  }
-  box.appendChild(row);
-  box.appendChild(out);
-}
-
 function renderLog() {
   const box = document.querySelector("#aps-log");
   if (!box) return;
@@ -857,19 +817,27 @@ function openSupplementEditor(box, record = {}) {
   box.prepend(editor);
 }
 
-// ---------------- 原生 Settings 入口 ----------------
-// ComfyUI 的扩展设置 schema 不提供 action/button 字段，但支持 custom
-// control factory。用真正的 button 避免持久化一个无业务含义的开关状态。
+// ---------------- 入口：ComfyUI 菜单命令 + 原生 Settings 行 ----------------
+// 菜单项必须与 commands 同名：前端按 extension.commands 过滤 menuCommands，
+// 只在菜单里登记 id 而不注册命令会被直接丢弃。
 const PREFIX = "[AI Prompt Studio]";
 
 app.registerExtension({
   name: "AI Prompt Studio Settings",
+  commands: [{
+    id: WORKBENCH_COMMAND,
+    label: "AI Prompt Studio 设置工作台",
+    tooltip: "打开模型档案、能力探测与 Markdown 资料",
+    icon: "pi pi-cog",
+    function: () => openPanel(),
+  }],
+  menuCommands: [{ path: [], commands: [WORKBENCH_COMMAND] }],
   settings: [
     {
       id: "AI Prompt Studio.General.openWorkbench",
       name: "设置工作台",
       category: ["AI Prompt Studio", "常规", "设置工作台"],
-      tooltip: "打开模型档案、能力探测、本地运行时与 Markdown 资料。",
+      tooltip: "打开模型档案、能力探测与 Markdown 资料；也可用左上角 ComfyUI 菜单里的同名命令。",
       type() {
         return el("button", {
           class: "aps-native-settings-button",

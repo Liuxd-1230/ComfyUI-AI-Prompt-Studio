@@ -1,5 +1,7 @@
 # Changelog
 
+- **设置工作台改为菜单一键直达，面板不再内置"本地运行时"**：注册 ComfyUI 命令 `ai.promptstudio.openWorkbench` 并挂到左上角 ComfyUI 菜单（`menuCommands` 里的 id 必须同时出现在 `commands`，否则前端按 `extension.commands` 过滤时直接丢弃），一次点击即进工作台，不必先开原生 Settings 再点按钮；该命令自动出现在 Settings → Keybindings，用户可自行绑定快捷键（不预设组合键——前端遇到组合键冲突会抛错并在每次启动弹一条提示）。原生 Settings 里的入口保留。运行时后端/URL/模型与六个操作按钮从面板移除：本地模型用 `APS_RuntimeControl` / `APS_UnloadModel` 节点，或让本地服务直接以 OpenAI 兼容端点按档案接入；`/runtime` 路由与节点行为不变。顺带修好 Esc：工作台的 Escape 现在截断冒泡，从设置页打开工作台后按 Esc 只关工作台，不再把整个 ComfyUI 设置页一起关掉。
+
 - **Ref2VA 骨架把密度要求说给模型听**：`detailed_description` 的骨架占位只写“one or two English style sentences”，而校验器对整段（风格句 + 全部镜头行）的期望是 350–500 英文词——模型照骨架写十几词就稳定触发 `h3_ref_word_count` 警告，同一段在骨架文本、密度校验与风格开场校验三处各有一套期望。骨架现在明确“先 1–2 句英文风格句，随后写全部镜头行，整段目标 350–500 英文词”，与两个校验对齐；校验级别仍是 warning（建议，不硬失败）。
 
 - **协议重试真的带上被拒输出与缺陷清单；删掉描述别处契约的僵尸代码**：分镜构建器的 `PROTOCOL_RETRY` 守则写着“只修正下列协议缺陷，并保留被拒回答里可用的事实”，但重试请求里既没有 `rejected_output` 也没有 `concrete_issues`，等于把同一份原始请求重发一遍——现在两者随重试一起下发（首次请求不受影响，测试锁住）。`services/structured_output.py` 的 `protocol_failure_message`/`bounded_issues`/`log_protocol_failure` 全无调用方，其文案还断言“在一次重试后仍未返回合法结构化结果”，而重试实际分散在各节点且语义各不相同（LLM 是 JSON 格式修复，Studio 是格式修复加校验重跑）——删掉，只保留仍在使用的 `raw_excerpt`。同时删除 `storyboard_builder._msg` 与 `reference_analyzer._text_msg` 两份逐字相同、无人调用的辅助函数。

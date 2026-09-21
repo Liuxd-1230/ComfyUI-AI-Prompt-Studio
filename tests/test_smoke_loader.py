@@ -222,15 +222,6 @@ def test_frontend_requests_share_the_comfyui_api_base():
     assert 'API_BASE = "/ai_prompt_studio"' in widgets
 
 
-def test_settings_runtime_actions_cover_the_backend_set():
-    """面板的运行时按钮必须等于服务层支持的动作集合。"""
-    from aps.services.runtime.control import RUNTIME_ACTIONS
-
-    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
-    for action in RUNTIME_ACTIONS:
-        assert f'"{action}"' in settings, f"设置面板缺少运行时动作：{action}"
-
-
 def test_panel_prevalidation_mirrors_backend_rules():
     """前端预校验只负责提前报错，区间与取值必须和后端一致，否则漂移由这条测试拦住。"""
     from aps.schemas.profile import AIProfile
@@ -250,6 +241,15 @@ def test_panel_prevalidation_mirrors_backend_rules():
     assert any("temperature" in msg for msg in out_of_range.validate())
     assert any("scope" in msg for msg in
                PromptSupplement(supplement_id="ok1", title="t", scope="Target").validate())
+
+
+def test_workbench_opens_from_the_comfyui_menu():
+    """入口必须是一条菜单命令：只挂在设置页里，进 AI 设置要先开设置再点一次。"""
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    assert "commands: [{" in settings and "menuCommands" in settings
+    assert "WORKBENCH_COMMAND" in settings
+    # 面板不再内置本地运行时分区（本地模型走节点或直接按 OpenAI 兼容端点接入）
+    assert "本地运行时" not in settings and "renderRuntime" not in settings
 
 
 def test_settings_panel_can_set_the_default_profile():
