@@ -1,9 +1,9 @@
 // AI Prompt Studio 设置工作台 —— ComfyUI 内嵌面板
-// 语言：中文默认，可切换 EN；字段 tooltip 用 title 属性。
-// 入口（0.2.1c）：ComfyUI 原生 Settings 页面；设置项触发大型工作台 overlay。
+// 界面固定中文；字段说明用 title 属性。
+// 入口：ComfyUI 原生 Settings 页面；设置项触发大型工作台 overlay。
 import { app } from "../../scripts/app.js";
-import { el, api, toast, t, setLang, lang, maskDisplay } from "./profile_widgets.js";
-import { cachedJson, invalidateCachedJson } from "./data_cache.js";
+import { el, api, toast, maskDisplay } from "./profile_widgets.js";
+import { cachedJson } from "./data_cache.js";
 
 const PROVIDERS = ["deepseek", "openai_compatible", "local"];
 const PROTOCOLS = ["auto", "responses", "chat_completions"];
@@ -30,13 +30,13 @@ function ensureStylesheet() {
   document.head.appendChild(link);
 }
 
-function fieldLabel(key, tooltip) {
-  return el("label", { title: tooltip || t(key) }, [t(key)]);
+function fieldLabel(label, tooltip) {
+  return el("label", { title: tooltip || label }, [label]);
 }
 
-function inputRow(labelKey, input, tooltip) {
+function inputRow(label, input, tooltip) {
   const row = el("div", { class: "aps-field" });
-  row.appendChild(fieldLabel(labelKey, tooltip));
+  row.appendChild(fieldLabel(label, tooltip));
   row.appendChild(input);
   return row;
 }
@@ -134,13 +134,8 @@ function buildPanel() {
 
   // header
   const header = el("div", { class: "aps-header" }, [
-    el("h2", { id: "aps-settings-title", text: t("title") }),
-    el("button", { class: "aps-btn", id: "aps-lang-btn", text: t("lang"), onClick: () => {
-      setLang(lang() === "zh" ? "en" : "zh");
-      document.querySelector("#aps-lang-btn").textContent = t("lang");
-      refreshAll();
-    } }),
-    el("button", { class: "aps-btn aps-btn-close", text: "✕", title: t("close"), onClick: closePanel }),
+    el("h2", { id: "aps-settings-title", text: "AI Prompt Studio 设置" }),
+    el("button", { class: "aps-btn aps-btn-close", text: "✕", title: "关闭", onClick: closePanel }),
   ]);
   body.appendChild(header);
 
@@ -170,8 +165,8 @@ function buildPanel() {
 
   // two columns: profiles list + editor
   const cols = el("div", { class: "aps-cols" });
-  const left = el("div", { class: "aps-col aps-col-list" }, [el("h3", { text: t("profiles") }), el("div", { id: "aps-profile-list" })]);
-  const right = el("div", { class: "aps-col aps-col-editor" }, [el("div", { id: "aps-editor" }, [el("p", { class: "aps-muted", text: t("select_profile") })])]);
+  const left = el("div", { class: "aps-col aps-col-list" }, [el("h3", { text: "档案" }), el("div", { id: "aps-profile-list" })]);
+  const right = el("div", { class: "aps-col aps-col-editor" }, [el("div", { id: "aps-editor" }, [el("p", { class: "aps-muted", text: "选择档案开始配置" })])]);
   cols.appendChild(left);
   cols.appendChild(right);
   profilesPane.appendChild(cols);
@@ -179,20 +174,20 @@ function buildPanel() {
 
   const capabilityPane = el("section", { class: "aps-tab-pane", id: "aps-pane-capabilities", role: "tabpanel" }, [
     el("div", { class: "aps-section" }, [
-    el("h3", { text: t("capabilities") }),
+    el("h3", { text: "能力状态" }),
     el("div", { id: "aps-capabilities" }),
   ])]);
   const runtimePane = el("section", { class: "aps-tab-pane", id: "aps-pane-runtime", role: "tabpanel" }, [
     el("div", { class: "aps-section" }, [
-    el("h3", { text: t("runtime") }),
+    el("h3", { text: "本地运行时" }),
     el("div", { id: "aps-runtime" }),
   ])]);
   const resourcesPane = el("section", { class: "aps-tab-pane", id: "aps-pane-resources", role: "tabpanel" }, [
     el("div", { class: "aps-section" }, [
-    el("h3", { text: t("log") }),
+    el("h3", { text: "请求日志" }),
     el("div", { id: "aps-log" }),
   ]), el("div", { class: "aps-section" }, [
-    el("h3", { text: t("supplements") }),
+    el("h3", { text: "Markdown 补充资料" }),
     el("div", { id: "aps-supplements" }),
   ])]);
   body.append(capabilityPane, runtimePane, resourcesPane);
@@ -216,7 +211,7 @@ async function loadProfilesPane() {
     renderProfiles(list);
     if (currentProfileId) renderEditor(currentProfileId);
   } catch (error) {
-    toast(t("error") + ": " + error.message, true);
+    toast("错误: " + error.message, true);
   }
 }
 
@@ -246,7 +241,7 @@ function renderStatus(info) {
   if (!line) return;
   line.textContent = `v${info.version || "?"}` +
     (info.comfyui_version ? ` · ComfyUI ${info.comfyui_version}` : "") +
-    ` · ${info.profile_count} profiles` +
+    ` · ${info.profile_count} 个档案` +
     (info.anima_booster_detected ? " · ANIMA_BOOSTER 已检测" : "");
 }
 
@@ -256,7 +251,7 @@ function renderProfiles({ profiles, default_profile_id }) {
   if (!box) return;
   box.innerHTML = "";
   if (!profiles.length) {
-    box.appendChild(el("p", { class: "aps-muted", text: t("profiles") + ": —" }));
+    box.appendChild(el("p", { class: "aps-muted", text: "档案" + ": —" }));
   }
   for (const p of profiles) {
     const row = el("div", {
@@ -270,14 +265,14 @@ function renderProfiles({ profiles, default_profile_id }) {
     });
     const title = el("div", { class: "aps-profile-title" }, [
       el("strong", { text: p.name || p.profile_id }),
-      p.profile_id === default_profile_id ? el("span", { class: "aps-badge", text: t("default") }) : null,
+      p.profile_id === default_profile_id ? el("span", { class: "aps-badge", text: "默认" }) : null,
     ]);
     const meta = el("div", { class: "aps-profile-meta", text: `${p.provider} · ${p.model || ""} · key ${maskDisplay(p.api_key_masked)}` });
     row.appendChild(title);
     row.appendChild(meta);
     box.appendChild(row);
   }
-  box.appendChild(el("button", { class: "aps-btn aps-btn-primary", text: "+ " + t("new_profile"), onClick: () => {
+  box.appendChild(el("button", { class: "aps-btn aps-btn-primary", text: "+ " + "新建档案", onClick: () => {
     currentProfileId = "";
     renderEditor("");
   } }));
@@ -297,7 +292,7 @@ function renderEditor(profileId) {
       box.appendChild(buildEditorForm(p));
       renderCapabilities();
     })
-    .catch((e) => toast(t("error") + ": " + e.message, true));
+    .catch((e) => toast("错误: " + e.message, true));
 }
 
 function buildEditorForm(p) {
@@ -305,7 +300,7 @@ function buildEditorForm(p) {
   const isNew = !p;
   p = p || {};
 
-  const name = textInput(p.name, "profile name");
+  const name = textInput(p.name, "档案名称");
   const provider = selectInput(PROVIDERS, p.provider);
   const baseUrl = textInput(p.base_url, "https://api.deepseek.com");
   const knownModels = [...(p.capabilities?.models || [])];
@@ -349,45 +344,45 @@ function buildEditorForm(p) {
   const keyMask = maskDisplay(p.api_key_masked);
   const keyInput = el("input", {
     type: "password",
-    placeholder: keySaved ? `已保存 ${keyMask}；输入新值可替换` : t("api_key_placeholder"),
-    title: t("api_tooltip"),
+    placeholder: keySaved ? `已保存 ${keyMask}；输入新值可替换` : "sk-...（已保存的显示为脱敏值）",
+    title: "仅用于服务端请求；前端与工作流 JSON 中永不出现完整密钥",
   });
 
-  wrap.appendChild(inputRow("name", name, "档案名称"));
-  wrap.appendChild(inputRow("provider", provider, "deepseek=官方 API；openai_compatible=任意 OpenAI 兼容端点；local=本地服务"));
-  wrap.appendChild(inputRow("base_url", baseUrl, "服务实际 API 根地址；OpenAI 兼容服务通常包含 /v1，例如 http://127.0.0.1:1234/v1"));
-  const modelRow = inputRow("model", model, "探测成功后可从模型目录选择；仍允许填写代理端点的自定义模型名");
+  wrap.appendChild(inputRow("名称", name, "档案名称"));
+  wrap.appendChild(inputRow("提供商", provider, "deepseek=官方 API；openai_compatible=任意 OpenAI 兼容端点；local=本地服务"));
+  wrap.appendChild(inputRow("API URL", baseUrl, "服务实际 API 根地址；OpenAI 兼容服务通常包含 /v1，例如 http://127.0.0.1:1234/v1"));
+  const modelRow = inputRow("模型", model, "探测成功后可从模型目录选择；仍允许填写代理端点的自定义模型名");
   modelRow.appendChild(modelChoice.datalist);
   wrap.appendChild(modelRow);
-  wrap.appendChild(inputRow("protocol", protocol, "auto=按能力自动选择；responses=Responses API；chat_completions=Chat Completions"));
-  wrap.appendChild(inputRow("reasoning", reasoning, "推理强度（映射到各协议实际参数）"));
-  wrap.appendChild(inputRow("web_search", webSearch, "联网策略：off/auto/always"));
-  wrap.appendChild(inputRow("unload_policy", unload, "本地模型卸载策略"));
-  wrap.appendChild(inputRow("vision_base_url", visionUrl, "独立视觉端点根地址（可选）；留空复用主 API URL"));
-  const visionModelRow = inputRow("vision_model", visionModel, "视觉模型名；目录元数据明确声明 image 时才自动确认视觉能力，也可在高级设置手动覆盖");
+  wrap.appendChild(inputRow("协议", protocol, "auto=按能力自动选择；responses=Responses API；chat_completions=Chat Completions"));
+  wrap.appendChild(inputRow("推理", reasoning, "推理强度（映射到各协议实际参数）"));
+  wrap.appendChild(inputRow("联网", webSearch, "联网策略：off/auto/always"));
+  wrap.appendChild(inputRow("卸载策略", unload, "本地模型卸载策略"));
+  wrap.appendChild(inputRow("视觉 URL", visionUrl, "独立视觉端点根地址（可选）；留空复用主 API URL"));
+  const visionModelRow = inputRow("视觉模型", visionModel, "视觉模型名；目录元数据明确声明 image 时才自动确认视觉能力，也可在高级设置手动覆盖");
   visionModelRow.appendChild(visionChoice.datalist);
   wrap.appendChild(visionModelRow);
-  wrap.appendChild(inputRow("vision_profile_id", visionProfileId, "视觉/文本 Profile 解耦：从已有档案选择；留空使用本档案的 vision_* 配置与密钥"));
+  wrap.appendChild(inputRow("视觉档案", visionProfileId, "视觉/文本 Profile 解耦：从已有档案选择；留空使用本档案的 vision_* 配置与密钥"));
   wrap.appendChild(visionLinkNote);
-  wrap.appendChild(inputRow("timeout", timeout, "请求超时（秒）"));
+  wrap.appendChild(inputRow("超时(秒)", timeout, "请求超时（秒）"));
 
   // 高级采样区（不进普通节点 UI）
   const adv = el("details", { class: "aps-advanced" });
   const sum = el("summary", { text: "高级采样参数（留空 = provider 默认值）" });
   adv.appendChild(sum);
-  adv.appendChild(inputRow("temperature", temperature, "采样温度（0-2；留空不发送）"));
-  adv.appendChild(inputRow("top_p", topP, "核采样 top_p（0-1；留空不发送）"));
-  adv.appendChild(inputRow("frequency_penalty", freqPenalty, "频率惩罚（-2~2；留空不发送）"));
-  adv.appendChild(inputRow("presence_penalty", presPenalty, "存在惩罚（-2~2；留空不发送）"));
-  adv.appendChild(inputRow("max_tokens", maxTokens, "最大输出 token（留空不发送）"));
-  adv.appendChild(inputRow("search_url", searchUrl, "外部搜索后端地址（POST {query} → {results:[{title,url,snippet}]}；无原生联网搜索时用于降级注入联网结果）"));
-  adv.appendChild(inputRow("supports_vision", supportsVision, ""));
-  adv.appendChild(inputRow("supports_files", supportsFiles, ""));
+  adv.appendChild(inputRow("温度", temperature, "采样温度（0-2；留空不发送）"));
+  adv.appendChild(inputRow("Top P", topP, "核采样 top_p（0-1；留空不发送）"));
+  adv.appendChild(inputRow("频率惩罚", freqPenalty, "频率惩罚（-2~2；留空不发送）"));
+  adv.appendChild(inputRow("存在惩罚", presPenalty, "存在惩罚（-2~2；留空不发送）"));
+  adv.appendChild(inputRow("最大输出 tokens", maxTokens, "最大输出 token（留空不发送）"));
+  adv.appendChild(inputRow("外部搜索地址", searchUrl, "外部搜索后端地址（POST {query} → {results:[{title,url,snippet}]}；无原生联网搜索时用于降级注入联网结果）"));
+  adv.appendChild(inputRow("支持图片输入", supportsVision, ""));
+  adv.appendChild(inputRow("支持文件输入", supportsFiles, ""));
   wrap.appendChild(adv);
 
   // 密钥区
   const keyRow = el("div", { class: "aps-field" });
-  keyRow.appendChild(fieldLabel("api_key", t("api_tooltip")));
+  keyRow.appendChild(fieldLabel("API Key", "仅用于服务端请求；前端与工作流 JSON 中永不出现完整密钥"));
   keyRow.appendChild(keyInput);
   keyRow.appendChild(el("small", {
     id: "aps-key-status",
@@ -395,25 +390,25 @@ function buildEditorForm(p) {
     text: keySaved ? `✓ 密钥已保存（${keyMask}）` : "未保存密钥",
   }));
   const keyBtns = el("div", { class: "aps-btn-row" }, [
-    el("button", { class: "aps-btn aps-btn-primary", text: t("set_key"), disabled: isNew, onClick: async () => {
+    el("button", { class: "aps-btn aps-btn-primary", text: "保存密钥", disabled: isNew, onClick: async () => {
       const val = keyInput.value.trim();
-      if (!val) return toast(t("error") + ": api_key empty", true);
+      if (!val) return toast("错误: api_key 不能为空", true);
       try {
         const r = await api("/profiles/" + encodeURIComponent(p.profile_id) + "/api_key", {
           method: "POST", body: JSON.stringify({ api_key: val }),
         });
         keyInput.value = "";
-        toast(t("key_ok") + " (" + r.masked + ")");
+        toast("密钥已保存" + " (" + r.masked + ")");
         if (p.profile_id) renderEditor(p.profile_id);
         refreshAll();
-      } catch (e) { toast(t("error") + ": " + e.message, true); }
+      } catch (e) { toast("错误: " + e.message, true); }
     } }),
-    el("button", { class: "aps-btn", text: t("clear_key"), disabled: isNew || !keySaved, onClick: async () => {
+    el("button", { class: "aps-btn", text: "清除密钥", disabled: isNew || !keySaved, onClick: async () => {
       try {
         await api("/profiles/" + encodeURIComponent(p.profile_id) + "/api_key", { method: "DELETE" });
-        toast(t("key_ok"));
+        toast("密钥已保存");
         if (p.profile_id) renderEditor(p.profile_id);
-      } catch (e) { toast(t("error") + ": " + e.message, true); }
+      } catch (e) { toast("错误: " + e.message, true); }
     } }),
   ]);
   keyRow.appendChild(keyBtns);
@@ -421,7 +416,7 @@ function buildEditorForm(p) {
   wrap.appendChild(keyRow);
 
   // 保存/删除/测试/探测
-  const saveBtn = el("button", { class: "aps-btn aps-btn-primary", text: t("save"), onClick: async () => {
+  const saveBtn = el("button", { class: "aps-btn aps-btn-primary", text: "保存", onClick: async () => {
     const payload = {
       name: name.value, provider: provider.value, base_url: baseUrl.value,
       model: model.value, protocol: protocol.value, reasoning: reasoning.value,
@@ -445,40 +440,40 @@ function buildEditorForm(p) {
       } else {
         await api("/profiles/" + encodeURIComponent(p.profile_id), { method: "PUT", body: JSON.stringify(payload) });
       }
-      toast(t("save_ok"));
+      toast("已保存");
       refreshAll();
-    } catch (e) { toast(t("error") + ": " + e.message, true); }
+    } catch (e) { toast("错误: " + e.message, true); }
   } });
 
-  const delBtn = el("button", { class: "aps-btn aps-btn-danger", text: t("delete"), onClick: async () => {
-    if (!confirm(t("delete_confirm"))) return;
+  const delBtn = el("button", { class: "aps-btn aps-btn-danger", text: "删除", onClick: async () => {
+    if (!confirm("确定删除该档案？")) return;
     try {
       await api("/profiles/" + encodeURIComponent(p.profile_id), { method: "DELETE" });
       currentProfileId = "";
-      toast(t("save_ok"));
+      toast("已删除");
       refreshAll();
-    } catch (e) { toast(t("error") + ": " + e.message, true); }
+    } catch (e) { toast("错误: " + e.message, true); }
   } });
 
-  const testBtn = el("button", { class: "aps-btn", text: t("test"), onClick: async () => {
+  const testBtn = el("button", { class: "aps-btn", text: "测试", onClick: async () => {
     try {
       const r = await api("/profiles/" + encodeURIComponent(p.profile_id) + "/test", { method: "POST", body: "{}" });
-      toast(r.ok ? t("test_ok") : t("test_fail") + ": " + (r.error || ""), !r.ok);
-    } catch (e) { toast(t("error") + ": " + e.message, true); }
+      toast(r.ok ? "连接正常" : "连接失败: " + (r.error || ""), !r.ok);
+    } catch (e) { toast("错误: " + e.message, true); }
   } });
 
-  const probeBtn = el("button", { class: "aps-btn", text: t("probe"), onClick: async () => {
+  const probeBtn = el("button", { class: "aps-btn", text: "能力探测", onClick: async () => {
     if (!confirm("能力探测会向当前模型发送最小文本、JSON、工具、图片和文件测试请求，并消耗少量 token。继续吗？")) return;
     probeBtn.disabled = true;
     probeBtn.textContent = "正在逐项实测…";
     try {
       const r = await api("/profiles/" + encodeURIComponent(p.profile_id) + "/probe", { method: "POST", body: "{}" });
-      toast(r.ok ? t("probe_ok") : r.error || t("test_fail"), !r.ok);
+      toast(r.ok ? "探测完成" : r.error || "连接失败", !r.ok);
       await refreshAll();
-    } catch (e) { toast(t("error") + ": " + e.message, true); }
+    } catch (e) { toast("错误: " + e.message, true); }
     finally {
       probeBtn.disabled = false;
-      probeBtn.textContent = t("probe");
+      probeBtn.textContent = "能力探测";
     }
   } });
 
@@ -498,7 +493,7 @@ function renderCapabilities() {
   if (!box) return;
   box.innerHTML = "";
   if (!currentProfileId) {
-    box.appendChild(el("p", { class: "aps-muted", text: t("select_profile") }));
+    box.appendChild(el("p", { class: "aps-muted", text: "选择档案开始配置" }));
     return;
   }
   api("/profiles/" + encodeURIComponent(currentProfileId))
@@ -570,19 +565,19 @@ function renderRuntime() {
     } catch (e) { out.textContent = e.message; }
   };
 
-  box.appendChild(inputRow("backend", backend, "Ollama / llama.cpp server / LM Studio / 自定义"));
-  box.appendChild(inputRow("base_url", url, "服务地址；留空使用默认端口"));
-  box.appendChild(inputRow("model", model, "模型名（加载/卸载需要）"));
+  box.appendChild(inputRow("后端", backend, "Ollama / llama.cpp server / LM Studio / 自定义"));
+  box.appendChild(inputRow("API URL", url, "服务地址；留空使用默认端口"));
+  box.appendChild(inputRow("模型", model, "模型名（加载/卸载需要）"));
   const row = el("div", { class: "aps-btn-row" });
   const runtimeActions = [
-    ["runtime_status", "status"],
-    ["runtime_list", "list_models"],
-    ["runtime_load", "load"],
-    ["runtime_unload", "unload"],
-    ["runtime_unload_all", "unload_all"],
+    ["状态", "status"],
+    ["模型列表", "list_models"],
+    ["加载", "load"],
+    ["卸载", "unload"],
+    ["全部卸载", "unload_all"],
   ];
   for (const [label, action] of runtimeActions) {
-    row.appendChild(el("button", { class: "aps-btn", text: t(label), onClick: act(action) }));
+    row.appendChild(el("button", { class: "aps-btn", text: label, onClick: act(action) }));
   }
   box.appendChild(row);
   box.appendChild(out);
@@ -600,8 +595,8 @@ function renderLog() {
       }
       const table = el("table", { class: "aps-table" });
       table.appendChild(el("tr", {}, [
-        el("th", { text: "time" }), el("th", { text: "profile" }),
-        el("th", { text: "kind" }), el("th", { text: "ok" }), el("th", { text: "detail" }),
+        el("th", { text: "时间" }), el("th", { text: "档案" }),
+        el("th", { text: "类型" }), el("th", { text: "结果" }), el("th", { text: "详情" }),
       ]));
       for (const e of log) {
         table.appendChild(el("tr", {}, [
@@ -637,9 +632,9 @@ function renderSupplements() {
       }
       const table = el("table", { class: "aps-table" });
       table.appendChild(el("tr", {}, [
-        el("th", { text: "id" }), el("th", { text: "标题" }),
+        el("th", { text: "资料 ID" }), el("th", { text: "标题" }),
         el("th", { text: "适用范围" }), el("th", { text: "状态" }),
-        el("th", { text: "大小" }), el("th", { text: "hash / 更新时间" }),
+        el("th", { text: "大小" }), el("th", { text: "摘要 / 更新时间" }),
         el("th", { text: "操作" }),
       ]));
       for (const s of supplements) {
@@ -648,7 +643,7 @@ function renderSupplements() {
           try {
             const detail = await api("/supplements/" + encodeURIComponent(s.supplement_id));
             openSupplementEditor(box, detail);
-          } catch (e) { toast(t("error") + ": " + e.message, true); }
+          } catch (e) { toast("错误: " + e.message, true); }
         } }));
         ops.appendChild(el("button", { class: "aps-btn aps-btn-mini", text: s.enabled ? "停用" : "启用", onClick: async () => {
           try {
@@ -656,15 +651,15 @@ function renderSupplements() {
               method: "POST", body: JSON.stringify({ enabled: !s.enabled }),
             });
             renderSupplements();
-          } catch (e) { toast(t("error") + ": " + e.message, true); }
+          } catch (e) { toast("错误: " + e.message, true); }
         } }));
         ops.appendChild(el("button", { class: "aps-btn aps-btn-mini aps-btn-danger", text: "删除", onClick: async () => {
           if (!confirm("删除 Markdown 资料 " + s.supplement_id + "？")) return;
           try {
             await api("/supplements/" + encodeURIComponent(s.supplement_id), { method: "DELETE" });
-            toast(t("save_ok"));
+            toast("已保存");
             renderSupplements();
-          } catch (e) { toast(t("error") + ": " + e.message, true); }
+          } catch (e) { toast("错误: " + e.message, true); }
         } }));
         table.appendChild(el("tr", {}, [
           el("td", { text: s.supplement_id }), el("td", { text: s.title }),
@@ -690,24 +685,26 @@ function openSupplementEditor(box, record = {}) {
   if (old) old.remove();
   const editor = el("div", { class: "aps-supplement-editor" });
   const fields = {};
-  const add = (name, value, multiline = false) => {
+  const add = (name, label, value, tooltip, multiline = false) => {
     const input = multiline
       ? el("textarea", { rows: 12 })
-      : textInput(value || "", name);
+      : textInput(value || "", label);
     input.value = value || "";
     input.disabled = name === "supplement_id" && !!record.supplement_id;
     fields[name] = input;
-    editor.appendChild(inputRow(name, input, name));
+    editor.appendChild(inputRow(label, input, tooltip));
   };
   editor.appendChild(el("h4", { text: record.supplement_id ? "编辑 Markdown 补充资料" : "新建 Markdown 补充资料" }));
-  add("supplement_id", record.supplement_id || "");
-  add("title", record.title || "");
-  add("filename", record.filename || "reference.md");
-  add("scope", record.scope || "target");
-  add("target_families", (record.target_families || []).join(","));
-  add("node_ids", (record.node_ids || []).join(","));
-  add("description", record.description || "");
-  add("content", record.content || "", true);
+  add("supplement_id", "资料 ID", record.supplement_id || "",
+    "字母开头，仅字母/数字/下划线/连字符，最长 64 字符；已保存的资料不能改 ID");
+  add("title", "标题", record.title || "", "必填，最长 160 字符");
+  add("filename", "文件名", record.filename || "reference.md", "不带目录的 .md 文件名");
+  add("scope", "适用范围", record.scope || "target", "只能填 global、node 或 target（小写）");
+  add("target_families", "目标系列", (record.target_families || []).join(","),
+    "逗号分隔；scope=target 时不能有空项");
+  add("node_ids", "节点 ID", (record.node_ids || []).join(","), "逗号分隔；scope=node 时至少填一个");
+  add("description", "说明", record.description || "", "资料用途备注");
+  add("content", "正文", record.content || "", "Markdown 正文，最大 256 KiB", true);
   const fileInput = el("input", { type: "file", accept: ".md,text/markdown" });
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files?.[0];
@@ -735,15 +732,15 @@ function openSupplementEditor(box, record = {}) {
     try {
       const path = record.supplement_id ? "/supplements/" + encodeURIComponent(record.supplement_id) : "/supplements";
       await api(path, { method: record.supplement_id ? "PUT" : "POST", body: JSON.stringify(payload) });
-      toast(t("save_ok"));
+      toast("已保存");
       renderSupplements();
-    } catch (e) { toast(t("error") + ": " + e.message, true); }
+    } catch (e) { toast("错误: " + e.message, true); }
   } }));
   editor.appendChild(actions);
   box.prepend(editor);
 }
 
-// ---------------- 原生 Settings 入口（0.2.1c） ----------------
+// ---------------- 原生 Settings 入口 ----------------
 // ComfyUI 的扩展设置 schema 不提供 action/button 字段，但支持 custom
 // control factory。用真正的 button 避免持久化一个无业务含义的开关状态。
 const PREFIX = "[AI Prompt Studio]";
@@ -751,22 +748,6 @@ const PREFIX = "[AI Prompt Studio]";
 app.registerExtension({
   name: "AI Prompt Studio Settings",
   settings: [
-    {
-      id: "AI Prompt Studio.General.language",
-      name: "界面语言",
-      category: ["AI Prompt Studio", "常规", "界面语言"],
-      type: "combo",
-      defaultValue: "zh",
-      options: [
-        { text: "中文", value: "zh" },
-        { text: "English", value: "en" },
-      ],
-      onChange(value) {
-        setLang(value === "en" ? "en" : "zh");
-        const btn = document.querySelector("#aps-lang-btn");
-        if (btn) btn.textContent = t("lang");
-      },
-    },
     {
       id: "AI Prompt Studio.General.openWorkbench",
       name: "设置工作台",

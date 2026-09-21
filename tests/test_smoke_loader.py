@@ -8,6 +8,7 @@
 """
 import importlib.util
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -186,6 +187,20 @@ def test_frontend_registries_use_shared_request_cache():
     assert "current?.promise" in cache
     assert 'cachedJson("/ai_prompt_studio/profiles")' in settings
     assert 'cachedJson("/ai_prompt_studio/supplements")' in supplements
+
+
+def test_settings_panel_is_chinese_only():
+    """面板文案直接写中文：双语字典曾让未注册字段显示成原始 key（如 temperature）。"""
+    widgets = (PROJECT_ROOT / "web" / "profile_widgets.js").read_text(encoding="utf-8")
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    assert "I18N" not in widgets
+    assert not re.search(r'(?<![A-Za-z0-9_.])t\(\s*"', settings), "settings.js 仍在查 i18n 字典"
+    assert "aps-lang-btn" not in settings and "界面语言" not in settings
+
+    labels = re.findall(r'\b(?:inputRow|fieldLabel)\(\s*"([^"]*)"', settings)
+    assert len(labels) > 20, labels
+    snake_case = [label for label in labels if re.fullmatch(r"[a-z][a-z0-9_]*", label)]
+    assert not snake_case, f"字段标签仍是原始 key：{snake_case}"
 
 
 def test_studio_session_widgets_follow_public_inputs(loaded):
