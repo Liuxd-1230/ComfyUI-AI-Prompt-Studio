@@ -117,7 +117,7 @@ class APS_LLMGenerate:
         # 内部守则 + 用户 system_prompt 合并（内部在前优先，用户指令不丢弃）
         user_system = system_prompt or DEFAULT_SYSTEM_PROMPT
         supplement_sources, _ = load_supplement_sources(
-            prompt_supplements, family="generic_llm", node_id="llm.generate")
+            prompt_supplements, family="generic_llm", node_scope="llm.generate")
         sources = [
             PromptSource("runtime.llm-chat", "1.0", PromptLayer.RUNTIME,
                          INTERNAL_SYSTEM_PROMPT, "llm.generate"),

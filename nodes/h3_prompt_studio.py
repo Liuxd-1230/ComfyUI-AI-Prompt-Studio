@@ -95,7 +95,8 @@ class APS_H3PromptStudio:
         profile = resolve_profile_input(AI_PROFILE)
         api_key = require_api_key(profile)
         supplement_sources, supplement_hashes = load_supplement_sources(
-            prompt_supplements, family="minimax_h3", node_id=str(unique_id or "").strip())
+            prompt_supplements, family="minimax_h3", node_id=str(unique_id or "").strip(),
+            node_scope="h3.studio")
         manifest, image_count = prepare_manifest(
             reference_manifest, images, (video_1, video_2, video_3),
             (audio_1, audio_2, audio_3))

@@ -192,7 +192,7 @@ class APS_ReferenceAnalyzer:
         vision_key = require_api_key(vision_prof) if has_images else ""
         supplement_sources, _ = load_supplement_sources(
             prompt_supplements, family="reference_analyzer",
-            node_id="reference.analyzer")
+            node_scope="reference.analyzer")
 
         analysis = ReferenceAnalysis(mode=analysis_mode, profile_id=prof.profile_id)
         base_prompt = MODE_PROMPTS.get(analysis_mode) or custom_prompt

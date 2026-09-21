@@ -81,7 +81,7 @@ class APS_StoryboardBuilder:
             book = CharacterBook.from_bible(bible)
         manifest = ReferenceManifest.from_json(reference_manifest) if reference_manifest else None
         supplement_sources, _ = load_supplement_sources(
-            prompt_supplements, family="storyboard", node_id="storyboard.create")
+            prompt_supplements, family="storyboard", node_scope="storyboard.create")
         task_payload = {
             "story_text": story_text.strip(),
             "split_mode": split_mode,

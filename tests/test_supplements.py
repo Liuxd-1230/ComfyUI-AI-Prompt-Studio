@@ -15,6 +15,30 @@ def _redirect(tmp_path, monkeypatch):
     return root
 
 
+def test_node_scope_accepts_instance_id_and_scope_name(tmp_path, monkeypatch):
+    """scope=node 的 node_ids 同时接受节点实例 ID 与整类作用域名，且不再混淆。"""
+    _redirect(tmp_path, monkeypatch)
+    supplements.import_supplement({
+        "supplement_id": "whole-studio", "title": "whole", "filename": "a.md",
+        "scope": "node", "node_ids": ["prompt.studio"], "content": "A"})
+    supplements.import_supplement({
+        "supplement_id": "one-node", "title": "one", "filename": "b.md",
+        "scope": "node", "node_ids": ["42"], "content": "B"})
+
+    chosen = [record.supplement_id for record in supplements.select_supplements(
+        "whole-studio,one-node", family="anima",
+        node_id="42", node_scope="prompt.studio")]
+    assert chosen == ["whole-studio", "one-node"]
+
+    # 只有实例 ID 的节点（如 LLM Chat）传作用域名也能命中
+    assert [record.supplement_id for record in supplements.select_supplements(
+        "whole-studio", family="anima", node_scope="prompt.studio")] == ["whole-studio"]
+    # 既不是该实例也不属该类 → 明确不适用，不再静默匹配
+    with pytest.raises(ValueError, match="不适用于"):
+        supplements.select_supplements("whole-studio,one-node", family="anima",
+                                       node_id="7", node_scope="llm.generate")
+
+
 def test_markdown_roundtrip_and_target_selection(tmp_path, monkeypatch):
     _redirect(tmp_path, monkeypatch)
     record = supplements.import_supplement({

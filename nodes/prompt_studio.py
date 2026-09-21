@@ -96,7 +96,8 @@ class APS_PromptStudio:
         api_key = require_api_key(profile)
         family, variant = _split_target(target)
         supplement_sources, supplement_hashes = load_supplement_sources(
-            prompt_supplements, family=family, node_id=str(unique_id or "").strip())
+            prompt_supplements, family=family, node_id=str(unique_id or "").strip(),
+            node_scope="prompt.studio")
         session = (PromptSession.from_json(prompt_session)
                    if prompt_session else PromptSession())
         node_id = str(unique_id or "").strip()

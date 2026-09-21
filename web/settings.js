@@ -815,7 +815,9 @@ function openSupplementEditor(box, record = {}) {
   add("scope", "适用范围", record.scope || "target", "只能填 global、node 或 target（小写）");
   add("target_families", "目标系列", (record.target_families || []).join(","),
     "逗号分隔；scope=target 时不能有空项");
-  add("node_ids", "节点 ID", (record.node_ids || []).join(","), "逗号分隔；scope=node 时至少填一个");
+  add("node_ids", "节点 ID", (record.node_ids || []).join(","),
+    "逗号分隔；scope=node 时至少填一个。可填 ComfyUI 节点实例 ID（只匹配画布上那一个节点），"
+    + "或整类节点的作用域名：prompt.studio、h3.studio、llm.generate、reference.analyzer、storyboard.create");
   add("description", "说明", record.description || "", "资料用途备注");
   add("content", "正文", record.content || "", "Markdown 正文，最大 256 KiB", true);
   const fileInput = el("input", { type: "file", accept: ".md,text/markdown" });

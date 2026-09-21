@@ -22,6 +22,16 @@ MAX_SUPPLEMENT_CONTEXT_CHARS = 128 * 1024
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
+# scope="node" 的 node_ids 可填 ComfyUI 节点实例 ID，也可填下面的稳定作用域名
+# （对整类节点生效，跨工作流与复制节点都可用）。
+NODE_SCOPES = {
+    "prompt.studio": "图像提示词工作台",
+    "h3.studio": "MiniMax H3 提示词工作台",
+    "llm.generate": "LLM 生成 / 对话",
+    "reference.analyzer": "参考图分析",
+    "storyboard.create": "分镜构建器",
+}
+
 
 def supplements_dir() -> Path:
     return default_config_dir() / "prompt_supplements"
@@ -254,17 +264,23 @@ def set_supplement_enabled(supplement_id: str, enabled: bool) -> PromptSupplemen
     return update_supplement(supplement_id, {"enabled": bool(enabled)})
 
 
-def _applicable(record: PromptSupplement, *, family: str, node_id: str) -> bool:
+def _applicable(record: PromptSupplement, *, family: str, node_id: str,
+                node_scope: str = "") -> bool:
     if not record.enabled:
         return False
     if record.scope == "node":
-        return node_id in record.node_ids
+        # node_ids 允许两种键：ComfyUI 节点实例 ID（只针对画布上那一个节点），
+        # 或 NODE_SCOPES 里的稳定作用域名（针对整类节点）。此前两类键混用，
+        # 同一个 UI 字段在 Studio 里要实例 ID、在 LLM Chat 里要作用域名。
+        keys = {value for value in (node_id, node_scope) if value}
+        return bool(keys & set(record.node_ids))
     if record.scope == "target":
         return not record.target_families or family in record.target_families
     return True
 
 
-def select_supplements(selection: str, *, family: str, node_id: str = ""
+def select_supplements(selection: str, *, family: str, node_id: str = "",
+                       node_scope: str = ""
                        ) -> list[PromptSupplement]:
     """Select enabled Markdown by explicit IDs or the visible ``auto`` choice."""
     records = list_supplements()
@@ -276,13 +292,16 @@ def select_supplements(selection: str, *, family: str, node_id: str = ""
             # Generic chat must never acquire project-wide guidance implicitly;
             # only an explicit supplement ID may enter that node.
             return []
-        return [item for item in records if _applicable(item, family=family, node_id=node_id)]
+        return [item for item in records
+                if _applicable(item, family=family, node_id=node_id,
+                               node_scope=node_scope)]
     wanted = [item.strip() for item in choice.split(",") if item.strip()]
     by_id = {item.supplement_id: item for item in records}
     selected = []
     for supplement_id in dict.fromkeys(wanted):
         item = by_id.get(supplement_id)
-        if item is not None and _applicable(item, family=family, node_id=node_id):
+        if item is not None and _applicable(item, family=family, node_id=node_id,
+                                            node_scope=node_scope):
             selected.append(item)
     missing = [item for item in dict.fromkeys(wanted)
                if item not in {record.supplement_id for record in selected}]
@@ -291,10 +310,12 @@ def select_supplements(selection: str, *, family: str, node_id: str = ""
     return selected
 
 
-def supplement_sources(selection: str, *, family: str, node_id: str = ""
+def supplement_sources(selection: str, *, family: str, node_id: str = "",
+                       node_scope: str = ""
                        ) -> tuple[list[PromptSource], dict[str, str]]:
     """Compile selected Markdown into bounded, provenance-bearing Guidance sources."""
-    selected = select_supplements(selection, family=family, node_id=node_id)
+    selected = select_supplements(selection, family=family, node_id=node_id,
+                                  node_scope=node_scope)
     if len(selected) > MAX_ACTIVE_SUPPLEMENTS:
         raise ValueError(
             f"本次最多加载 {MAX_ACTIVE_SUPPLEMENTS} 份 Markdown 补充资料，"

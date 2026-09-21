@@ -22,7 +22,7 @@
 - **Local Runtime Control**：Ollama / llama.cpp / LM Studio 的加载、卸载、状态查询。
 - **Unload LM Studio Model**：串接在 LLM prompt 输出与后续生成节点之间，按 `instance_id` 卸载 LM Studio 后原样透传 prompt，先释放外部 LLM 显存再加载图像/视频模型。
 - **设置工作台**：ComfyUI 内嵌面板，按档案、能力、本地运行时、Markdown/日志分区懒加载；支持 Esc 关闭和键盘焦点循环。
-- **Model Core + Markdown 参考**：目标模型的硬规则由仓库内不可编辑 Model Core 持有；用户 Markdown 通过节点默认收起的 **高级设置 · Prompt Supplements** 选择（`auto` 仅用于目标节点），作为带来源/hash 的低优先级参考，不能覆盖协议、Schema、锁定事实或 validator。单份资料最多 256 KiB，每次最多 8 份、总上下文最多 128 KiB；工作流只保存稳定 ID。
+- **Model Core + Markdown 参考**：目标模型的硬规则由仓库内不可编辑 Model Core 持有；用户 Markdown 通过节点默认收起的 **高级设置 · Prompt Supplements** 选择（`auto` 仅用于目标节点），作为带来源/hash 的低优先级参考，不能覆盖协议、Schema、锁定事实或 validator。单份资料最多 256 KiB，每次最多 8 份、总上下文最多 128 KiB；工作流只保存稳定 ID。`scope=node` 的 `node_ids` 可以填 ComfyUI 节点实例 ID（只匹配画布上那一个节点），也可以填整类节点的作用域名：`prompt.studio`、`h3.studio`、`llm.generate`、`reference.analyzer`、`storyboard.create`。
 - **统一操作策略**：CREATE、REFINE、格式修复、协议重试和参考观察由同一版本化 Operation Policy 接口提供。REFINE 只表达本轮增量并保留无关内容；修复只处理明确问题且最多一次。旧 operation 和 execution mode 下拉均已删除。
 - **机器输出契约**：JSON Schema、`<PROMPT>/<SUMMARY>` envelope、JSON-only 模式和 provider fallback 由统一 `OutputContract` 持有。支持原生 Structured Output 时发送机器 Schema；不支持时从同一 Schema 自动派生约束，不再手抄 JSON 示例。输出契约是最后一个 system 层，Markdown 资料不能覆盖它。
 - **前端入口**：不占用 ComfyUI Sidebar；在 **Settings → AI Prompt Studio** 点击“打开 AI Prompt Studio 设置工作台”即可进入。API Key 不进原生 Settings，仍由工作台填写并只存服务端。Studio 会检查前后端版本；更新节点包后若看到“需重启”，请重启 ComfyUI，不要在新旧代码混用时执行。
