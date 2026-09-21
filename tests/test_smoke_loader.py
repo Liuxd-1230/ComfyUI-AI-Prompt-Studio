@@ -214,6 +214,12 @@ def test_registry_cache_and_panel_renderers_ignore_superseded_responses():
     assert "renderCapabilities(p)" in settings, "能力区应复用已取回的档案，不再重复请求"
 
 
+def test_settings_panel_can_set_the_default_profile():
+    """面板此前只显示默认档案、不能设置它，而节点留空时用的正是这个档案。"""
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    assert "设为默认" in settings and '"/default"' in settings
+
+
 def test_settings_panel_writes_api_key_only_through_save():
     """档案与密钥共用一次“保存”：两个独立写入按钮曾让新建时填写的密钥被静默丢弃。"""
     settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")

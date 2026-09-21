@@ -1,6 +1,7 @@
 """配置存储测试：profile CRUD / 默认档案 / 能力缓存 / 请求日志。"""
 import pytest
 
+from aps.server import routes
 from aps.server.config_store import ConfigStore
 
 
@@ -49,6 +50,20 @@ def test_default_profile(store):
     assert store.get_default_profile().profile_id == "b"
     with pytest.raises(KeyError):
         store.set_default_profile("nope")
+
+
+def test_default_badge_follows_the_profile_nodes_will_use(store):
+    """删掉默认档案后徽章不能消失：节点留空时真正用的是回退到的那个档案。"""
+    store.create_profile({"profile_id": "a"})
+    store.create_profile({"profile_id": "b"})
+    store.delete_profile("a")
+    assert store._config["default_profile_id"] == ""
+    assert routes.handle_list_profiles(store)["default_profile_id"] == "b"
+
+    routes.handle_set_default_profile("b", store)
+    assert store._config["default_profile_id"] == "b"
+    with pytest.raises(KeyError):
+        routes.handle_set_default_profile("nope", store)
 
 
 def test_capability_cache(store):

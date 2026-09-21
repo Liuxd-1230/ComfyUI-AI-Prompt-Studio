@@ -15,6 +15,7 @@ const ACTIONS = ["status", "list_models", "load", "unload", "reload", "unload_al
 
 let panel = null;
 let currentProfileId = "";
+let defaultProfileId = "";
 let profileRecords = [];
 let activePanelTab = "profiles";
 let panelReturnFocus = null;
@@ -257,6 +258,7 @@ function renderStatus(info) {
 
 function renderProfiles({ profiles, default_profile_id }) {
   profileRecords = profiles || [];
+  defaultProfileId = default_profile_id || "";
   const box = document.querySelector("#aps-profile-list");
   if (!box) return;
   box.innerHTML = "";
@@ -483,6 +485,19 @@ function buildEditorForm(p) {
     } catch (e) { toast("错误: " + e.message, true); }
   } });
 
+  const isDefault = !isNew && p.profile_id === defaultProfileId;
+  const defaultBtn = el("button", {
+    class: "aps-btn", text: isDefault ? "当前默认档案" : "设为默认", disabled: isDefault,
+    title: "Model Profile 节点留空时会使用这个档案",
+    onClick: async () => {
+      try {
+        await api("/profiles/" + encodeURIComponent(p.profile_id) + "/default", { method: "POST", body: "{}" });
+        toast("已设为默认");
+        refreshAll();
+      } catch (e) { toast("错误: " + e.message, true); }
+    },
+  });
+
   const testBtn = el("button", { class: "aps-btn", text: "测试", onClick: async () => {
     try {
       const r = await api("/profiles/" + encodeURIComponent(p.profile_id) + "/test", { method: "POST", body: "{}" });
@@ -511,6 +526,7 @@ function buildEditorForm(p) {
   if (!isNew) {
     actions.appendChild(testBtn);
     actions.appendChild(probeBtn);
+    actions.appendChild(defaultBtn);
     actions.appendChild(delBtn);
   }
   wrap.appendChild(actions);

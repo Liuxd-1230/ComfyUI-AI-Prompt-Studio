@@ -181,9 +181,9 @@
 ## D28. 主动能力探测（2026-08-08）
 
 - `/models` 只负责认证线索与模型下拉，不再推断 Chat、Responses、Schema、工具或多模态能力。
-- 用户手动点“重新探测”后，按运行时实际请求格式逐项发送最小非流式请求：Chat、Responses、Chat/Responses JSON Schema、Chat JSON Object、两协议函数工具、两协议图片、两协议文件、Responses web_search，以及独立视觉模型 Chat。
+- 用户手动点“能力探测”后，按运行时实际请求格式逐项发送最小非流式请求：Chat、Responses、Chat/Responses JSON Schema、Chat JSON Object、两协议函数工具、两协议图片、两协议文件、Responses web_search，以及独立视觉模型 Chat。
 - HTTP 200 不是能力成功的充分条件：JSON 必须可解析且等于固定对象，工具必须返回指定 function call，图片必须识别 8×8 洋红测试图，文件必须读回随机标记，联网必须出现 web search call。
 - 有 API Key 且完成执行探针后，运行能力只存 bool，不留 unknown；每项保存端点、HTTP 状态和失败原因。认证失败会停止后续探针，避免连续无效请求。
-- 完整探测会消耗少量 token，设置页点击前必须明确确认；“测试连接”只运行目录和两条最小文本协议测试。
+- 完整探测会消耗少量 token，设置页点击前必须明确确认；“测试”只运行目录和两条最小文本协议测试。
 - 主模型 `vision/files` 与 Reference Analyzer 的 `vision_service` 分开；auto 协议按 `vision_chat/responses`、`files_chat/responses` 和 `function_tools_chat/responses` 选择真正通过探针的路径。
 - 探测完成会把 `supports_vision/supports_files` 回写为实测聚合结果；Profile/Key 变化或 probe 版本升级使缓存指纹失效。

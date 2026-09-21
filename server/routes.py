@@ -87,7 +87,10 @@ def handle_list_profiles(store: ConfigStore) -> Dict[str, Any]:
     profiles = store.list_profiles()
     for profile in profiles:
         profile["capabilities"] = store.get_capabilities(profile["profile_id"])
-    return {"profiles": profiles, "default_profile_id": store._config.get("default_profile_id", "")}
+    # 「默认」徽章必须等于节点留空时真正会用的那个档案：default_profile_id
+    # 为空时 get_default_profile() 会隐式回退到第一个档案。
+    default = store.get_default_profile()
+    return {"profiles": profiles, "default_profile_id": default.profile_id if default else ""}
 
 
 def handle_get_profile(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
@@ -110,6 +113,12 @@ def handle_update_profile(profile_id: str, payload: Dict[str, Any], store: Confi
 def handle_delete_profile(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
     store.delete_profile(profile_id)
     return {"ok": True, "profile_id": profile_id}
+
+
+def handle_set_default_profile(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
+    """把档案设为节点留空时使用的默认档案。"""
+    store.set_default_profile(profile_id)
+    return {"ok": True, "default_profile_id": profile_id}
 
 
 def handle_set_api_key(profile_id: str, payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
@@ -374,6 +383,10 @@ def register_routes() -> None:
         pid = request.match_info["profile_id"]
         return await _run(request, lambda req, payload, st: handle_delete_profile(pid, st))
 
+    async def r_profiles_set_default(request):
+        pid = request.match_info["profile_id"]
+        return await _run(request, lambda req, payload, st: handle_set_default_profile(pid, st))
+
     async def r_api_key_set(request):
         pid = request.match_info["profile_id"]
         return await _run(request, lambda req, payload, st: handle_set_api_key(pid, payload, st))
@@ -446,6 +459,7 @@ def register_routes() -> None:
     routes.post(f"{API_PREFIX}/profiles")(r_profiles_create)
     routes.put(f"{API_PREFIX}/profiles/{{profile_id}}")(r_profiles_update)
     routes.delete(f"{API_PREFIX}/profiles/{{profile_id}}")(r_profiles_delete)
+    routes.post(f"{API_PREFIX}/profiles/{{profile_id}}/default")(r_profiles_set_default)
     routes.post(f"{API_PREFIX}/profiles/{{profile_id}}/api_key")(r_api_key_set)
     routes.delete(f"{API_PREFIX}/profiles/{{profile_id}}/api_key")(r_api_key_clear)
     routes.post(f"{API_PREFIX}/profiles/{{profile_id}}/probe")(r_probe)

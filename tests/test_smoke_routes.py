@@ -23,6 +23,7 @@ EXPECTED_ROUTE_PATHS = {
     ("POST", "/ai_prompt_studio/profiles"),
     ("PUT", "/ai_prompt_studio/profiles/{profile_id}"),
     ("DELETE", "/ai_prompt_studio/profiles/{profile_id}"),
+    ("POST", "/ai_prompt_studio/profiles/{profile_id}/default"),
     ("POST", "/ai_prompt_studio/profiles/{profile_id}/api_key"),
     ("DELETE", "/ai_prompt_studio/profiles/{profile_id}/api_key"),
     ("POST", "/ai_prompt_studio/profiles/{profile_id}/probe"),

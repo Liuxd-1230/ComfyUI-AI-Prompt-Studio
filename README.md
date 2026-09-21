@@ -44,8 +44,8 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 ## 快速开始
 
 1. 启动 ComfyUI，打开 **Settings（Ctrl+,）** → **AI Prompt Studio**，点击“打开 AI Prompt Studio 设置工作台”。
-2. 新建档案，选择 provider、API 根地址和模型，保存后填写 API Key（只保存在本机 `user/ai_prompt_studio/secrets.json`）。先点“测试连接”，再点“重新探测”。
-3. “重新探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。
+2. 新建档案，选择 provider、API 根地址和模型；API Key 可以直接填在同一个表单里，点“保存”会先创建档案再写入密钥（密钥只保存在本机 `user/ai_prompt_studio/secrets.json`，不进前端和工作流 JSON）。保存后先点“测试”，再点“能力探测”。
+3. “能力探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。多个档案可用“设为默认”指定节点留空时使用的那个（列表里带“默认”徽章）。
 4. 在节点图中放置 **AI Model Profile**，直接从“档案名称 [ID]”和该档案的模型目录下拉选择。
 5. 图像提示词放置 **Image Prompt Studio**，H3 放置 **MiniMax H3 Prompt Studio**。连接 `AI_PROFILE`，第一次填完整要求；成功后只填本轮修改意见。格式异常或硬规则失败时节点只自动修复一次。
 6. H3：把 `prompt`（STRING）接到 H3 生成节点；图像模型：把 `positive` / `negative` 接到采样链路。
@@ -83,7 +83,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 
 ## 能力探测如何判定
 
-“测试连接”只执行模型目录和最小文本连接测试；“重新探测”执行完整矩阵。只有收到 HTTP 200 **且响应内容符合预期**才勾选：
+“测试”只执行模型目录和最小文本连接测试；“能力探测”执行完整矩阵。只有收到 HTTP 200 **且响应内容符合预期**才勾选：
 
 - Chat/Responses：实际生成一条极短文本；
 - JSON Schema/JSON Object：要求固定 JSON，并再次解析和比对，HTTP 200 但返回普通文本仍判失败；
@@ -92,9 +92,9 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 - 文件：发送带随机标记的极小文本文件，模型必须读回标记；
 - 原生联网：使用运行时相同的 Responses `web_search` 工具并检查工具调用记录。
 
-探测结果全部为明确 true/false，并记录端点、HTTP 状态和原因。重新探测失败会覆盖旧缓存；档案/模型/API Key 变化也会让旧结果失效。图片或文件实测失败时，设置页对应手动开关会取消，防止 Gateway 继续发送必失败的附件。主模型图片输入与 Reference Analyzer 的独立视觉模型分开显示。
+探测结果全部为明确 true/false，并记录端点、HTTP 状态和原因。能力探测失败会覆盖旧缓存；只有影响能力判定的字段（provider、API URL、模型、协议、视觉配置、支持勾选）或 API Key 变化才会让旧结果失效，改名称、超时、采样参数等无关字段保留探测结果。图片或文件实测失败时，设置页对应手动开关会取消，防止 Gateway 继续发送必失败的附件。主模型图片输入与 Reference Analyzer 的独立视觉模型分开显示。
 
-请求结构分别遵循 [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) 与 [DeepSeek Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion)；结构化输出探针另按 [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 校验返回内容。完整探测会产生少量模型调用与 token 消耗，因此只在用户点击“重新探测”时运行。
+请求结构分别遵循 [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses) 与 [DeepSeek Chat Completion](https://api-docs.deepseek.com/api/create-chat-completion)；结构化输出探针另按 [DeepSeek JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 校验返回内容。完整探测会产生少量模型调用与 token 消耗，因此只在用户点击“能力探测”时运行。
 
 ## ANIMA 提示词（官方档案）
 
