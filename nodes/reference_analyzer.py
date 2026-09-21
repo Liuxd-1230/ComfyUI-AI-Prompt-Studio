@@ -398,9 +398,3 @@ class APS_ReferenceAnalyzer:
                 "confidence": verdict["confidence"],
                 "clusters": 1 if verdict["same_subject"] else 2,
                 "evidence": verdict["evidence"]}
-
-
-def _text_msg(content: str):
-    from ..schemas.results import ChatMessage
-
-    return ChatMessage(role="user", content=content)

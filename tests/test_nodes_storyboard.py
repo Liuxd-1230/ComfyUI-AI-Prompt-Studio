@@ -122,6 +122,11 @@ def test_storyboard_builder_retries_once_after_invalid_json(monkeypatch, store):
     assert len(requests) == 2
     assert "previous response failed the declared output contract" in requests[1].system
     assert "[OPERATION:operation.protocol_retry@1.0]" in requests[1].system
+    # 守则说「只修正下列协议缺陷、保留被拒回答里可用的事实」，就必须真的带上
+    retry_payload = requests[1].messages[0].content
+    assert "不是 JSON" in retry_payload
+    assert "rejected_output" in retry_payload and "concrete_issues" in retry_payload
+    assert "不是 JSON" not in requests[0].messages[0].content
     assert result[0]["scenes"][0]["shots"][0]["audio"] == ["雨声"]
     continuity = json.loads(result[2])
     assert any("重试 1 次并成功" in item["note"] for item in continuity)

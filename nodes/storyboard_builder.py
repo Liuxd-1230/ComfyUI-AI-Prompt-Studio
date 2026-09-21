@@ -119,14 +119,22 @@ class APS_StoryboardBuilder:
         ]
         contract = schema_contract("storyboard", STORYBOARD_SCHEMA)
 
-        def make_request(retry: bool = False) -> tuple[PromptAssembly, GenerateRequest]:
+        def make_request(retry: bool = False, rejected: str = "",
+                         issues: list[str] | None = None
+                         ) -> tuple[PromptAssembly, GenerateRequest]:
             sources = list(prompt_sources)
+            task_data = [StructuredTaskData("storyboard_request", task_payload)]
             if retry:
                 sources.append(operation_source(
                     OperationKind.PROTOCOL_RETRY, scope="storyboard.create"))
+                # PROTOCOL_RETRY 的守则文本是「只修正下列协议缺陷、保留被拒回答里
+                # 可用的事实」；不把被拒输出和缺陷清单带上，这条守则就没有「下列」。
+                task_data.append(StructuredTaskData("rejected_output", rejected,
+                                                    "text/plain"))
+                task_data.append(StructuredTaskData("concrete_issues", issues or []))
             assembly = assemble_prompt(
                 sources,
-                task_data=[StructuredTaskData("storyboard_request", task_payload)],
+                task_data=task_data,
                 output_contract=contract)
             return assembly, GenerateRequest(
                 system=assembly.system,
@@ -159,7 +167,9 @@ class APS_StoryboardBuilder:
                 break
             if retry_count == 0 and bool(retry_on_invalid):
                 retry_count = 1
-                assembly, req = make_request(retry=True)
+                assembly, req = make_request(
+                    retry=True, rejected=result.text,
+                    issues=[invalid_reason] if invalid_reason else [])
                 continue
             fallback_reason = invalid_reason
             sb = fallback_storyboard(story_text, split_mode, style or "",
@@ -184,9 +194,3 @@ class APS_StoryboardBuilder:
         continuity_text = json.dumps(
             [c.to_json() for c in sb.continuity], ensure_ascii=False)
         return (sb.to_json(), sb.summary, continuity_text)
-
-
-def _msg(content: str):
-    from ..schemas.results import ChatMessage
-
-    return ChatMessage(role="user", content=content)
