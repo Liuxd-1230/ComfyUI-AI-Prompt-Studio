@@ -60,7 +60,7 @@ def validate_h3(prompt: str, mode: str = "T2VA", *, duration: float | None = Non
     if mode == "Ref2VA":
         _check_section_order(report, prompt, REF2VA_SECTION_HEADINGS, "h3_section")
         _check_ref2va_style_opening(report, prompt)
-        _check_retention_markers(report, prompt, mode)
+        _check_retention_markers(report, prompt)
         _check_summary_prefix(report, prompt)
         _check_ref_detail_density(report, prompt)
         bad = ref2va_english_issue(prompt)
@@ -300,7 +300,8 @@ def _check_ref2va_style_opening(report, prompt) -> None:
                    "Ref2VA detailed_description 建议在 [Shot 1] 前有 1-2 句风格开场")
 
 
-def _check_retention_markers(report, prompt, mode: str) -> None:
+def _check_retention_markers(report, prompt) -> None:
+    """只在 Ref2VA 分支调用：retention 行格式不对就是硬错误。"""
     visual = {"fully_preserved", "partially_preserved", "attribute_transfer", "weak_reference"}
     audio = {"fully_copy", "partially_copy", "reference", "weak_reference"}
     markers = visual | audio
@@ -310,8 +311,7 @@ def _check_retention_markers(report, prompt, mode: str) -> None:
             continue
         match = re.search(r"<(Subject|Picture|Video|Audio)\s+\d+>\s*:\s*([a-z_]+)", line)
         if not match or match.group(2) not in markers:
-            report.add("error" if mode == "Ref2VA" else "warning",
-                       "h3_retention_marker",
+            report.add("error", "h3_retention_marker",
                        f"retention_analysis 行缺少合法 marker：{line.strip()[:60]}")
             continue
         label_type, marker = match.groups()

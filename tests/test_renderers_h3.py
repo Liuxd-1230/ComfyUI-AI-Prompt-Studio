@@ -17,6 +17,36 @@ from aps.schemas.h3 import (
 )
 
 
+def test_subject_retention_line_survives_the_validator():
+    """渲染器曾把 (appears in…) 插在标签与冒号之间，被自家校验器判硬错误。"""
+    from aps.validators.minimax_h3 import validate_h3
+
+    plan = H3PromptPlan(
+        mode="Ref2VA", duration_seconds=6.0,
+        style_opening="A clean documentary look.",
+        shots=[H3Shot(index=1, description=["A girl stands near <Picture 1>."])],
+        retention=[H3Retention(label="Subject 1", marker="fully_preserved",
+                               notes="kept", shot_refs=["1"])],
+        soundscape="room tone", non_diegetic_music="N/A",
+        summary="[reference generation] keep the reference look")
+    text = render_h3(plan)
+    assert "<Subject 1>: fully_preserved - kept (appears in [Shot 1])" in text
+    report = validate_h3(text, "Ref2VA")
+    assert not [i for i in report.issues if i.code == "h3_retention_marker"]
+
+
+def test_shot_declares_every_reference_not_already_cited():
+    """一个镜头引用多个资产时，未被正文引用的那个不能被整句声明一起丢掉。"""
+    shot = H3Shot(index=1, description=["A girl stands near <Picture 1>."],
+                  references=["Picture 1", "Picture 2"])
+    line = render_shot(shot)
+    assert "The referenced content <Picture 2> takes effect in this shot." in line
+
+    all_cited = H3Shot(index=1, description=["<Picture 1> and <Picture 2> appear."],
+                       references=["Picture 1", "Picture 2"])
+    assert "takes effect in this shot" not in render_shot(all_cited)
+
+
 def make_plan(mode="T2VA", duration=10.0, n_shots=2, assets=None, **kw):
     shots = [H3Shot(index=1, description=["A girl enters the cafe."],
                     camera="The camera pans slowly.",

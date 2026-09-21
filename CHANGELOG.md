@@ -1,5 +1,7 @@
 # Changelog
 
+- **H3 确定性渲染器不再产出被自家校验器判错的行**：`_render_retention` 此前把 `(appears in [Shot 1])` 插在 `<Subject N>` 标签与冒号之间，而格式契约明文禁止这个位置、校验器正则要求冒号紧跟标签——任何带 `shot_refs` 的 Subject 保留行必然 `error h3_retention_marker`、`valid=False`。现在镜头归属写在说明之后。`render_shot` 的引用声明原先用 `any()` 做守卫却拼上全部标签：一个镜头引用多个资产时，只要有一个已在正文出现，其余资产的声明就被静默丢掉；改为只声明尚未出现的标签。`_check_retention_markers` 只在 Ref2VA 分支调用，删掉永远不成立的 `else "warning"`（它暗示其他模式也会检查 retention，实际根本不查）。
+
 - **`scope=node` 不再一半要实例 ID、一半要类别串**：补充资料选择新增 `node_scope`，每个节点显式声明自己所属的稳定作用域名（`prompt.studio`、`h3.studio`、`llm.generate`、`reference.analyzer`、`storyboard.create`），匹配时实例 ID 与作用域名任一命中即适用。此前两个 Studio 节点只传 ComfyUI 实例 ID，另外三个节点只传写死的类别串，同一个「节点 ID」字段承载两种语义——按内部测试写法填 `prompt.studio` 的用户在 Studio 节点上永远拿不到资料。设置面板字段说明与 README 列出可填的值。
 
 - **恢复日志只剩一个目录来源；删掉与会话策略相反的死函数**：`get_recovery_journal()` 缺省改用 `ConfigStore` 的数据目录。此前节点侧不传参（走 `default_config_dir()`）、路由侧传 `store.config_dir()`，只要 store 被注入非默认目录（测试或自定义数据目录），节点写 A 文件而路由读 B 文件，UI 永远显示 `found: false`、discard 变成静默空操作；新增测试锁住“节点与路由共用同一个 journal 文件”。同时删除 `assert_session_fingerprints`：全仓无调用方也无测试，且它把“上下文指纹变化”定义成抛错，而两个 Studio 节点的真实策略是 `lenient_context_changed` 警告并继续 —— 一旦被按名字接上就会静默翻转行为。

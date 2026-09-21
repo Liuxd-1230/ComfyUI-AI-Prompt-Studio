@@ -61,8 +61,12 @@ def render_shot(shot: H3Shot, speaker_descriptions: Optional[dict[str, str]] = N
     if camera:
         parts.append(camera.rstrip(".") + ".")
     if shot.references:
-        labels = ", ".join(_angle_label(label) for label in shot.references)
-        if not any(_angle_label(label) in " ".join(parts) for label in shot.references):
+        # 只声明正文里还没出现的标签：此前用 any() 做守卫却拼上全部标签，
+        # 一个镜头引用多个资产时，只要有一个已被引用，其余的声明就被静默丢掉。
+        cited = " ".join(parts)
+        missing = [label for label in shot.references if _angle_label(label) not in cited]
+        if missing:
+            labels = ", ".join(_angle_label(label) for label in missing)
             parts.append(f"The referenced content {labels} takes effect in this shot.")
     if shot.audio_notes:
         parts.append(shot.audio_notes.rstrip(".") + ".")
@@ -208,13 +212,17 @@ def _render_subject(subj: H3Subject) -> str:
 
 
 def _render_retention(r: H3Retention) -> str:
-    label = r.label
-    if re.search(r"^(Picture|Video|Audio)\s", label, re.I) or label.startswith(("Picture", "Video", "Audio")):
-        return f"<{label}>: {r.marker} - {r.notes}".strip(" -")
-    refs = ", ".join(f"[{s}]" for s in r.shot_refs)
-    if refs:
-        return f"<{label}> (appears in {refs}): {r.marker} - {r.notes}".rstrip(" -")
-    return f"<{label}>: {r.marker} - {r.notes}".rstrip(" -")
+    # 契约（prompting/studio_policies.py）与校验器都要求冒号紧跟标签，
+    # 所以镜头归属只能写在说明之后；插在中间会被判 h3_retention_marker 硬错误。
+    line = f"<{r.label}>: {r.marker}"
+    notes = r.notes.strip()
+    if notes:
+        line += f" - {notes}"
+    if not re.search(r"^(Picture|Video|Audio)\s", r.label, re.I):
+        refs = ", ".join(f"[Shot {s}]" for s in r.shot_refs)
+        if refs:
+            line += f" (appears in {refs})"
+    return line
 
 
 def _shots_text(plan: H3PromptPlan, *, join: bool = True):
