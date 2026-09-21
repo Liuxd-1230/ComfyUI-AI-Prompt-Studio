@@ -24,7 +24,8 @@ subject_definitions:
 summary: [reference generation] [one-sentence task summary]
 retention_analysis:
 <Picture 1>: fully_preserved — [narrow structural role and exact point of use]
-detailed_description: [one or two English style sentences]
+detailed_description: [one or two English style sentences first, then every shot line
+below; this whole section is expected to run 350-500 English words]
 [Shot 1] [complete playable English shot description; no timestamp on Shot 1]
 overall_soundscape: [concrete audible full-video ambience, or N/A only for explicit silence]
 non_diegetic_music: [requested music, otherwise N/A]

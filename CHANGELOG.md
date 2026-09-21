@@ -1,5 +1,7 @@
 # Changelog
 
+- **Ref2VA 骨架把密度要求说给模型听**：`detailed_description` 的骨架占位只写“one or two English style sentences”，而校验器对整段（风格句 + 全部镜头行）的期望是 350–500 英文词——模型照骨架写十几词就稳定触发 `h3_ref_word_count` 警告，同一段在骨架文本、密度校验与风格开场校验三处各有一套期望。骨架现在明确“先 1–2 句英文风格句，随后写全部镜头行，整段目标 350–500 英文词”，与两个校验对齐；校验级别仍是 warning（建议，不硬失败）。
+
 - **协议重试真的带上被拒输出与缺陷清单；删掉描述别处契约的僵尸代码**：分镜构建器的 `PROTOCOL_RETRY` 守则写着“只修正下列协议缺陷，并保留被拒回答里可用的事实”，但重试请求里既没有 `rejected_output` 也没有 `concrete_issues`，等于把同一份原始请求重发一遍——现在两者随重试一起下发（首次请求不受影响，测试锁住）。`services/structured_output.py` 的 `protocol_failure_message`/`bounded_issues`/`log_protocol_failure` 全无调用方，其文案还断言“在一次重试后仍未返回合法结构化结果”，而重试实际分散在各节点且语义各不相同（LLM 是 JSON 格式修复，Studio 是格式修复加校验重跑）——删掉，只保留仍在使用的 `raw_excerpt`。同时删除 `storyboard_builder._msg` 与 `reference_analyzer._text_msg` 两份逐字相同、无人调用的辅助函数。
 
 - **锚点判定只剩一份实现；校验的对象等于交付的对象**：`_identity_anchor_covered` 此前在两个 Studio 节点里逐字重复（同一份 stopwords 与同一套游标匹配），改一处就让两侧的“锚点覆盖”判定分叉——现提到 `nodes/_helpers.py::identity_anchor_covered` 单点拥有，两个节点对“角色显示名算不算硬锚点”的策略差异保留在各自节点内。图像 Studio 校验时传的是 `_negative_for(family, variant)`，交付的却是 `_negative_for(family, variant, instruction)`，用户显式排除项从未被校验过——现在把 instruction 一路传进校验，并新增测试锁住“校验的负面提示词 == 交付的负面提示词”。Reference Analyzer 的 6 张图上限此前既在入口硬报错、又在批量判断里静默截断（截断永不生效；一旦放宽入口，批量判断与逐图分析会看到不同的图片集合）——删掉死截断，上限只有入口一个归属者。
