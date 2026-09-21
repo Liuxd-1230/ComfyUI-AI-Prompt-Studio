@@ -203,6 +203,17 @@ def test_settings_panel_is_chinese_only():
     assert not snake_case, f"字段标签仍是原始 key：{snake_case}"
 
 
+def test_registry_cache_and_panel_renderers_ignore_superseded_responses():
+    """写操作在途时返回的旧响应既不能回写缓存，也不能盖掉更新的一次渲染。"""
+    cache = (PROJECT_ROOT / "web" / "data_cache.js").read_text(encoding="utf-8")
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    assert re.search(r"generations\.set\(path", cache), "失效时代号未递增"
+    assert re.search(r"if \(\(generations\.get\(path\)", cache), "回写缓存前未核对代号"
+    for token in ("profilesSeq", "editorSeq", "capabilitiesSeq"):
+        assert token in settings, f"缺少 last-wins 守卫：{token}"
+    assert "renderCapabilities(p)" in settings, "能力区应复用已取回的档案，不再重复请求"
+
+
 def test_settings_panel_writes_api_key_only_through_save():
     """档案与密钥共用一次“保存”：两个独立写入按钮曾让新建时填写的密钥被静默丢弃。"""
     settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")

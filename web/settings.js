@@ -197,20 +197,29 @@ function buildPanel() {
 
 // ---------------- 数据刷新 ----------------
 
+// 同一块区域只接受最后一次请求的结果：快速切换档案或标签时，
+// 先发出去但后回来的响应不能把新状态盖掉。
+let profilesSeq = 0;
+let editorSeq = 0;
+let capabilitiesSeq = 0;
+
 async function refreshAll() {
   await showPanelTab(activePanelTab);
 }
 
 async function loadProfilesPane() {
+  const seq = ++profilesSeq;
   try {
     const [status, list] = await Promise.all([
       cachedJson("/ai_prompt_studio/status", { ttlMs: 5000 }),
       cachedJson("/ai_prompt_studio/profiles"),
     ]);
+    if (seq !== profilesSeq) return;
     renderStatus(status);
     renderProfiles(list);
     if (currentProfileId) renderEditor(currentProfileId);
   } catch (error) {
+    if (seq !== profilesSeq) return;
     toast("错误: " + error.message, true);
   }
 }
@@ -260,8 +269,7 @@ function renderProfiles({ profiles, default_profile_id }) {
       onClick: () => {
         currentProfileId = p.profile_id;
         renderProfiles({ profiles, default_profile_id });
-        renderEditor(p.profile_id);
-        renderCapabilities();
+        renderEditor(p.profile_id);   // 档案取回后顺带刷新能力区，不再重复请求
       },
     });
     const title = el("div", { class: "aps-profile-title" }, [
@@ -273,15 +281,17 @@ function renderProfiles({ profiles, default_profile_id }) {
     row.appendChild(meta);
     box.appendChild(row);
   }
-  box.appendChild(el("button", { class: "aps-btn aps-btn-primary", text: "+ " + "新建档案", onClick: () => {
+  box.appendChild(el("button", { class: "aps-btn aps-btn-primary", text: "+ 新建档案", onClick: () => {
     currentProfileId = "";
     renderEditor("");
+    renderCapabilities();
   } }));
 }
 
 function renderEditor(profileId) {
   const box = document.querySelector("#aps-editor");
   if (!box) return;
+  const seq = ++editorSeq;
   if (!profileId) {
     box.innerHTML = "";
     box.appendChild(buildEditorForm(null));
@@ -289,11 +299,14 @@ function renderEditor(profileId) {
   }
   api("/profiles/" + encodeURIComponent(profileId))
     .then((p) => {
+      if (seq !== editorSeq || currentProfileId !== profileId) return;
       box.innerHTML = "";
       box.appendChild(buildEditorForm(p));
-      renderCapabilities();
+      renderCapabilities(p);
     })
-    .catch((e) => toast("错误: " + e.message, true));
+    .catch((e) => {
+      if (seq === editorSeq) toast("错误: " + e.message, true);
+    });
 }
 
 function buildEditorForm(p) {
@@ -504,62 +517,73 @@ function buildEditorForm(p) {
   return wrap;
 }
 
-function renderCapabilities() {
+function renderCapabilities(preloaded) {
   const box = document.querySelector("#aps-capabilities");
   if (!box) return;
+  const seq = ++capabilitiesSeq;
   box.innerHTML = "";
   if (!currentProfileId) {
     box.appendChild(el("p", { class: "aps-muted", text: "选择档案开始配置" }));
     return;
   }
-  return api("/profiles/" + encodeURIComponent(currentProfileId))
+  if (preloaded && preloaded.profile_id === currentProfileId) {
+    renderCapabilityBox(box, preloaded);
+    return;
+  }
+  api("/profiles/" + encodeURIComponent(currentProfileId))
     .then((p) => {
-      box.innerHTML = "";
-      const caps = p.capabilities || {};
-      const labels = {
-        model_listing: "模型目录", chat_completions: "Chat Completions",
-        responses: "Responses", structured_output_chat: "Chat JSON Schema",
-        structured_output_responses: "Responses JSON Schema",
-        json_output_chat: "Chat JSON Object", function_tools_chat: "Chat 函数工具",
-        function_tools_responses: "Responses 函数工具", native_web_search: "原生联网搜索",
-        vision_chat: "Chat 图片输入", vision_responses: "Responses 图片输入",
-        files_chat: "Chat 文件输入", files_responses: "Responses 文件输入",
-        vision_service: "Reference Analyzer 视觉模型",
-      };
-      const grid = el("div", { class: "aps-cap-grid" });
-      for (const [key, label] of Object.entries(labels)) {
-        if (typeof caps[key] !== "boolean") continue;
-        const input = el("input", { type: "checkbox", checked: caps[key], disabled: true });
-        const detail = caps.checks?.[key]?.detail || "尚无探测详情";
-        grid.appendChild(el("label", {
-          class: "aps-cap-check " + (caps[key] ? "ok" : "no"), title: detail,
-        }, [input, el("span", { text: label })]));
-      }
-      box.appendChild(grid);
-      if (caps.probed_at) box.appendChild(el("p", {
-        class: "aps-muted", text: `最近实测：${caps.probed_at} · ${caps.capability_basis || ""}`,
-      }));
-      const checkRows = Object.entries(caps.checks || {});
-      if (checkRows.length) {
-        const details = el("details", { class: "aps-advanced" });
-        details.appendChild(el("summary", { text: "查看各端点 HTTP 状态与失败原因" }));
-        const table = el("table", { class: "aps-table" });
-        table.appendChild(el("tr", {}, [el("th", { text: "能力" }), el("th", { text: "HTTP" }), el("th", { text: "结果" }), el("th", { text: "说明" })]));
-        for (const [key, item] of checkRows) table.appendChild(el("tr", {}, [
-          el("td", { text: labels[key] || key }), el("td", { text: String(item.http_status || "—") }),
-          el("td", { text: item.ok ? "✓" : "✗" }), el("td", { text: item.detail || "" }),
-        ]));
-        details.appendChild(table);
-        box.appendChild(details);
-      }
-      if (!Object.keys(caps).length) {
-        box.appendChild(el("span", { class: "aps-muted", text: "尚未实测。保存 API Key 后点击“重新探测”。" }));
-      }
+      if (seq !== capabilitiesSeq || currentProfileId !== p.profile_id) return;
+      renderCapabilityBox(box, p);
     })
     .catch((e) => {
+      if (seq !== capabilitiesSeq) return;
       box.innerHTML = "";
       box.appendChild(el("p", { class: "aps-error", text: "能力状态加载失败：" + e.message }));
     });
+}
+
+function renderCapabilityBox(box, p) {
+  box.innerHTML = "";
+  const caps = p.capabilities || {};
+  const labels = {
+    model_listing: "模型目录", chat_completions: "Chat Completions",
+    responses: "Responses", structured_output_chat: "Chat JSON Schema",
+    structured_output_responses: "Responses JSON Schema",
+    json_output_chat: "Chat JSON Object", function_tools_chat: "Chat 函数工具",
+    function_tools_responses: "Responses 函数工具", native_web_search: "原生联网搜索",
+    vision_chat: "Chat 图片输入", vision_responses: "Responses 图片输入",
+    files_chat: "Chat 文件输入", files_responses: "Responses 文件输入",
+    vision_service: "Reference Analyzer 视觉模型",
+  };
+  const grid = el("div", { class: "aps-cap-grid" });
+  for (const [key, label] of Object.entries(labels)) {
+    if (typeof caps[key] !== "boolean") continue;
+    const input = el("input", { type: "checkbox", checked: caps[key], disabled: true });
+    const detail = caps.checks?.[key]?.detail || "尚无探测详情";
+    grid.appendChild(el("label", {
+      class: "aps-cap-check " + (caps[key] ? "ok" : "no"), title: detail,
+    }, [input, el("span", { text: label })]));
+  }
+  box.appendChild(grid);
+  if (caps.probed_at) box.appendChild(el("p", {
+    class: "aps-muted", text: `最近实测：${caps.probed_at} · ${caps.capability_basis || ""}`,
+  }));
+  const checkRows = Object.entries(caps.checks || {});
+  if (checkRows.length) {
+    const details = el("details", { class: "aps-advanced" });
+    details.appendChild(el("summary", { text: "查看各端点 HTTP 状态与失败原因" }));
+    const table = el("table", { class: "aps-table" });
+    table.appendChild(el("tr", {}, [el("th", { text: "能力" }), el("th", { text: "HTTP" }), el("th", { text: "结果" }), el("th", { text: "说明" })]));
+    for (const [key, item] of checkRows) table.appendChild(el("tr", {}, [
+      el("td", { text: labels[key] || key }), el("td", { text: String(item.http_status || "—") }),
+      el("td", { text: item.ok ? "✓" : "✗" }), el("td", { text: item.detail || "" }),
+    ]));
+    details.appendChild(table);
+    box.appendChild(details);
+  }
+  if (!Object.keys(caps).length) {
+    box.appendChild(el("span", { class: "aps-muted", text: "尚未实测。保存 API Key 后点击“能力探测”。" }));
+  }
 }
 
 function renderRuntime() {
