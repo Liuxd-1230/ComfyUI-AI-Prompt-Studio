@@ -26,7 +26,10 @@ they must not acquire target-model prompting rules or hand-authored schemas.
 
 ## Model Core and supplement boundary
 
-- Target hard rules live in `prompting/model_cores.py`; `services/h3_plan.py` is a compatibility schema/task-data helper, not a second editable policy owner.
+- Target hard rules live in `prompting/model_cores.py`. As of 2026-09-21 there is no H3 schema/task-data
+  helper: the structured-plan lane (`services/h3_plan.py`, `H3_SCHEMA`, `build_plan_task_data`) was removed by
+  ADR 0008 and its orphaned helpers are deleted, so `studio.h3` has exactly one owner chain — Model Core plus
+  target policy for rules, `LENIENT_PROMPT_CONTRACT` for response shape, and the validator for hard checks.
 - User-authored Markdown is selected through `services/supplements.py` and enters as `SUPPLEMENT` guidance with provenance. It never owns transport, schema, validation, locks, or semantic facts.
 - New target rules must update the Model Core, renderer/validator contract, inventory, and tests together. Do not add a YAML Skill compatibility path.
 

@@ -34,6 +34,8 @@
 
 官方 `h3-prompt-writing/SKILL.md` 是轻量入口，按模式路由到 `base-en.txt` 或 `ref-en.txt`，并明确要求保持字段名、顺序、标签和时序写法（[官方 Skill](https://github.com/MiniMax-AI/MiniMax-H3/blob/8d8824efaf94586c0cc9ac7ad8d0723d4d6420ea/skills/h3-prompt-writing/SKILL.md#L8-L34)）。本仓库 H3 规则仍硬编码于 `services/h3_plan.py`，`skills/minimax_h3/` 为空，设置工作台无法查看、复制或定制。建议建立本项目自有的、注明官方来源与版本的 H3 Skill 包；协议硬约束仍留在 renderer/validator，Skill 管内容策略，不应只复制官方长文进每次请求。
 
+> 2026-09-21 更正：H3 协议硬规则由 `prompting/model_cores.py` 与 `validators/minimax_h3.py` 持有；`services/h3_plan.py` 是 ADR 0008 宣布移除后残留的断线条，已连同其渲染/校验助手一并删除，格式规格仍保留在 `renderers/minimax_h3.py`。
+
 ### 2. 相机语言只是自由字符串
 
 官方采用“运动类型 + 必要时的幅度 + 必要时的速度”，并区分 Zoom/Push、Pan/Truck、Tilt/Pedestal 等；相机运动应写成镜头内自然英语，而不是标签堆叠（[相机指南](https://github.com/MiniMax-AI/MiniMax-H3/blob/8d8824efaf94586c0cc9ac7ad8d0723d4d6420ea/skills/h3-prompt-writing/references/base-en.txt#L94-L122)）。当前只有自由 `camera: str`，system prompt 没教这些差异，也没有词汇/冲突检查。镜头切换同样缺少“轻微景别变化优先运动、切镜应带来新信息”的规则（[Shots and Cuts](https://github.com/MiniMax-AI/MiniMax-H3/blob/8d8824efaf94586c0cc9ac7ad8d0723d4d6420ea/skills/h3-prompt-writing/references/base-en.txt#L84-L92)）。

@@ -37,11 +37,9 @@ def test_refine_and_repair_have_disjoint_responsibilities() -> None:
 def test_removed_user_operation_surfaces_do_not_return() -> None:
     prompt_plan = (ROOT / "schemas" / "prompt_plan.py").read_text(encoding="utf-8")
     h3_plan = (ROOT / "schemas" / "h3.py").read_text(encoding="utf-8")
-    h3_service = (ROOT / "services" / "h3_plan.py").read_text(encoding="utf-8")
     assert "COMPOSER_OPERATIONS" not in prompt_plan
     assert "H3_OPERATIONS" not in h3_plan
-    assert "def build_plan_prompt" not in h3_service
-    assert "def convert_storyboard" not in h3_service
+    assert not (ROOT / "services" / "h3_plan.py").exists()
 
 
 def test_production_does_not_construct_private_operation_sources() -> None:

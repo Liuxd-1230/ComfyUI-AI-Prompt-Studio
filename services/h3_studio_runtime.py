@@ -1,23 +1,9 @@
-"""Deterministic media, transaction, render, and validation seams for H3 Studio."""
+"""Deterministic media registration for the H3 Studio reference manifest."""
 from __future__ import annotations
 
 from typing import Any
 
-from ..domain.plan_adapters import get_plan_adapter
-from ..renderers.minimax_h3 import render_h3
-from ..schemas.character import CharacterBible
-from ..schemas.h3 import H3PromptPlan
 from ..schemas.references import AssetRef, ReferenceManifest
-from ..services.h3_plan import (
-    map_image_assets,
-    normalize_media_labels,
-    normalize_ref2va_summary,
-    sync_manifest_assets,
-)
-from ..validators.minimax_h3 import validate_h3
-
-
-MODE_IMAGE_REQUIREMENTS = {"T2VA": 0, "I2VA": 1, "FL2VA": 2, "L2VA": 1}
 
 
 def count_images(images: Any) -> int:
@@ -39,59 +25,6 @@ def prepare_manifest(reference_manifest: Any, images: Any,
     _register_media(manifest, "video", videos)
     _register_media(manifest, "audio", audios)
     return manifest, image_count
-
-
-def normalize_plan(plan: H3PromptPlan, manifest: ReferenceManifest,
-                   image_count: int, mode: str, duration: float,
-                   source_bibles: list[CharacterBible] | None = None) -> H3PromptPlan:
-    previous_indices = [shot.index for shot in plan.shots]
-    plan.duration_seconds = float(duration)
-    if plan.shots:
-        plan.shots[0].start_time = None
-    sync_manifest_assets(plan, manifest)
-    plan.warnings = list(dict.fromkeys(
-        [*plan.warnings, *map_image_assets(plan, image_count, mode)]))
-    normalize_media_labels(plan)
-    normalize_ref2va_summary(plan)
-    _inject_locked_identity(plan, source_bibles or [])
-    normalized = get_plan_adapter("minimax_h3").normalize(plan)
-    expected_indices = list(range(1, len(normalized.shots) + 1))
-    if previous_indices and previous_indices != expected_indices:
-        warning = "镜头列表发生插入/删除或编号不连续，已按当前顺序重新编号"
-        if warning not in normalized.warnings:
-            normalized.warnings.append(warning)
-    return normalized
-
-
-def _inject_locked_identity(
-        plan: H3PromptPlan, source_bibles: list[CharacterBible]) -> None:
-    """Copy authoritative locked drawable traits into a character's first shot."""
-    if not plan.shots:
-        return
-    shot = plan.shots[0]
-    existing = " ".join(shot.description).casefold()
-    for bible in source_bibles:
-        traits = [trait.value.strip() for trait in bible.locked_traits()
-                  if trait.value.strip() and trait.value.casefold() not in existing]
-        if not traits:
-            continue
-        subject = bible.name.strip() or bible.character_id.strip() or "The character"
-        sentence = f"{subject}'s locked visual identity: {', '.join(traits)}."
-        shot.description.insert(0, sentence)
-        existing += " " + sentence.casefold()
-
-
-def render_validate(plan: H3PromptPlan, manifest: ReferenceManifest,
-                    image_count: int, mode: str, duration: float
-                    ) -> tuple[str, Any]:
-    rendered = render_h3(plan)
-    report = validate_h3(
-        rendered, mode, duration=duration, manifest=manifest, plan=plan)
-    required = MODE_IMAGE_REQUIREMENTS.get(mode)
-    if required is not None and image_count != required:
-        report.add("error", "h3_asset_mode",
-                   f"{mode} 需要 {required} 张参考图，实际 {image_count}")
-    return rendered, report
 
 
 def _register_images(manifest: ReferenceManifest, count: int) -> None:

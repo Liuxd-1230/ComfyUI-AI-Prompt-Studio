@@ -66,3 +66,9 @@ PH5 removed the disconnected `build_plan_prompt()` and `h3_system_prompt()`
 compatibility helpers after proving that production uses structured H3 task data,
 Model Core, Operation Policy, and `H3_SCHEMA`. `build_storyboard_prompt()` remains a
 model-neutral service helper with live callers.
+
+Correction added 2026-09-21: `H3_SCHEMA` was never wired into a production H3 call. It belonged to the
+structured Studio Plan lane that ADR 0008 removed, and its surviving disconnected helpers
+(`services/h3_plan.py`, `normalize_plan()`, `render_validate()`, `MODE_IMAGE_REQUIREMENTS`) have now been
+deleted; `studio.h3` sends typed task data with the `<PROMPT>/<SUMMARY>` contract and validates the returned
+text.

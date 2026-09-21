@@ -1,6 +1,10 @@
 # 最终报告（P0/P1 集成修复轮 + Prompt Audit）
 > 历史验收记录（2026-08-07），不是当前功能清单。当前运行时与节点契约以
 > ADR 0007 与 README 为准。
+>
+> 2026-09-21 更正：「Ref2VA 英文」一项的关键文件 `services/h3_plan.py` 属 ADR 0008 已宣布移除的
+> H3 结构化计划通道，该文件与其孤立助手已删除；英文检查现在只由 `validators/minimax_h3.ref2va_english_issue`
+> 在 H3 Studio 的成品提示词上执行。
 
 日期：2026-08-07 · 仓库：Liuxd-1230/ComfyUI-AI-Prompt-Studio（master）
 范围：规范 §一-六十五 中锁定的 P0/P1 项与 Prompt Audit（§三十七-六十五）。

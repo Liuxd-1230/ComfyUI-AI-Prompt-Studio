@@ -1,6 +1,10 @@
 # Prompt Audit（提示词审计）
 > 当前运行时采用 ADR 0007 双通道 Studio。下文 2026-08-07 的站点记录保留为历史审计；
 > 运行时硬规则现由 Model Core 持有；用户 Markdown supplement 只能作为低优先级参考。
+>
+> 2026-09-21 更正：H3-S-1/H3-S-2 中的 `services/h3_plan.py`（`build_plan_task_data`、
+> `parse_plan_json`、`H3_SCHEMA`）属 ADR 0008 已宣布移除的 H3 结构化计划通道，孤立助手已删除；
+> H3 Studio 的唯一请求契约是 Model Core + Operation Policy + `LENIENT_PROMPT_CONTRACT`。
 
 > 审计日期：2026-08-07
 > 范围：本扩展所有发送给 LLM 的提示词（Python 构造的 system 层 + 任务上下文 + Model Core 与 Markdown supplement）。
@@ -149,3 +153,5 @@ framing / camera angle / environment / lighting / spatial relationships / refere
   Provider 支持原生 Structured Output → 协议层 schema（不再 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复）；
   不支持 → Gateway 使用版本化 Operation Policy 与节点输出契约进行一次协议重试，不保留手写 JSON 模板；
 - 通用 LLM 路径 `structured_output` 能力按协议区分（responses / chat，见 docs/research.md §8.1）。
+- 2026-09-21 更正：只有 `STORYBOARD_SCHEMA` 真的接到了 `output_contract`；`H3_SCHEMA` 从未被生产调用方使用，
+  ADR 0008 后 H3 Studio 的产出契约是 `<PROMPT>/<SUMMARY>` 标签信封，H3 结构化计划通道及其助手已删除。

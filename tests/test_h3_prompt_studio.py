@@ -1,18 +1,15 @@
 """H3 Prompt Studio behavior through its public Comfy node interface."""
 from __future__ import annotations
 
-import json
-
 import pytest
 
 import aps.nodes.h3_prompt_studio as studio_mod
 from aps.domain.recovery_journal import DurableRecoveryJournal
+from aps.prompting.output_contracts import OutputKind
 from aps.schemas.character import CharacterBible, CharacterTrait
 from aps.schemas.prompt_session import PromptSession
 from aps.schemas.references import AssetRef, ReferenceManifest
 from aps.schemas.results import LLMResult
-from aps.services.h3_plan import parse_plan_json
-from aps.services.h3_studio_runtime import normalize_plan, render_validate
 
 
 def _profile(store):
@@ -31,22 +28,6 @@ class SequenceGateway:
         return LLMResult(text=type(self).responses.pop(0))
 
 
-PLAN = {
-    "style_opening": "", "summary": "", "speakers": [], "subjects": [],
-    "assets": [], "retention": [], "soundscape": "Rain falls on the roof.",
-    "non_diegetic_music": "N/A", "explicit_silence": False,
-    "shots": [{
-        "index": 1, "start_time": None,
-        "description": ["A woman waits beneath the station canopy."],
-        "camera": "A slow push-in follows her gaze.",
-        "camera_motion": "push_in", "camera_amplitude": "small",
-        "camera_speed": "slow", "camera_target": "the woman",
-        "characters": [], "audio_notes": "Distant train wheels approach.",
-        "dialogues": [], "references": [], "on_screen_text": [],
-    }],
-}
-
-
 def _valid_prompt(soundscape: str = "Rain falls on the roof.") -> str:
     return (
         "integrated_multimodal_description: [Shot 1] A woman waits beneath "
@@ -54,17 +35,6 @@ def _valid_prompt(soundscape: str = "Rain falls on the roof.") -> str:
         "Synchronized audio: distant train wheels approach.\n"
         f"overall_soundscape: {soundscape}\n"
         "non_diegetic_music: N/A")
-
-
-def test_h3_normalizer_removes_first_shot_zero_timestamp() -> None:
-    payload = json.loads(json.dumps(PLAN))
-    payload["shots"][0]["start_time"] = 0.0
-    plan = parse_plan_json(json.dumps(payload), "T2VA", 8.0)
-
-    normalized = normalize_plan(
-        plan, ReferenceManifest(), image_count=0, mode="T2VA", duration=8.0)
-
-    assert normalized.shots[0].start_time is None
 
 
 def test_h3_studio_public_interface_removes_operation_and_plan_port() -> None:
@@ -123,6 +93,24 @@ def test_h3_lenient_create_and_refine_commit_freeform(monkeypatch, store) -> Non
     assert "Wind and rain" in refined["result"][0]
     sent = SequenceGateway.requests[-1].messages[-1].content
     assert "current_prompt" in sent and "make the ambience windier" in sent
+
+
+def test_h3_request_carries_task_data_but_no_copied_json_schema(
+        monkeypatch, store) -> None:
+    SequenceGateway.responses = [
+        f"<PROMPT>{_valid_prompt()}</PROMPT><SUMMARY>Created.</SUMMARY>"]
+    SequenceGateway.requests = []
+    monkeypatch.setattr(studio_mod, "Gateway", SequenceGateway)
+
+    studio_mod.APS_H3PromptStudio().run(
+        _profile(store), "A girl waves", "T2VA", 6.0, message_nonce="task-data")
+
+    request = SequenceGateway.requests[0]
+    sent = request.system + request.messages[-1].content
+    assert "A girl waves" in sent
+    assert "JSON structure" not in sent and '"shots"' not in sent
+    assert request.output_contract.kind is OutputKind.TAGGED_PROMPT
+    assert request.output_contract.schema is None
 
 
 def test_h3_lenient_repairs_pan_when_user_requested_truck(monkeypatch, store) -> None:
@@ -376,23 +364,6 @@ def test_h3_identity_anchor_accepts_natural_article_insertion() -> None:
                    for issue in report.issues)
 
 
-def test_h3_strict_normalization_injects_locked_bible_traits() -> None:
-    bible = CharacterBible(character_id="rose", name="Rose", speaker_id="S1", traits=[
-        CharacterTrait(name="hair", value="long wavy black hair",
-                       category="stable", locked=True),
-        CharacterTrait(name="eyes", value="amber-green eyes",
-                       category="stable", locked=True)])
-    plan = parse_plan_json(json.dumps(PLAN), "T2VA", 5.0)
-
-    normalized = normalize_plan(
-        plan, ReferenceManifest(), image_count=0, mode="T2VA", duration=5.0,
-        source_bibles=[bible])
-    rendered, _ = render_validate(
-        normalized, ReferenceManifest(), image_count=0, mode="T2VA", duration=5.0)
-
-    assert "Rose's locked visual identity: long wavy black hair, amber-green eyes." in rendered
-
-
 def test_h3_rejects_near_copy_display_name_drift() -> None:
     bible = CharacterBible(character_id="rose", name="玫瑰午睡时")
     parsed = studio_mod.LenientPromptOutput(
@@ -404,26 +375,6 @@ def test_h3_rejects_near_copy_display_name_drift() -> None:
 
     assert not report.valid
     assert any(issue.code == "h3_identity_name_drift" for issue in report.issues)
-
-
-def test_h3_i2va_alignment_consumes_picture_without_ref2va_retention() -> None:
-    """Base-mode alignment is the reference contract; retention belongs to Ref2VA."""
-    plan = parse_plan_json(json.dumps(PLAN), "I2VA", 5.0)
-    manifest = ReferenceManifest(assets=[
-        AssetRef(asset_id="img_0", asset_type="image", data_ref="image_tensor")])
-
-    normalized = normalize_plan(
-        plan, manifest, image_count=1, mode="I2VA", duration=5.0)
-    rendered, report = render_validate(
-        normalized, manifest, image_count=1, mode="I2VA", duration=5.0)
-
-    assert rendered.startswith(
-        "For the target video, at 0.00 seconds into the target video, "
-        "<Picture 1> (from [Shot 1]) is fully referenced.")
-    assert report.valid
-    assert not any(issue.code in {
-        "h3_reference_unused", "h3_reference_retention_missing"}
-        for issue in report.issues)
 
 
 def test_h3_connected_images_reuse_analyzer_manifest_assets() -> None:
@@ -442,52 +393,6 @@ def test_h3_connected_images_reuse_analyzer_manifest_assets() -> None:
                 if asset.asset_type == "image"]) == 2
     assert [asset.h3_labels[0] for asset in prepared.assets] == [
         "Picture 1", "Picture 2"]
-
-
-def test_h3_manifest_asset_ids_are_canonicalized_without_duplicates() -> None:
-    from aps.schemas.h3 import H3Asset, H3PromptPlan, H3Retention, H3Shot, H3Subject
-    from aps.services.h3_plan import sync_manifest_assets
-
-    manifest = ReferenceManifest(assets=[AssetRef(
-        asset_id="img_0", asset_type="image", data_ref="image_tensor",
-        h3_labels=["Picture 1"])])
-    plan = H3PromptPlan(
-        mode="Ref2VA",
-        assets=[H3Asset(label="img_0", kind="picture"),
-                H3Asset(label="Picture 1", kind="picture")],
-        subjects=[H3Subject(label="Subject 1", source_assets=["img_0"])],
-        retention=[H3Retention(label="img_0")],
-        shots=[H3Shot(references=["img_0"])],
-    )
-
-    sync_manifest_assets(plan, manifest)
-
-    assert [asset.label for asset in plan.assets] == ["Picture 1"]
-    assert plan.subjects[0].source_assets == ["Picture 1"]
-    assert plan.retention[0].label == "Picture 1"
-    assert plan.shots[0].references == ["Picture 1", "Subject 1"]
-
-
-def test_h3_locked_manifest_subject_gets_deterministic_retention() -> None:
-    from aps.schemas.h3 import H3PromptPlan, H3Shot
-    from aps.schemas.references import SubjectRef
-    from aps.services.h3_plan import sync_manifest_assets
-
-    manifest = ReferenceManifest(
-        assets=[AssetRef(asset_id="img_0", asset_type="image",
-                         h3_labels=["Picture 1"])],
-        subjects=[SubjectRef(subject_id="rose", kind="character",
-                             definition="Rose", source_assets=["img_0"],
-                             locked=True)])
-    plan = H3PromptPlan(mode="Ref2VA", shots=[
-        H3Shot(index=1, references=["Picture 1"])])
-
-    sync_manifest_assets(plan, manifest)
-
-    subject_retention = next(item for item in plan.retention
-                             if item.label == "Subject 1")
-    assert subject_retention.marker == "fully_preserved"
-    assert subject_retention.shot_refs == ["Shot 1"]
 
 
 def test_lenient_h3_normalizes_bracketed_official_headings() -> None:

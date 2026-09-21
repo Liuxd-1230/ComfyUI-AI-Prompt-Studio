@@ -89,8 +89,8 @@
 - **畸形时间戳独立检测**：`SHOT_RE` 只捕获合法 `MM:SS.mmm`，格式错误的 `At XX:XX:XXX` 会被当成「缺失时间戳」；新增 `AT_RE` 单独捕获并报 `h3_ts_format`。
 - **`<d>` 语言标注独立检测**：`DIALOGUE_RE` 需要 `[Language]` 才匹配，缺失语言标注的对白匹配不上；改为对每个 `<d>` 直接检查其后是否紧跟 `[`。
 - **H3 Model Core + Markdown 参考**：`prompting/model_cores.py` 保存不可编辑的协议/内容硬规则；用户 Markdown 只能作为带来源的低优先级参考。renderer/validator 中不可变的格式协议仍由代码强制。repair 把校验问题回灌给 LLM，一次修复后重新渲染并复验。
-- **历史决定（已由 PH5 取代）**：旧 H3 Director 曾以 `convert_storyboard` 做离线回退；当前 H3 Studio 要求模型成功产生可校验 Plan，协议只允许一次保真重试，失败不提交。
-- **图片映射**：`map_image_assets` 按模式把输入图映射为 Picture 资产——I2VA 首帧（0.00s）、FL2VA 首尾（0.00s / 有效时长）、L2VA 尾帧（有效时长）；已存在的标签跳过不重复。
+- **历史决定（已由 PH5 取代）**：旧 H3 Director 曾以 `convert_storyboard` 做离线回退；当前 H3 Studio 要求模型成功产生可校验 Plan，协议只允许一次保真重试，失败不提交。（2026-09-21 校准：ADR 0008 之后 H3 Studio 不再要求模型产出结构化 Plan——唯一的真相就是模型返回的成品提示词文本；一次保真重试的策略保留。）
+- **图片映射**：`map_image_assets` 按模式把输入图映射为 Picture 资产——I2VA 首帧（0.00s）、FL2VA 首尾（0.00s / 有效时长）、L2VA 尾帧（有效时长）；已存在的标签跳过不重复。（2026-09-21 校准：该助手属 ADR 0008 已宣布移除的结构化计划通道，现已删除；连接图片由 `services/h3_studio_runtime.prepare_manifest` 按接入顺序登记为 `Picture N`，模式图片数由 H3 Studio 节点校验。）
 
 ## D16. ANIMA 默认自然语言（2026-08-07）
 
@@ -106,9 +106,9 @@
 
 ## D18. H3 媒体独立编号 + Ref2VA 英文 + 模式资产约束（2026-08-07）
 
-- Picture/Video/Audio 按类型独立 1 起始连续编号（`normalize_media_labels` 渲染前确定性重排），manifest 标签可回溯到原始资产。
+- Picture/Video/Audio 按类型独立 1 起始连续编号（`normalize_media_labels` 渲染前确定性重排），manifest 标签可回溯到原始资产。（2026-09-21 校准：`normalize_media_labels`/`sync_manifest_assets` 随结构化计划通道删除；编号连续性现由 `validators/minimax_h3._check_labels` 直接在校验成品提示词时保证。）
 - Ref2VA 六段正文必须英文；检测到非英语 → 一次 LLM 修复（auto_repair，默认开）；仍失败 → validation 记 `h3_ref2va_english` 错误，不做假装翻译。`<d>` 对白/歌词/画面文字保留原语言。
-- 模式资产约束：T2VA=0 图、I2VA=1、FL2VA=2、L2VA=1、Ref2VA 不限；不满足记 error 且不生成错误引用。
+- 模式资产约束：T2VA=0 图、I2VA=1、FL2VA=2、L2VA=1、Ref2VA 不限；不满足记 error 且不生成错误引用。（2026-09-21 校准：该规则现在只有 `nodes/h3_prompt_studio._validate_lenient_h3` 一个归属者，测试专用副本 `MODE_IMAGE_REQUIREMENTS` 已删除。）
 
 ## D19. 采样参数进档案高级设置（2026-08-07）
 
@@ -150,7 +150,7 @@
 - **LM Studio v1 优先 + instance_id 卸载**：探测顺序 v1 → v0 → unavailable；unload 请求体 `{"instance_id": ...}`（用户只传 model 时从 load 响应或 `loaded_instances` 解析）。
 - **附件文档解析一致性（方案 A 实现）**：PDF/DOCX 在 Provider 无 file 能力时本地提取文本（pypdf/python-docx，可选依赖）→ `Attachment(kind=text)` + warning「已本地提取文本发送」；扫描件无文本层/非 PDF/DOCX/依赖缺失 → 明确报错，不 OCR、不假装识别。PPTX/XLSX 不在本轮（文档明确只支持 PDF/DOCX 本地提取）。
 - **多图身份判断增加一次 VLM 整体判断**：`batch_identity_check`（最多 6 张代表图；"Do these images show the same visual subject?"，只比较可观察身份特征，服装/背景/姿势为弱辅助）；VLM 失败回退 deterministic heuristic；身份判断提示词禁止以「衣服/背景/姿势相同」为主要依据。
-- **H3/Storyboard 原生 Structured Output**：`H3_SCHEMA` / `STORYBOARD_SCHEMA` 由 `OutputContract` 持有（Provider 支持时走协议层，否则从同一 schema 自动派生约束），避免 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复。
+- **H3/Storyboard 原生 Structured Output**：`STORYBOARD_SCHEMA` 由 `OutputContract` 持有（`nodes/storyboard_builder.py` 经 `schema_contract("storyboard", STORYBOARD_SCHEMA)` 接通，Provider 支持时走协议层，否则从同一 schema 自动派生约束），避免 System 规则 + 巨大 JSON 示例 + Provider Schema 三重重复。（2026-09-21 校准：本条曾把 `H3_SCHEMA` 与 `STORYBOARD_SCHEMA` 并列为已接通；`H3_SCHEMA` 从未接入生产，H3 Studio 走 `LENIENT_PROMPT_CONTRACT` 的 `<PROMPT>/<SUMMARY>`。ADR 0008 已宣布 H3 结构化计划通道移除，其孤立助手 `services/h3_plan.py` 与 `normalize_plan`/`render_validate` 已删除。）
 - **Schema.from_json 接受 JSON 字符串**：ComfyUI 自定义类型输入可能以 JSON 字符串到达（之前对 str 直接抛 SchemaError 导致自定义类型无法接线）；现在字符串先解析为 dict 再反序列化，保持输入容错。
 
 ## D25. 0.2.1a 小补丁决策（2026-08-07）

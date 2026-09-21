@@ -15,11 +15,9 @@ import pytest
 CASES_DIR = Path(__file__).parent / "prompt_cases"
 
 from aps.renderers.anima import AnimaCharacter, AnimaPromptPlan, render_anima_plan  # noqa: E402
-from aps.renderers.minimax_h3 import render_h3  # noqa: E402
 from aps.schemas.character import CharacterCandidate, CharacterTrait  # noqa: E402
 from aps.schemas.references import AssetRef  # noqa: E402
 from aps.services import reference as reference_svc  # noqa: E402
-from aps.services.h3_plan import parse_plan_json  # noqa: E402
 from aps.validators.minimax_h3 import ref2va_english_issue  # noqa: E402
 
 
@@ -89,19 +87,16 @@ def _pipeline_multi_image_consensus(inp):
 
 
 def _pipeline_h3_ref2va_english(inp):
-    cn = parse_plan_json(json.dumps(inp["chinese_plan"]), "Ref2VA", 10.0)
-    en = parse_plan_json(json.dumps(inp["english_plan"]), "Ref2VA", 10.0)
-    cn_rendered = render_h3(cn)
-    en_rendered = render_h3(en)
+    cn, en = inp["chinese_prompt"], inp["english_prompt"]
     # 六段固定顺序
     heads = ["subject_definitions:", "summary:", "retention_analysis:",
              "detailed_description:", "overall_soundscape:",
              "non_diegetic_music:"]
-    idx = [cn_rendered.find(h) for h in heads]
+    idx = [cn.find(h) for h in heads]
     order_ok = all(idx[i] != -1 and idx[i] < idx[i + 1] for i in range(len(idx) - 1))
     return {
-        "chinese_flagged": ref2va_english_issue(cn_rendered) is not None,
-        "english_flagged": ref2va_english_issue(en_rendered) is not None,
+        "chinese_flagged": ref2va_english_issue(cn) is not None,
+        "english_flagged": ref2va_english_issue(en) is not None,
         "section_order_ok": order_ok,
     }
 
