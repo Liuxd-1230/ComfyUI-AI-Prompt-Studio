@@ -214,6 +214,14 @@ def test_registry_cache_and_panel_renderers_ignore_superseded_responses():
     assert "renderCapabilities(p)" in settings, "能力区应复用已取回的档案，不再重复请求"
 
 
+def test_frontend_requests_share_the_comfyui_api_base():
+    """所有请求统一走 ComfyUI 的 fetchApi：自定义 api_base/部署路径下才不会 404。"""
+    widgets = (PROJECT_ROOT / "web" / "profile_widgets.js").read_text(encoding="utf-8")
+    assert "comfyApi.fetchApi(" in widgets
+    assert "await fetch(" not in widgets
+    assert 'API_BASE = "/ai_prompt_studio"' in widgets
+
+
 def test_settings_runtime_actions_cover_the_backend_set():
     """面板的运行时按钮必须等于服务层支持的动作集合。"""
     from aps.services.runtime.control import RUNTIME_ACTIONS

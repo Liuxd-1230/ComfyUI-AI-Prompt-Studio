@@ -1,7 +1,10 @@
 // AI Prompt Studio — 前端辅助（DOM 构建 / API 调用 / 提示）
 import { invalidateCachedJson } from "./data_cache.js";
+import { api as comfyApi } from "../../scripts/api.js";
 
-export const API_BASE = "/api/ai_prompt_studio";
+// 前缀交给 ComfyUI 的 fetchApi 拼接：它负责 api_base、/api 与 client-id，
+// 自定义部署路径下裸 fetch 会 404。
+export const API_BASE = "/ai_prompt_studio";
 
 // ---------- DOM ----------
 export function el(tag, attrs = {}, children = []) {
@@ -28,7 +31,7 @@ export async function api(path, options = {}) {
   const opts = { headers: { "Content-Type": "application/json" }, ...options };
   let resp;
   try {
-    resp = await fetch(API_BASE + path, opts);
+    resp = await comfyApi.fetchApi(API_BASE + path, opts);
   } catch (e) {
     throw new Error("网络请求失败：" + e.message);
   }

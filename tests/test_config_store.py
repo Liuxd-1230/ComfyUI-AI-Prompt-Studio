@@ -66,6 +66,15 @@ def test_default_badge_follows_the_profile_nodes_will_use(store):
         routes.handle_set_default_profile("nope", store)
 
 
+def test_set_settings_merges_by_key(store):
+    """部分提交不能清空其余设置。"""
+    store.set_settings({"theme": "dark", "last_tab": "profiles"})
+    store.set_settings({"last_tab": "runtime"})
+    assert store.get_settings() == {"theme": "dark", "last_tab": "runtime"}
+    routes.handle_settings_set({"settings": {"theme": "light"}}, store)
+    assert store.get_settings() == {"theme": "light", "last_tab": "runtime"}
+
+
 def test_capability_cache(store):
     store.create_profile({"profile_id": "p1"})
     assert store.get_capabilities("p1") == {}

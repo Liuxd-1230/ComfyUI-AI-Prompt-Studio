@@ -1,5 +1,7 @@
 # Changelog
 
+- **前端请求统一走 ComfyUI 的 api_base**：设置面板的写操作此前用裸 `fetch("/api/ai_prompt_studio/…")`，读操作却走 `api.fetchApi`；在自定义部署路径或 `--base-path` 下写操作会 404，现在两者都由 `fetchApi` 拼接前缀与 client-id。`POST /settings` 改为按键合并，部分提交不再清空其余设置（此前是整表覆盖）。README 端点清单补上 `profiles/{id}/default` 并标注 `settings` 的合并语义。
+
 - **运行时操作补齐与死代码清理**：本地运行时分区补上后端早已支持的 `reload`（重载）按钮，动作表改为与 `services/runtime/control.py::RUNTIME_ACTIONS` 一一对应，并新增一致性测试（后端加动作而面板没跟上就会失败）。删除从未被引用的 `ACTIONS` 常量、无监听者的 `aps-registry-invalidated` 事件、被 `.aps-cap-check` 取代的 `.aps-cap*` 与已不存在的 `.aps-bottom` 布局样式，并给原生 Settings 里的入口按钮补上此前缺失的 `.aps-native-settings-button` 样式。
 
 - **面板输入校验与后端规则对齐**：超时、温度、Top P、频率惩罚、存在惩罚、最大输出改为带 `min`/`max` 的数字框，越界在提交前列出中文原因且不发请求（此前超时填 0 会被静默存成 120，填 700 才由后端返回 400 的中文原文）。Markdown 补充资料同样前置校验：资料 ID 字符集与长度、标题必填与 160 上限、不带目录的 `.md` 文件名、`scope` 只能 `global`/`node`/`target`、`node` 必须给节点 ID。新增一致性测试把面板里的区间和取值与 `AIProfile.validate`、`PromptSupplement.validate` 绑定，改一边忘了改另一边会失败。

@@ -272,8 +272,11 @@ class ConfigStore:
         return dict(self._config.get("settings", {}))
 
     def set_settings(self, settings: Dict[str, Any]) -> None:
+        """按键合并写入：一次部分提交不能清空其余设置。"""
         with self._lock:
-            self._config["settings"] = settings
+            merged = dict(self._config.get("settings", {}) or {})
+            merged.update(settings or {})
+            self._config["settings"] = merged
             self._save_config()
 
 

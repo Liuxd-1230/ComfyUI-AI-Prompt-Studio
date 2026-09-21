@@ -132,7 +132,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 
 ## 后端路由（设置工作台）
 
-`/api/ai_prompt_studio/status` · `profiles`（GET/POST）· `profiles/{id}`（GET/PUT/DELETE）· `profiles/{id}/api_key`（POST/DELETE）· `profiles/{id}/probe` · `profiles/{id}/test` · `capabilities` · `log` · `settings`（GET/POST）· `runtime` · `supplements`（GET/POST/PUT/DELETE/enabled）。ComfyUI 会自动注册 `/api` 前缀副本。
+`/api/ai_prompt_studio/status` · `profiles`（GET/POST）· `profiles/{id}`（GET/PUT/DELETE）· `profiles/{id}/api_key`（POST/DELETE）· `profiles/{id}/default`（POST，设为默认档案）· `profiles/{id}/probe` · `profiles/{id}/test` · `capabilities` · `log` · `settings`（GET/POST，POST 按键合并，不清空其余设置）· `runtime` · `supplements`（GET/POST/PUT/DELETE/enabled）。ComfyUI 会自动注册 `/api` 前缀副本。
 
 ## 开发与测试
 
