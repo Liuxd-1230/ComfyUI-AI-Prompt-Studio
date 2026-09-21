@@ -4,6 +4,7 @@ import pytest
 from aps.schemas.profile import AIProfile
 from aps.schemas.results import LLMResult, make_error
 from aps.schemas.attachments import Attachment
+from aps.services import capability_probe
 from aps.services.adapters.base import ProtocolUnsupported
 from aps.services.gateway import Gateway, GenerateRequest
 
@@ -65,6 +66,21 @@ def test_protocol_deepseek_per_model_when_caps_unknown(store):
     run("deepseek-v4-flash", want_responses=False)
     run("deepseek-v4-pro", want_responses=False)
     run("deepseek-unknown-model", want_responses=False)
+
+
+def test_deepseek_table_entry_can_enable_responses_before_probe(store, monkeypatch):
+    """能力表是未探测时的唯一开关：标注可用 Responses 的模型必须真的走 Responses，
+    否则 gateway 的 known is True 分支就是死代码，官方审计结论也无从生效。"""
+    monkeypatch.setitem(capability_probe.DEEPSEEK_MODEL_CAPS, "deepseek-v4-flash",
+                        {"responses": True, "chat_completions": True})
+    store.create_profile({"profile_id": "flash", "model": "deepseek-v4-flash"})
+    gw = Gateway(store=store)
+    r = FakeAdapter("responses")
+    c = FakeAdapter("chat_completions")
+    gw._responses = r
+    gw._chat = c
+    gw.generate(store.get_profile("flash"), "k", GenerateRequest())
+    assert r.calls and not c.calls
 
 
 def test_protocol_explicit_override(store):

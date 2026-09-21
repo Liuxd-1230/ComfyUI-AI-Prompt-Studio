@@ -8,7 +8,7 @@
 - **视觉模型**：可在当前档案配置 `vision_base_url` + `vision_model`，也可用 `vision_profile_id` 关联一个以主 `base_url + model + key` 提供视觉能力的完整档案。两种方式互斥，关联档案优先；未配置或洋红测试图识别失败时 Reference Analyzer 明确报错，不会把文本模型伪装成视觉模型。
 - **DeepSeek 结构化输出（0.2.1）**：Responses 路径原生支持 `text.format` json_schema（`structured_output_responses=True`，flash）；Chat 路径官方未文档化 json_schema → 自动降级为「提示词约束 + 客户端解析校验」（`structured_output_chat=False`）。**不再**因 `provider==deepseek` 统一禁止原生结构化输出。
 - **DeepSeek 附件能力（0.2.1）**：`deepseek-v4-flash` **不支持图片/文件输入**（官方：`input_image` 被替换为占位文本，`input_file` 未文档化）——能力表诚实标记 vision=False / files=False；图片附件明确报错，PDF/DOCX 走本地文本提取降级。
-- **DeepSeek 按具体模型能力**：`deepseek-v4-flash`（responses/web_search 原生）；`deepseek-v4-pro`（responses 当前不可用）等以 `DEEPSEEK_MODEL_CAPS` 表与能力探测缓存为准；未知模型保守走 chat_completions。
+- **DeepSeek 按具体模型能力**：官方公开接口为 Chat Completions。`DEEPSEEK_MODEL_CAPS` 只回答「未探测时敢不敢发」——当前 flash 与 pro 都标 `responses: False`，未知模型同样走 `chat_completions`。Responses 路径及其原生 `web_search`、`text.format` json_schema 需**主动探测实测通过**后才会启用并写入能力缓存（探测失败时以实测结果为准，不按模型名猜）。
 - **联网搜索**：原生 web_search 仅 DeepSeek Responses 路径；其他端点按降级链：外部搜索后端（档案 `search_url`）→ 离线 + 明确警告。**外部搜索后端是自定义 HTTP 契约**（POST {query} → {results:[{title,url,snippet}]}），不是内置搜索服务，需要用户自建或接入第三方网关。
 - **函数工具**：内置 `now` / `search` 两个工具；`search` 依赖档案 `search_url`。工具循环上限 `MAX_TOOL_ROUNDS=4`（不暴露到节点 UI）。工具执行失败把错误文本回给模型，不抛异常、不伪造。Responses 续轮的 `call_id` 逐字沿用模型返回值。
 

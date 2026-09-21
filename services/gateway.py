@@ -136,8 +136,9 @@ class Gateway:
         if r is True:
             return "responses"
         if r in ("unknown", None):
-            # 未探测/未知：DeepSeek 按「具体模型」能力表兜底（flash→responses，
-            # v4-pro→chat，未知模型保守走 chat；失败仍可被 ProtocolUnsupported 降级）
+            # 未探测：只接受能力表里明确标注为可用的模型；表值是当前
+            # 「未探测安全默认」，两个 DeepSeek 模型都留 Chat（官方公开接口），
+            # Responses 要等主动探测确认。失败仍可被 ProtocolUnsupported 降级。
             if (profile.provider == "deepseek" and
                     capability_probe._is_official_deepseek_base(profile.base_url)):
                 known = capability_probe.deepseek_known_responses(profile.model)
