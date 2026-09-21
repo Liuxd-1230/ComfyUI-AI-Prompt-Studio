@@ -1,5 +1,7 @@
 # Changelog
 
+- **附件按实际选中的协议复核**：带图片/文件附件而两种协议都没通过同格式探针时，`_select_protocol` 不再按文本能力回落到 Responses（工具仍是软要求，没有探针通过时照常退化为不带工具的回答），并在选定协议后用 `vision_chat`/`vision_responses`、`files_chat`/`files_responses` 复核一次。只有聚合 `vision`/`files` 为真不再能放行附件，错误信息点名是哪个协议没通过哪项探针。顺带去掉 `generate()` 里重复的一次能力读取。
+
 - **`web_search` 三档策略真正区分，"未探测"只剩一种表示**：`auto`（档案默认值）此前与 `always` 完全等价，等于每次请求都强行联网；现在 `auto` 只把原生 `web_search` 工具挂给模型按需调用，`always` 才追加 `tool_choice={"type":"web_search"}` 强制本轮联网（只约束首轮，工具续轮不再强制）。端点没有联网能力时 `auto` 静默不搜（此前每个请求都带一条离线降级警告），`always` 才明确告警无法满足。删除生产侧从未写入、只有测试使用的 `"unknown"` 能力值：搜索策略与网关协议选择统一按「缺键＝未探测＝保守不支持」判定，探测明确返回 False 时不再被静态表推翻。节点 tooltip 与 `docs/known-limitations.md` 同步三档语义。
 
 - **前端请求统一走 ComfyUI 的 api_base**：设置面板的写操作此前用裸 `fetch("/api/ai_prompt_studio/…")`，读操作却走 `api.fetchApi`；在自定义部署路径或 `--base-path` 下写操作会 404，现在两者都由 `fetchApi` 拼接前缀与 client-id。`POST /settings` 改为按键合并，部分提交不再清空其余设置（此前是整表覆盖）。README 端点清单补上 `profiles/{id}/default` 并标注 `settings` 的合并语义。

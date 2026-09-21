@@ -253,6 +253,30 @@ def gate_attachments(attachments: List[Attachment], caps: dict,
     return sendable, warnings, None
 
 
+def protocol_gate_error(attachments: List[Attachment], caps: dict, protocol: str,
+                        supports_vision: bool, supports_files: bool) -> Optional[str]:
+    """按「实际要发的协议」复核附件；聚合能力为 True 不代表这个协议能收。
+
+    主动探测按协议分别记录 vision_chat/vision_responses、files_chat/files_responses，
+    只有对应字段为 True（或用户在档案高级设置手动声明）才允许发送。
+    """
+    suffix = "responses" if protocol == "responses" else "chat"
+    checks = (
+        ("image", f"vision_{suffix}", supports_vision, "视觉"),
+        ("file", f"files_{suffix}", supports_files, "文件"),
+    )
+    problems = []
+    for kind, field, declared, label in checks:
+        if not any(a.kind == kind for a in attachments):
+            continue
+        if declared or (caps or {}).get(field) is True:
+            continue
+        problems.append(
+            f"{kind} 附件无法由 {protocol} 协议发送：该协议的{label}探针未通过"
+            "（改用通过该探针的协议，或在档案高级设置确认端点支持后手动开启）")
+    return "；".join(problems)
+
+
 def text_context_for(attachments: List[Attachment]) -> str:
     """把文本附件拼成注入上下文的块（不进日志）。"""
     parts = []

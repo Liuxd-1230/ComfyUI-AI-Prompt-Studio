@@ -114,13 +114,18 @@ class Gateway:
         caps = self._capabilities(profile)
         # 主动探测按协议记录附件/工具能力。auto 必须选择真正通过相同请求格式
         # 的路径，不能因为 Responses 文本可用就把图片发到未通过视觉探针的接口。
+        # 附件是硬要求（发不出去就是错误）；工具是软要求（没有探针通过时
+        # 仍可退化为不带工具的正常回答），所以只有附件能阻断协议回落。
         requirements = []
+        hard_requirements = []
         if req is not None:
             kinds = {getattr(item, "kind", "") for item in req.attachments or []}
             if "image" in kinds:
                 requirements.append("vision")
+                hard_requirements.append("vision")
             if "file" in kinds:
                 requirements.append("files")
+                hard_requirements.append("files")
             if req.tools:
                 requirements.append("function_tools")
         if requirements:
@@ -131,6 +136,10 @@ class Gateway:
             if responses_ok:
                 return "responses"
             if chat_ok:
+                return "chat_completions"
+            if hard_requirements:
+                # 没有协议通过同格式附件探针：不按文本能力回落到 Responses，
+                # 由附件门槛按实际协议明确报错。
                 return "chat_completions"
         r = caps.get("responses")
         if r is True:
@@ -162,17 +171,18 @@ class Gateway:
             if ext.get("warning"):
                 warnings.append(ext["warning"])
 
+        caps = self._capabilities(profile)
+        stored = self.store.get_profile(profile.profile_id)
+        same_configured_model = bool(
+            stored is not None and stored.model == profile.model and
+            stored.base_url == profile.base_url)
+        declared_vision = profile.supports_vision if same_configured_model else False
+        declared_files = profile.supports_files if same_configured_model else False
+
         # 附件能力门槛：失败即报错（不静默丢弃伪装成功）
         if req.attachments:
-            caps = self._capabilities(profile)
-            stored = self.store.get_profile(profile.profile_id)
-            same_configured_model = bool(
-                stored is not None and stored.model == profile.model and
-                stored.base_url == profile.base_url)
             sendable, att_warnings, att_error = attachments_svc.gate_attachments(
-                req.attachments, caps,
-                profile.supports_vision if same_configured_model else False,
-                profile.supports_files if same_configured_model else False)
+                req.attachments, caps, declared_vision, declared_files)
             warnings.extend(att_warnings)
             if att_error:
                 result = LLMResult(profile_id=profile.profile_id, model=profile.model,
@@ -189,6 +199,16 @@ class Gateway:
             req.attachments = [a for a in sendable if a.kind != "text"]
 
         protocol = self._select_protocol(profile, req)
+        if req.attachments:
+            # 上面的门槛只看聚合能力（vision = 两协议任一通过）；这里按实际要发的协议
+            # 复核，避免图片发到没通过同格式视觉探针的接口。
+            att_error = attachments_svc.protocol_gate_error(
+                req.attachments, caps, protocol, declared_vision, declared_files)
+            if att_error:
+                result = LLMResult(profile_id=profile.profile_id, model=profile.model,
+                                   protocol=protocol,
+                                   error=make_error("attachment_unsupported", att_error))
+                return self._finalize(profile, result, warnings)
         if web_search and protocol == "chat_completions":
             ext = self._inject_external_search(profile, req)
             if ext.get("warning"):
@@ -202,7 +222,6 @@ class Gateway:
         # 否则 → 提示词约束 + json_mode 兜底（DeepSeek Chat 未文档化 json_schema）。
         # 每次切换协议（含 ProtocolUnsupported 降级）都重新计算，绝不把
         # 某协议不支持的 schema 继续发给另一协议（0.2.1a 修复）。
-        caps = self._capabilities(profile)
         protocol_req, output_schema = self._output_request_for(
             profile, req, protocol, caps)
 

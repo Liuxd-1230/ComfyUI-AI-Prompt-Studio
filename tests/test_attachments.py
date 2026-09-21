@@ -5,6 +5,7 @@ import json
 import pytest
 
 from aps.schemas.attachments import Attachment, AttachmentList
+from aps.schemas.results import LLMResult
 from aps.services import attachments as att_svc
 from aps.services.adapters.chat_adapter import ChatCompletionsAdapter, _attachment_parts
 from aps.services.adapters.responses_adapter import _attachment_input_items
@@ -280,6 +281,48 @@ def test_gateway_binary_file_without_files_errors(store):
                          GenerateRequest(messages=[], attachments=[f]))
     assert result.has_error()
     assert result.error.kind == "attachment_unsupported"
+
+
+def test_gateway_uses_the_protocol_that_passed_its_own_vision_probe(store):
+    """聚合 vision=True 时，图片必须走真正通过该格式探针的那个协议。"""
+    store.create_profile({"profile_id": "p1", "provider": "openai_compatible"})
+    store.set_capabilities("p1", {
+        "responses": True, "chat_completions": True,
+        "vision": True, "vision_chat": True, "vision_responses": False})
+    seen = {}
+
+    class Recorder:
+        def __init__(self, name):
+            self.name = name
+
+        def generate(self, profile, api_key, **kw):
+            seen[self.name] = kw.get("attachments") or []
+            return LLMResult(profile_id="p1", protocol=self.name, text="ok")
+
+    gw = Gateway(store=store)
+    gw._responses = Recorder("responses")
+    gw._chat = Recorder("chat_completions")
+    img = Attachment.from_data_uri("data:image/png;base64,AA==", name="pic.png")
+    result = gw.generate(store.get_profile("p1"), "k",
+                         GenerateRequest(messages=[], attachments=[img]))
+    assert not result.has_error()
+    assert "chat_completions" in seen and "responses" not in seen
+
+
+def test_gateway_rejects_image_when_only_the_aggregate_flag_is_true(store):
+    """两协议各自探针都没过，只有聚合位为 True：按实际协议报错而不是发出去。"""
+    store.create_profile({"profile_id": "p1", "provider": "openai_compatible"})
+    store.set_capabilities("p1", {
+        "responses": True, "chat_completions": True,
+        "vision": True, "vision_chat": False, "vision_responses": False})
+    gw = Gateway(store=store)
+    gw._responses = gw._chat = None
+    img = Attachment.from_data_uri("data:image/png;base64,AA==", name="pic.png")
+    result = gw.generate(store.get_profile("p1"), "k",
+                         GenerateRequest(messages=[], attachments=[img]))
+    assert result.has_error()
+    assert result.error.kind == "attachment_unsupported"
+    assert "chat_completions 协议" in result.error.message
 
 
 # ---------------------------------------------------------------- 附件 warning 到节点输出（P0-4）
