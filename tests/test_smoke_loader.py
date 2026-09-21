@@ -214,6 +214,15 @@ def test_registry_cache_and_panel_renderers_ignore_superseded_responses():
     assert "renderCapabilities(p)" in settings, "能力区应复用已取回的档案，不再重复请求"
 
 
+def test_settings_runtime_actions_cover_the_backend_set():
+    """面板的运行时按钮必须等于服务层支持的动作集合。"""
+    from aps.services.runtime.control import RUNTIME_ACTIONS
+
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    for action in RUNTIME_ACTIONS:
+        assert f'"{action}"' in settings, f"设置面板缺少运行时动作：{action}"
+
+
 def test_panel_prevalidation_mirrors_backend_rules():
     """前端预校验只负责提前报错，区间与取值必须和后端一致，否则漂移由这条测试拦住。"""
     from aps.schemas.profile import AIProfile

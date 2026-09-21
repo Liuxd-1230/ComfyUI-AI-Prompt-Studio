@@ -1,5 +1,7 @@
 # Changelog
 
+- **运行时操作补齐与死代码清理**：本地运行时分区补上后端早已支持的 `reload`（重载）按钮，动作表改为与 `services/runtime/control.py::RUNTIME_ACTIONS` 一一对应，并新增一致性测试（后端加动作而面板没跟上就会失败）。删除从未被引用的 `ACTIONS` 常量、无监听者的 `aps-registry-invalidated` 事件、被 `.aps-cap-check` 取代的 `.aps-cap*` 与已不存在的 `.aps-bottom` 布局样式，并给原生 Settings 里的入口按钮补上此前缺失的 `.aps-native-settings-button` 样式。
+
 - **面板输入校验与后端规则对齐**：超时、温度、Top P、频率惩罚、存在惩罚、最大输出改为带 `min`/`max` 的数字框，越界在提交前列出中文原因且不发请求（此前超时填 0 会被静默存成 120，填 700 才由后端返回 400 的中文原文）。Markdown 补充资料同样前置校验：资料 ID 字符集与长度、标题必填与 160 上限、不带目录的 `.md` 文件名、`scope` 只能 `global`/`node`/`target`、`node` 必须给节点 ID。新增一致性测试把面板里的区间和取值与 `AIProfile.validate`、`PromptSupplement.validate` 绑定，改一边忘了改另一边会失败。
 
 - **默认档案看得见也改得了**：`GET /profiles` 返回的 `default_profile_id` 改为节点留空时真正会用的生效默认（此前删掉显式默认后列表里没有任何“默认”徽章，而运行时仍隐式使用第一个档案）；新增 `POST /profiles/{profile_id}/default` 与面板“设为默认”按钮，当前档案为默认时按钮显示为禁用的“当前默认档案”。README 与节点文档中的按钮名改为界面上真实存在的“测试”“能力探测”，并同步“一次保存同时写入档案与密钥”“能力缓存只按影响能力的字段失效”的实际行为。

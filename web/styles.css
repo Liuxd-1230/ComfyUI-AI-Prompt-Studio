@@ -187,6 +187,18 @@
   font-size: 11px;
   margin-right: 4px;
 }
+/* ComfyUI 原生 Settings 列表里的入口按钮（不在 .aps-overlay 内，需自带样式） */
+.aps-native-settings-button {
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid #4a90d9;
+  border-radius: 4px;
+  color: var(--input-text, #ddd);
+  background: var(--comfy-input-bg, #25262b);
+  font-size: 13px;
+  cursor: pointer;
+}
+.aps-native-settings-button:hover { background: rgba(74, 144, 217, .18); }
 .aps-btn-row {
   display: flex;
   flex-wrap: wrap;
@@ -201,37 +213,10 @@
 .aps-key-status { display: block; margin-top: 4px; font-size: 12px; }
 .aps-key-saved { color: #45c486; }
 .aps-key-missing { color: #d99a4e; }
-.aps-bottom {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-}
 .aps-section {
   border: 1px solid #3a3a3f;
   border-radius: 6px;
   padding: 10px;
-}
-.aps-section:last-child {
-  grid-column: 1 / -1;
-}
-.aps-cap {
-  display: inline-block;
-  font-size: 11px;
-  border-radius: 3px;
-  padding: 2px 6px;
-  margin: 2px 4px 2px 0;
-}
-.aps-cap.ok {
-  background: rgba(46, 160, 67, 0.25);
-  color: #7ee787;
-}
-.aps-cap.no {
-  background: rgba(248, 81, 73, 0.25);
-  color: #f97583;
-}
-.aps-cap.unk {
-  background: rgba(210, 153, 34, 0.25);
-  color: #e3b341;
 }
 .aps-cap-grid {
   display: grid;
@@ -330,12 +315,8 @@
     width: 96vw;
     padding: 12px;
   }
-  .aps-cols,
-  .aps-bottom {
+  .aps-cols {
     grid-template-columns: 1fr;
-  }
-  .aps-section:last-child {
-    grid-column: auto;
   }
 }
 .aps-prompt-studio {

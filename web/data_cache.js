@@ -36,7 +36,4 @@ export function invalidateCachedJson(pathPrefix = "") {
     generations.set(path, (generations.get(path) || 0) + 1);
     entries.delete(path);
   }
-  globalThis.dispatchEvent?.(new CustomEvent("aps-registry-invalidated", {
-    detail: { pathPrefix },
-  }));
 }

@@ -11,7 +11,15 @@ const REASONING = ["off", "low", "medium", "high"];
 const WEB_SEARCH = ["off", "auto", "always"];
 const UNLOAD = ["never", "after_request", "after_success"];
 const BACKENDS = ["ollama", "llamacpp", "lmstudio", "custom"];
-const ACTIONS = ["status", "list_models", "load", "unload", "reload", "unload_all"];
+// 与 services/runtime/control.py::RUNTIME_ACTIONS 同一套动作
+const RUNTIME_ACTIONS = [
+  ["状态", "status"],
+  ["模型列表", "list_models"],
+  ["加载", "load"],
+  ["卸载", "unload"],
+  ["重载", "reload"],
+  ["全部卸载", "unload_all"],
+];
 
 let panel = null;
 let currentProfileId = "";
@@ -660,14 +668,7 @@ function renderRuntime() {
   box.appendChild(inputRow("API URL", url, "服务地址；留空使用默认端口"));
   box.appendChild(inputRow("模型", model, "模型名（加载/卸载需要）"));
   const row = el("div", { class: "aps-btn-row" });
-  const runtimeActions = [
-    ["状态", "status"],
-    ["模型列表", "list_models"],
-    ["加载", "load"],
-    ["卸载", "unload"],
-    ["全部卸载", "unload_all"],
-  ];
-  for (const [label, action] of runtimeActions) {
+  for (const [label, action] of RUNTIME_ACTIONS) {
     row.appendChild(el("button", { class: "aps-btn", text: label, onClick: act(action) }));
   }
   box.appendChild(row);
