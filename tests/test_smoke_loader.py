@@ -214,6 +214,27 @@ def test_registry_cache_and_panel_renderers_ignore_superseded_responses():
     assert "renderCapabilities(p)" in settings, "能力区应复用已取回的档案，不再重复请求"
 
 
+def test_panel_prevalidation_mirrors_backend_rules():
+    """前端预校验只负责提前报错，区间与取值必须和后端一致，否则漂移由这条测试拦住。"""
+    from aps.schemas.profile import AIProfile
+    from aps.schemas.prompt_supplement import PromptSupplement
+
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    for label, lo, hi in (("超时(秒)", 1, 600), ("温度", 0, 2), ("Top P", 0, 1),
+                          ("频率惩罚", -2, 2), ("存在惩罚", -2, 2),
+                          ("最大输出 tokens", 1, 1000000)):
+        assert f'["{label}", {lo}, {hi}' in settings, f"面板缺少 {label} 的区间"
+    for scope in ("global", "node", "target"):
+        assert f'"{scope}"' in settings, f"面板缺少 scope 取值 {scope}"
+
+    out_of_range = AIProfile(profile_id="p1", base_url="https://x.example",
+                             model="m", timeout=700, temperature=5)
+    assert any("timeout" in msg for msg in out_of_range.validate())
+    assert any("temperature" in msg for msg in out_of_range.validate())
+    assert any("scope" in msg for msg in
+               PromptSupplement(supplement_id="ok1", title="t", scope="Target").validate())
+
+
 def test_settings_panel_can_set_the_default_profile():
     """面板此前只显示默认档案、不能设置它，而节点留空时用的正是这个档案。"""
     settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")

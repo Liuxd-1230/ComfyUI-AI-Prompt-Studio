@@ -46,6 +46,35 @@ function textInput(value, placeholder) {
   return el("input", { type: "text", value: value || "", placeholder: placeholder || "" });
 }
 
+function numberInput(value, placeholder, min, max, step) {
+  return el("input", {
+    type: "number", value: value != null ? String(value) : "",
+    placeholder: placeholder || "", min, max, step: step || "any",
+  });
+}
+
+// 与 schemas/profile.py::AIProfile.validate 保持同一套区间；改一边必须改另一边。
+const NUMBER_RULES = [
+  ["超时(秒)", 1, 600, 1],
+  ["温度", 0, 2, "any"],
+  ["Top P", 0, 1, "any"],
+  ["频率惩罚", -2, 2, "any"],
+  ["存在惩罚", -2, 2, "any"],
+  ["最大输出 tokens", 1, 1000000, 1],
+];
+
+function numberProblems(controls) {
+  const problems = [];
+  for (const [label, lo, hi] of NUMBER_RULES) {
+    const raw = controls[label].value.trim();
+    if (raw === "") continue;
+    const value = Number(raw);
+    if (!Number.isFinite(value)) problems.push(`${label} 不是数字`);
+    else if (value < lo || value > hi) problems.push(`${label} 必须在 ${lo}..${hi}`);
+  }
+  return problems;
+}
+
 function autocompleteInput(value, placeholder, values, idPrefix) {
   const id = `${idPrefix}-${Math.random().toString(36).slice(2)}`;
   const input = el("input", {
@@ -346,13 +375,17 @@ function buildEditorForm(p) {
   };
   visionProfileId.addEventListener("change", syncVisionSource);
   syncVisionSource();
-  const timeout = textInput(p.timeout != null ? String(p.timeout) : "120", "120");
-  // 高级采样参数（D19）：留空 = 不发送该字段，交给 provider 默认值
-  const temperature = textInput(p.temperature != null ? String(p.temperature) : "", "空=默认");
-  const topP = textInput(p.top_p != null ? String(p.top_p) : "", "空=默认");
-  const freqPenalty = textInput(p.frequency_penalty != null ? String(p.frequency_penalty) : "", "空=默认");
-  const presPenalty = textInput(p.presence_penalty != null ? String(p.presence_penalty) : "", "空=默认");
-  const maxTokens = textInput(p.max_tokens != null ? String(p.max_tokens) : "", "空=默认");
+  const timeout = numberInput(p.timeout != null ? p.timeout : 120, "120", 1, 600, 1);
+  // 高级采样参数：留空 = 不发送该字段，交给 provider 默认值
+  const temperature = numberInput(p.temperature, "空=默认", 0, 2);
+  const topP = numberInput(p.top_p, "空=默认", 0, 1);
+  const freqPenalty = numberInput(p.frequency_penalty, "空=默认", -2, 2);
+  const presPenalty = numberInput(p.presence_penalty, "空=默认", -2, 2);
+  const maxTokens = numberInput(p.max_tokens, "空=默认", 1, 1000000, 1);
+  const numericControls = {
+    "超时(秒)": timeout, "温度": temperature, "Top P": topP,
+    "频率惩罚": freqPenalty, "存在惩罚": presPenalty, "最大输出 tokens": maxTokens,
+  };
   const searchUrl = textInput(p.search_url, "https://…/search");
   const supportsVision = checkboxInput(p.supports_vision, "未探测时按此声明判定主模型能否接收图片附件；能力探测跑完后会被实测结果覆盖");
   const supportsFiles = checkboxInput(p.supports_files, "未探测时按此声明判定端点是否支持文件内容部分（附件 type:file）；能力探测跑完后会被实测结果覆盖");
@@ -380,7 +413,7 @@ function buildEditorForm(p) {
   wrap.appendChild(visionModelRow);
   wrap.appendChild(inputRow("视觉档案", visionProfileId, "视觉/文本 Profile 解耦：从已有档案选择；留空使用本档案的 vision_* 配置与密钥"));
   wrap.appendChild(visionLinkNote);
-  wrap.appendChild(inputRow("超时(秒)", timeout, "请求超时（秒）"));
+  wrap.appendChild(inputRow("超时(秒)", timeout, "请求超时（秒，1-600；留空按 120）"));
 
   // 高级采样区（不进普通节点 UI）
   const adv = el("details", { class: "aps-advanced" });
@@ -435,6 +468,8 @@ function buildEditorForm(p) {
 
   // 保存/删除/测试/探测
   const saveBtn = el("button", { class: "aps-btn aps-btn-primary", text: "保存", onClick: async () => {
+    const problems = numberProblems(numericControls);
+    if (problems.length) return toast("请先修正：" + problems.join("；"), true);
     const payload = {
       name: name.value, provider: provider.value, base_url: baseUrl.value,
       model: model.value, protocol: protocol.value, reasoning: reasoning.value,
@@ -736,6 +771,27 @@ function renderSupplements() {
     });
 }
 
+// 与 schemas/prompt_supplement.py::PromptSupplement.validate 保持同一套规则；
+// 后端仍是权威，这里只是把必然 400 的输入在提交前说清楚。
+const SUPPLEMENT_SCOPES = ["global", "node", "target"];
+
+function supplementProblems(payload) {
+  const problems = [];
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(payload.supplement_id)) {
+    problems.push("资料 ID 需以字母或数字开头，仅含字母/数字/下划线/连字符，最长 64 字符");
+  }
+  if (!payload.title) problems.push("标题不能为空");
+  if (payload.title.length > 160) problems.push("标题最长 160 字符");
+  if (!/^[^/\\]+\.md$/i.test(payload.filename)) problems.push("文件名必须是不带目录的 .md 文件");
+  if (!SUPPLEMENT_SCOPES.includes(payload.scope)) {
+    problems.push(`适用范围只能是 ${SUPPLEMENT_SCOPES.join(" / ")}`);
+  }
+  if (payload.scope === "node" && !payload.node_ids.length) {
+    problems.push("适用范围为 node 时至少填一个节点 ID");
+  }
+  return problems;
+}
+
 function openSupplementEditor(box, record = {}) {
   const old = box.querySelector(".aps-supplement-editor");
   if (old) old.remove();
@@ -785,6 +841,8 @@ function openSupplementEditor(box, record = {}) {
       node_ids: fields.node_ids.value.split(",").map((v) => v.trim()).filter(Boolean),
       description: fields.description.value.trim(), content: fields.content.value,
     };
+    const problems = supplementProblems(payload);
+    if (problems.length) return toast("请先修正：" + problems.join("；"), true);
     try {
       const path = record.supplement_id ? "/supplements/" + encodeURIComponent(record.supplement_id) : "/supplements";
       await api(path, { method: record.supplement_id ? "PUT" : "POST", body: JSON.stringify(payload) });
