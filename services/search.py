@@ -31,37 +31,44 @@ def resolve_search_strategy(
     capabilities: Dict[str, Any],
     policy: str,
 ) -> Dict[str, Any]:
-    """按联网策略与能力返回搜索策略。
+    """按联网策略与实测能力返回搜索策略。
 
-    返回 {enabled: bool, native: bool, warning: str, reason: str}
-    - enabled=False：不发起搜索（策略 off，或策略 auto 且用户未要求）；
-    - native=True：用 Responses 原生 web_search 工具；
-    - native=False：只能用外部后端/离线。
+    返回 {enabled: bool, native: bool, forced: bool, warning: str, reason: str}
+
+    | 策略 | 原生可用 | 无原生但配了 search_url | 两者都没有 |
+    |---|---|---|---|
+    | off | 不搜 | 不搜 | 不搜 |
+    | auto | 挂 web_search 工具，模型按需调用 | 外部后端注入 | 不搜，不告警 |
+    | always | 挂工具并强制 tool_choice | 外部后端注入 | 不搜 + 明确告警 |
+
+    原生能力只认实测 True：未探测（缺键/None）与 False 同样按不支持处理，
+    与 gateway 的协议选择同一口径。
     """
     caps = capabilities or {}
-    native = caps.get("native_web_search")
+    forced = policy == "always"
 
     if policy == "off":
-        return {"enabled": False, "native": False, "warning": "", "reason": "policy_off"}
+        return {"enabled": False, "native": False, "forced": False,
+                "warning": "", "reason": "policy_off"}
 
-    if native is True:
-        return {"enabled": True, "native": True, "warning": "", "reason": "native"}
+    if caps.get("native_web_search") is True:
+        return {"enabled": True, "native": True, "forced": forced,
+                "warning": "", "reason": "native"}
 
-    if native == "unknown":
-        # 能力未探测：按 deepseek 官方基线默认原生可用，交由 gateway 在协议不支持时降级
-        return {"enabled": True, "native": True,
-                "warning": "联网能力未探测（将尝试原生 web_search，失败自动降级）",
-                "reason": "native_unknown"}
-
-    # 明确不支持原生：有外部后端则走外部，否则离线 + 警告
-    if profile.search_url and profile.search_url.strip():
-        return {"enabled": True, "native": False,
+    if (profile.search_url or "").strip():
+        return {"enabled": True, "native": False, "forced": False,
                 "warning": "", "reason": "external"}
+
+    if not forced:
+        # auto 是档案默认值：端点没有联网能力时静默不搜，不给每次请求加噪声。
+        return {"enabled": False, "native": False, "forced": False,
+                "warning": "", "reason": "auto_unavailable"}
     return {
-        "enabled": True,
+        "enabled": False,
         "native": False,
+        "forced": False,
         "warning": "当前端点不支持原生联网搜索，且未配置外部搜索后端（档案 search_url）；"
-                   "本请求将不带联网搜索执行（结果可能不含最新信息）。",
+                   "web_search=always 的要求无法满足，本请求将不带联网搜索执行。",
         "reason": "offline_degraded",
     }
 

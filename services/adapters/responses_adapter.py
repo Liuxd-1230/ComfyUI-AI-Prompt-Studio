@@ -186,6 +186,7 @@ class ResponsesAdapter:
         attachments: Optional[List] = None,
         output_schema: Optional[Dict[str, Any]] = None,
         tool_defs: Optional[List[Dict[str, Any]]] = None,
+        force_web_search: bool = False,
         stop_event: Optional[Any] = None,
         timeout: float = 120.0,
     ) -> LLMResult:
@@ -204,6 +205,9 @@ class ResponsesAdapter:
             "tools": tools,
             "stream": True,
         }
+        # web_search=auto 只挂工具让模型按需调用；always 才强制本轮必须联网
+        if web_search and force_web_search:
+            body["tool_choice"] = {"type": "web_search"}
         # 结构化输出：text.format json_schema（OpenAI Responses 官方结构）
         if output_schema:
             body["text"] = {"format": {

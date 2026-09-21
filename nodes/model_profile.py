@@ -57,7 +57,7 @@ class APS_ModelProfile:
             "reasoning": (REASONING_LEVELS, {"default": "high",
                                              "tooltip": "推理强度：off/low/medium/high（映射到各协议的实际参数）"}),
             "web_search": (WEB_SEARCH_POLICIES, {"default": "auto",
-                                                 "tooltip": "联网策略：off 关闭；auto 仅在请求时按需；always 强制联网"}),
+                                                 "tooltip": "联网策略：off 不联网；auto 在端点实测支持时把 web_search 工具交给模型按需调用，不支持则静默不联网；always 支持时强制本轮联网、不支持时明确告警"}),
             "unload_policy": (UNLOAD_POLICIES, {"default": "never",
                                                 "tooltip": "本地模型卸载策略：never/请求后/成功后"}),
         }, "optional": {

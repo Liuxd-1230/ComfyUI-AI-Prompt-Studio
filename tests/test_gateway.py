@@ -83,6 +83,34 @@ def test_deepseek_table_entry_can_enable_responses_before_probe(store, monkeypat
     assert r.calls and not c.calls
 
 
+def test_web_search_auto_and_always_differ_at_the_adapter(store):
+    """auto 只挂工具，always 才强制：两者必须真的传给 adapter 不同。"""
+    for policy, forced in (("auto", False), ("always", True)):
+        pid = "ws-" + policy
+        store.create_profile({"profile_id": pid, "provider": "openai_compatible"})
+        store.set_capabilities(pid, {"responses": True, "native_web_search": True})
+        gw = Gateway(store=store)
+        r = FakeAdapter("responses")
+        gw._responses = r
+        gw._chat = FakeAdapter("chat_completions")
+        gw.generate(store.get_profile(pid), "k", GenerateRequest(web_search=policy))
+        assert r.calls, policy
+        assert r.calls[0]["force_web_search"] is forced, policy
+
+
+def test_no_capability_string_means_unprobed(store):
+    """能力只有 True/False/缺键三种；其他值不再被当成“未探测”。"""
+    store.create_profile({"profile_id": "p1", "provider": "openai_compatible"})
+    store.set_capabilities("p1", {"responses": "unknown"})
+    gw = Gateway(store=store)
+    r = FakeAdapter("responses")
+    c = FakeAdapter("chat_completions")
+    gw._responses = r
+    gw._chat = c
+    gw.generate(store.get_profile("p1"), "k", GenerateRequest())
+    assert c.calls and not r.calls
+
+
 def test_protocol_explicit_override(store):
     store.create_profile({"profile_id": "p1", "protocol": "chat_completions"})
     store.set_capabilities("p1", {"responses": True})

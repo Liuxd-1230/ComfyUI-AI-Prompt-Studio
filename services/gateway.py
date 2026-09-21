@@ -135,18 +135,14 @@ class Gateway:
         r = caps.get("responses")
         if r is True:
             return "responses"
-        if r in ("unknown", None):
-            # 未探测：只接受能力表里明确标注为可用的模型；表值是当前
-            # 「未探测安全默认」，两个 DeepSeek 模型都留 Chat（官方公开接口），
-            # Responses 要等主动探测确认。失败仍可被 ProtocolUnsupported 降级。
+        if r is None:
+            # 未探测（能力缺键）才查能力表：表值是当前「未探测安全默认」，
+            # 两个 DeepSeek 模型都留 Chat（官方公开接口），Responses 要等主动探测确认。
+            # 探测明确返回 False 时不走这里，按实测结果留在 Chat。
             if (profile.provider == "deepseek" and
-                    capability_probe._is_official_deepseek_base(profile.base_url)):
-                known = capability_probe.deepseek_known_responses(profile.model)
-                if known is True:
-                    return "responses"
-                if known is False:
-                    return "chat_completions"
-            return "chat_completions"
+                    capability_probe._is_official_deepseek_base(profile.base_url) and
+                    capability_probe.deepseek_known_responses(profile.model) is True):
+                return "responses"
         return "chat_completions"
 
     # ------------------------------------------------------------ 主入口
@@ -157,6 +153,7 @@ class Gateway:
         if strategy.get("warning"):
             warnings.append(strategy["warning"])
         web_search = bool(strategy.get("enabled") and strategy.get("native"))
+        force_web_search = bool(web_search and strategy.get("forced"))
 
         # 外部搜索后端（C4）：无原生 web_search 但配置了 search_url → 注入联网结果；
         # 失败 → 明确警告并降级为离线执行，绝不伪造结果
@@ -197,6 +194,7 @@ class Gateway:
             if ext.get("warning"):
                 warnings.append(ext["warning"])
             web_search = False
+            force_web_search = False
 
         # 结构化输出（0.2.1 P0-3 + 0.2.1a）：按「当前协议」判定原生支持——
         # responses → caps.structured_output_responses；chat → structured_output_chat。
@@ -213,6 +211,7 @@ class Gateway:
         try:
             result = self._call_with_tools(
                 profile, api_key, protocol, protocol_req, web_search=web_search,
+                force_web_search=force_web_search,
                 output_schema=output_schema, tool_defs=tool_defs)
         except ProtocolUnsupported as exc:
             # 仅「协议/参数不支持」降级到另一协议；其余异常已在 adapter 内归一化
@@ -221,17 +220,20 @@ class Gateway:
             logger.info("gateway 降级 %s -> %s（%s）", protocol, other, exc)
             try:
                 fallback_web_search = web_search
+                fallback_force = force_web_search
                 if fallback_web_search and other == "chat_completions":
                     ext = self._inject_external_search(profile, req)
                     if ext.get("warning"):
                         warnings.append(ext["warning"])
                     fallback_web_search = False
+                    fallback_force = False
                 # 0.2.1a：降级后按新协议重新计算结构化输出策略
                 fallback_req, output_schema = self._output_request_for(
                     profile, req, other, caps)
                 result = self._call_with_tools(
                     profile, api_key, other, fallback_req,
                     web_search=fallback_web_search,
+                    force_web_search=fallback_force,
                     output_schema=output_schema, tool_defs=tool_defs)
             except ProtocolUnsupported as exc2:
                 result = LLMResult(
@@ -245,7 +247,8 @@ class Gateway:
 
     def _call_with_tools(self, profile, api_key, protocol, req: GenerateRequest, *,
                          web_search: bool, output_schema: Optional[Dict[str, Any]] = None,
-                         tool_defs: Optional[List[Dict[str, Any]]] = None) -> LLMResult:
+                         tool_defs: Optional[List[Dict[str, Any]]] = None,
+                         force_web_search: bool = False) -> LLMResult:
         """一次协议调用；请求启用工具时循环执行 tool_calls（上限 MAX_TOOL_ROUNDS）。
 
         工具执行失败不抛异常：错误作为工具输出回给模型继续（模型可重试或停止）；
@@ -254,7 +257,7 @@ class Gateway:
         rounds = 0
         result = self._call(profile, api_key, protocol, req,
                             web_search=web_search, output_schema=output_schema,
-                            tool_defs=tool_defs or [])
+                            tool_defs=tool_defs or [], force_web_search=force_web_search)
         while (req.tools and result.tool_calls
                and not result.has_error()
                and rounds < MAX_TOOL_ROUNDS):
@@ -269,9 +272,10 @@ class Gateway:
                     role="tool", content=json.dumps(out, ensure_ascii=False),
                     tool_call_id=tc.id))
             req = dataclasses.replace(req, messages=messages)
+            # 「必须联网」只约束首轮生成；续轮是在回传工具结果，再强制会反复联网
             result = self._call(profile, api_key, protocol, req,
                                 web_search=web_search, output_schema=output_schema,
-                                tool_defs=tool_defs or [])
+                                tool_defs=tool_defs or [], force_web_search=False)
         if req.tools and result.tool_calls and not result.has_error() \
                 and rounds >= MAX_TOOL_ROUNDS:
             result.warnings.append(
@@ -353,7 +357,8 @@ class Gateway:
 
     def _call(self, profile, api_key, protocol, req: GenerateRequest, *,
               web_search: bool, output_schema: Optional[Dict[str, Any]] = None,
-              tool_defs: Optional[List[Dict[str, Any]]] = None) -> LLMResult:
+              tool_defs: Optional[List[Dict[str, Any]]] = None,
+              force_web_search: bool = False) -> LLMResult:
         if protocol == "responses":
             return self._responses.generate(
                 profile, api_key, system=req.system, messages=req.messages,
@@ -362,7 +367,7 @@ class Gateway:
                 top_p=req.top_p, frequency_penalty=req.frequency_penalty,
                 presence_penalty=req.presence_penalty,
                 attachments=req.attachments, output_schema=output_schema,
-                tool_defs=tool_defs,
+                tool_defs=tool_defs, force_web_search=force_web_search,
                 stop_event=req.stop_event, timeout=req.timeout)
         return self._chat.generate(
             profile, api_key, system=req.system, messages=req.messages,
