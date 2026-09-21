@@ -29,6 +29,27 @@ class SequenceGateway:
         return LLMResult(text=type(self).responses.pop(0))
 
 
+def test_lenient_validation_checks_the_delivered_negative(monkeypatch) -> None:
+    """校验用的负面提示词必须就是交付的那一份，含用户显式排除项。"""
+    from aps.schemas.prompt_plan import ValidationReport
+
+    seen = {}
+
+    def fake_validate_anima(prompt, negative, **kwargs):
+        seen["negative"] = negative
+        return ValidationReport()
+
+    monkeypatch.setattr(studio_mod, "validate_anima", fake_validate_anima)
+    instruction = "一个女孩走进咖啡馆。不要出现帽子。"
+    parsed = LenientPromptOutput(kind="prompt", prompt="a girl walks into a cafe")
+    studio_mod._validate_lenient_image(
+        parsed, "anima", "base", None, None, ReferenceManifest(), instruction)
+
+    assert seen["negative"] == studio_mod._negative_for("anima", "base", instruction)
+    assert "出现帽子" in seen["negative"]
+    assert seen["negative"] != studio_mod._negative_for("anima", "base")
+
+
 def test_prompt_studio_public_interface_has_no_operation_or_plan_ports() -> None:
     inputs = studio_mod.APS_PromptStudio.INPUT_TYPES()
     assert "execution_mode" not in inputs["required"] | inputs.get("optional", {})

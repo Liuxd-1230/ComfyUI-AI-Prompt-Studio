@@ -33,7 +33,7 @@ from ..services.prompt_session import (
 )
 from ..services.supplements import supplement_sources as load_supplement_sources
 from ..validators.anima import anima_english_issue, validate_anima
-from ._helpers import require_api_key, resolve_profile_input
+from ._helpers import identity_anchor_covered, require_api_key, resolve_profile_input
 
 
 TARGET_OPTIONS = [
@@ -145,7 +145,7 @@ class APS_PromptStudio:
         parsed = parse_lenient_output(raw)
         parsed = _normalize_image_output(parsed, family, variant)
         report = _validate_lenient_image(
-            parsed, family, variant, bible, book, manifest)
+            parsed, family, variant, bible, book, manifest, instruction)
         repair_count = 0
         if parsed.kind == "protocol_garbage" or not report.valid:
             repair_count = 1
@@ -156,7 +156,7 @@ class APS_PromptStudio:
             parsed = parse_lenient_output(raw)
             parsed = _normalize_image_output(parsed, family, variant)
             report = _validate_lenient_image(
-                parsed, family, variant, bible, book, manifest)
+                parsed, family, variant, bible, book, manifest, instruction)
         if parsed.kind == "protocol_garbage" or not report.valid:
             detail = report.as_text() if report.issues else "；".join(parsed.issues)
             raise ValueError(
@@ -311,7 +311,7 @@ def _source_task_data(
 def _validate_lenient_image(
         parsed: LenientPromptOutput, family: str, variant: str,
         bible: CharacterBible | None, book: CharacterBook | None,
-        manifest: ReferenceManifest) -> ValidationReport:
+        manifest: ReferenceManifest, instruction: str = "") -> ValidationReport:
     report = ValidationReport()
     report.checks.append(f"lenient_{family}")
     if parsed.kind == "protocol_garbage" or not parsed.prompt.strip():
@@ -320,7 +320,7 @@ def _validate_lenient_image(
         return report
     anchors = _identity_anchors(bible, book)
     missing = [anchor for anchor in anchors
-               if not _identity_anchor_covered(anchor, parsed.prompt)]
+               if not identity_anchor_covered(anchor, parsed.prompt)]
     if missing:
         report.add("error", "lenient_identity_anchor_missing",
                    "提示词缺少锁定身份锚点：" + "、".join(missing))
@@ -329,7 +329,7 @@ def _validate_lenient_image(
         if english:
             report.add("error", "anima_english_required", english)
         anima_report = validate_anima(
-            parsed.prompt, _negative_for(family, variant),
+            parsed.prompt, _negative_for(family, variant, instruction),
             variant=variant, prompt_mode="natural_language")
         report.issues.extend(anima_report.issues)
         report.valid = report.valid and anima_report.valid
@@ -366,28 +366,6 @@ def _generic_character_label(value: str) -> bool:
         "参考人物", "参考角色", "人物", "角色", "主体",
         "referencecharacter", "referenceperson", "character", "person", "subject",
     }
-
-
-def _identity_anchor_covered(anchor: str, prompt: str) -> bool:
-    """Require every meaningful anchor token while tolerating natural word insertion.
-
-    This is deliberately stricter than fuzzy similarity: colors, directions, lengths,
-    and distinctive nouns must still occur. It only removes punctuation/hyphen drift
-    and permits harmless words such as ``hair``/``soft`` between anchor tokens.
-    """
-    stopwords = {"a", "an", "the", "with", "and", "of", "in", "on", "for"}
-    anchor_tokens = [token for token in re.findall(r"[a-z0-9]+", anchor.casefold())
-                     if token not in stopwords]
-    if not anchor_tokens:
-        return anchor.casefold() in prompt.casefold()
-    prompt_tokens = re.findall(r"[a-z0-9]+", prompt.casefold())
-    cursor = 0
-    for wanted in anchor_tokens:
-        try:
-            cursor = prompt_tokens.index(wanted, cursor) + 1
-        except ValueError:
-            return False
-    return True
 
 
 def _normalize_image_output(

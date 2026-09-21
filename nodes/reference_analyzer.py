@@ -364,14 +364,14 @@ class APS_ReferenceAnalyzer:
                                 image_list, supplements=None) -> Any:
         """一次 VLM 判断「这些图片是否同一主体」（0.2.1 P0-14）。
 
-        - 最多取 MAX_IDENTITY_IMAGES 张代表图（防无限传图）；
+        - 张数上限由 analyze() 入口统一把关（超过 MAX_IDENTITY_IMAGES 直接报错），
+          这里不再二次截断，否则批量判断与逐图分析会看到不同的图片集合；
         - 返回与 judge_identity 同构的 dict；VLM 失败/不可用 → None（调用方回退
           deterministic heuristic，绝不伪装）。
         """
         from ..services.reference import IDENTITY_COMPARISON_PROMPT, parse_identity_verdict
 
-        sample = image_list[:MAX_IDENTITY_IMAGES]
-        data_urls = [vision_svc.image_to_data_url(img) for img in sample]
+        data_urls = [vision_svc.image_to_data_url(img) for img in image_list]
         verdict_contract = schema_contract(
             "identity-verdict", IDENTITY_VERDICT_SCHEMA)
         assembly = assemble_prompt(
@@ -380,7 +380,7 @@ class APS_ReferenceAnalyzer:
              PromptSource("node.reference.identity", "1.0", PromptLayer.NODE_CORE,
                           IDENTITY_COMPARISON_PROMPT, "reference.identity"),
              *(supplements or [])],
-            task_data=[StructuredTaskData("image_count", {"count": len(sample)})],
+            task_data=[StructuredTaskData("image_count", {"count": len(image_list)})],
             output_contract=verdict_contract)
         res = vision_svc.call_vision(
             vision_prof, vision_key,

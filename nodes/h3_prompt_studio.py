@@ -34,7 +34,7 @@ from ..services.supplements import supplement_sources as load_supplement_sources
 from ..prompting.model_cores import model_core_prompt
 from ..services.structured_output import raw_excerpt
 from ..validators.minimax_h3 import ref2va_english_issue, validate_h3
-from ._helpers import require_api_key, resolve_profile_input
+from ._helpers import identity_anchor_covered, require_api_key, resolve_profile_input
 
 
 class APS_H3PromptStudio:
@@ -522,7 +522,7 @@ def _append_identity_anchor_errors(
         # deterministic <Picture N> alignment/reference protocol.
         anchors = [item.value for item in bible.locked_traits()]
         missing.extend(anchor for anchor in anchors
-                       if anchor and not _identity_anchor_covered(anchor, prompt))
+                       if anchor and not identity_anchor_covered(anchor, prompt))
         name = bible.name.strip()
         if name and name.casefold() not in folded:
             cjk = list(dict.fromkeys(re.findall(r"[\u3400-\u9fff]", name)))
@@ -535,19 +535,3 @@ def _append_identity_anchor_errors(
     if missing:
         report.add("error", "h3_identity_anchor_missing",
                    "H3 提示词缺少锁定身份锚点：" + "、".join(dict.fromkeys(missing)))
-
-
-def _identity_anchor_covered(anchor: str, prompt: str) -> bool:
-    stopwords = {"a", "an", "the", "with", "and", "of", "in", "on", "for"}
-    anchor_tokens = [token for token in re.findall(r"[a-z0-9]+", anchor.casefold())
-                     if token not in stopwords]
-    if not anchor_tokens:
-        return anchor.casefold() in prompt.casefold()
-    prompt_tokens = re.findall(r"[a-z0-9]+", prompt.casefold())
-    cursor = 0
-    for wanted in anchor_tokens:
-        try:
-            cursor = prompt_tokens.index(wanted, cursor) + 1
-        except ValueError:
-            return False
-    return True

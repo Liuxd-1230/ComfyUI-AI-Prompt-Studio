@@ -1,6 +1,7 @@
 """节点公共辅助。"""
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..schemas.profile import AIProfile
@@ -53,3 +54,26 @@ def require_api_key(profile: AIProfile) -> str:
 def try_api_key(profile: AIProfile) -> str:
     """取档案密钥；缺失返回空串（供「有 API 增强、无 API 降级」的路径使用）。"""
     return get_store().get_api_key(profile.profile_id) or ""
+
+
+ANCHOR_STOPWORDS = {"a", "an", "the", "with", "and", "of", "in", "on", "for"}
+
+
+def identity_anchor_covered(anchor: str, prompt: str) -> bool:
+    """锚点的每个实义词都必须按序出现，只容忍标点/连字符漂移与自然词插入。
+
+    刻意比模糊相似度更严：颜色、方位、长度与特征名词仍必须命中。图像与 H3
+    两个 Studio 共用这一份实现，只有「角色显示名算不算硬锚点」的策略不同。
+    """
+    anchor_tokens = [token for token in re.findall(r"[a-z0-9]+", anchor.casefold())
+                     if token not in ANCHOR_STOPWORDS]
+    if not anchor_tokens:
+        return anchor.casefold() in prompt.casefold()
+    prompt_tokens = re.findall(r"[a-z0-9]+", prompt.casefold())
+    cursor = 0
+    for wanted in anchor_tokens:
+        try:
+            cursor = prompt_tokens.index(wanted, cursor) + 1
+        except ValueError:
+            return False
+    return True
