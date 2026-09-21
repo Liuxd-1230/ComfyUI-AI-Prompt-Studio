@@ -174,7 +174,9 @@ class ConfigStore:
                 if p.get("profile_id") == pid:
                     profiles[i] = _persistable(merged)
                     break
-            self._config.setdefault("capability_cache", {}).pop(pid, None)
+            # 能力缓存只按 _capability_fingerprint 判定失效（见 get_capabilities）。
+            # 这里不再无条件清空：保存与能力无关的字段（温度、超时、名称）
+            # 不应抹掉刚探测出的能力和模型列表。
             self._save_config()
         return merged
 

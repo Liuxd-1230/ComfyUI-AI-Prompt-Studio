@@ -203,6 +203,15 @@ def test_settings_panel_is_chinese_only():
     assert not snake_case, f"字段标签仍是原始 key：{snake_case}"
 
 
+def test_settings_panel_writes_api_key_only_through_save():
+    """档案与密钥共用一次“保存”：两个独立写入按钮曾让新建时填写的密钥被静默丢弃。"""
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    assert 'text: "保存密钥"' not in settings, "密钥应随“保存”一起写入，不另设入口"
+    assert settings.count('/api_key"') == 2, "只允许保存写入与清除两条密钥路径"
+    assert "api_key: typedKey" in settings
+    assert "清除密钥" in settings
+
+
 def test_studio_session_widgets_follow_public_inputs(loaded):
     """ADR 0007 keeps the current Studio inputs and explicit session state."""
     module, _, _ = loaded

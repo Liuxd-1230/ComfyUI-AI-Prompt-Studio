@@ -123,6 +123,27 @@ def test_probe_updates_manual_vision_and_file_switches(monkeypatch, store):
     assert saved.supports_files is False
 
 
+def test_probe_results_survive_unrelated_profile_save(monkeypatch, store):
+    """探测结果驱动模型列表与附件门槛；保存无关字段不得把它清空。"""
+    store.create_profile({
+        "profile_id": "keep", "provider": "openai_compatible",
+        "base_url": "https://proxy.example/v1", "model": "model-a",
+    })
+    store.set_api_key("keep", "secret")
+    monkeypatch.setattr(requests, "get", lambda *a, **k: FakeResponse(
+        200, {"data": [{"id": "model-a"}]}))
+    monkeypatch.setattr(requests, "post", chat_only_post)
+
+    assert routes.handle_probe("keep", store)["ok"] is True
+    assert store.get_capabilities("keep")["models"] == ["model-a"]
+
+    store.update_profile("keep", {"temperature": 0.4, "timeout": 90, "name": "改个名"})
+    assert store.get_capabilities("keep")["models"] == ["model-a"]
+
+    store.update_profile("keep", {"model": "model-b"})
+    assert store.get_capabilities("keep") == {}
+
+
 def test_probe_uses_linked_vision_profile_endpoint_and_key(monkeypatch, store):
     store.create_profile({
         "profile_id": "vision", "provider": "openai_compatible",

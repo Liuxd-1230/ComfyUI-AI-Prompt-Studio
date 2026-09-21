@@ -56,6 +56,18 @@ def test_capability_cache(store):
     assert store.get_capabilities("p1") == {}
 
 
+def test_capability_invalidation_uses_the_probe_fingerprint(store):
+    """能力失效只由指纹判定：与能力无关的字段保存后探测结果仍然可用。"""
+    store.create_profile({"profile_id": "p1", "model": "model-a", "timeout": 120})
+    store.set_capabilities("p1", {"responses": True, "models": ["model-a"]})
+    for patch in ({"timeout": 30}, {"temperature": 1.0}, {"web_search": "always"},
+                  {"unload_policy": "after_success"}, {"search_url": "https://s.example"}):
+        store.update_profile("p1", patch)
+        assert store.get_capabilities("p1")["responses"] is True, patch
+    store.update_profile("p1", {"supports_vision": True})
+    assert store.get_capabilities("p1") == {}
+
+
 def test_profile_or_key_change_invalidates_capabilities(store):
     store.create_profile({"profile_id": "p1", "model": "model-a"})
     store.set_capabilities("p1", {"models": ["model-a"], "responses": True})

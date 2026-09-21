@@ -198,7 +198,7 @@ function buildPanel() {
 // ---------------- 数据刷新 ----------------
 
 async function refreshAll() {
-  showPanelTab(activePanelTab);
+  await showPanelTab(activePanelTab);
 }
 
 async function loadProfilesPane() {
@@ -227,13 +227,14 @@ function showPanelTab(tabId) {
   for (const pane of panel.querySelectorAll(".aps-tab-pane")) {
     pane.hidden = pane.id !== `aps-pane-${tabId}`;
   }
-  if (tabId === "profiles") loadProfilesPane();
-  else if (tabId === "capabilities") renderCapabilities();
-  else if (tabId === "runtime") renderRuntime();
+  if (tabId === "profiles") return loadProfilesPane();
+  if (tabId === "capabilities") return renderCapabilities();
+  if (tabId === "runtime") renderRuntime();
   else if (tabId === "resources") {
     renderLog();
     renderSupplements();
   }
+  return undefined;
 }
 
 function renderStatus(info) {
@@ -338,13 +339,13 @@ function buildEditorForm(p) {
   const presPenalty = textInput(p.presence_penalty != null ? String(p.presence_penalty) : "", "空=默认");
   const maxTokens = textInput(p.max_tokens != null ? String(p.max_tokens) : "", "空=默认");
   const searchUrl = textInput(p.search_url, "https://…/search");
-  const supportsVision = checkboxInput(p.supports_vision, "主模型支持图片附件（覆盖能力探测的保守判定）");
-  const supportsFiles = checkboxInput(p.supports_files, "端点支持文件内容部分（附件 type:file）");
+  const supportsVision = checkboxInput(p.supports_vision, "未探测时按此声明判定主模型能否接收图片附件；能力探测跑完后会被实测结果覆盖");
+  const supportsFiles = checkboxInput(p.supports_files, "未探测时按此声明判定端点是否支持文件内容部分（附件 type:file）；能力探测跑完后会被实测结果覆盖");
   const keySaved = !!p.has_api_key;
   const keyMask = maskDisplay(p.api_key_masked);
   const keyInput = el("input", {
     type: "password",
-    placeholder: keySaved ? `已保存 ${keyMask}；输入新值可替换` : "sk-...（已保存的显示为脱敏值）",
+    placeholder: keySaved ? `已保存 ${keyMask}；留空则不修改，输入新值随“保存”一起写入` : "sk-...（留空表示不设置密钥）",
     title: "仅用于服务端请求；前端与工作流 JSON 中永不出现完整密钥",
   });
 
@@ -376,11 +377,13 @@ function buildEditorForm(p) {
   adv.appendChild(inputRow("存在惩罚", presPenalty, "存在惩罚（-2~2；留空不发送）"));
   adv.appendChild(inputRow("最大输出 tokens", maxTokens, "最大输出 token（留空不发送）"));
   adv.appendChild(inputRow("外部搜索地址", searchUrl, "外部搜索后端地址（POST {query} → {results:[{title,url,snippet}]}；无原生联网搜索时用于降级注入联网结果）"));
-  adv.appendChild(inputRow("支持图片输入", supportsVision, ""));
-  adv.appendChild(inputRow("支持文件输入", supportsFiles, ""));
+  adv.appendChild(inputRow("支持图片输入", supportsVision,
+    "探测前是手动声明；能力探测会用实测结果覆盖此勾选"));
+  adv.appendChild(inputRow("支持文件输入", supportsFiles,
+    "探测前是手动声明；能力探测会用实测结果覆盖此勾选"));
   wrap.appendChild(adv);
 
-  // 密钥区
+  // 密钥区：只有“保存”一个写入入口，避免与档案保存互相覆盖
   const keyRow = el("div", { class: "aps-field" });
   keyRow.appendChild(fieldLabel("API Key", "仅用于服务端请求；前端与工作流 JSON 中永不出现完整密钥"));
   keyRow.appendChild(keyInput);
@@ -389,31 +392,31 @@ function buildEditorForm(p) {
     class: keySaved ? "aps-key-status aps-key-saved" : "aps-key-status aps-key-missing",
     text: keySaved ? `✓ 密钥已保存（${keyMask}）` : "未保存密钥",
   }));
-  const keyBtns = el("div", { class: "aps-btn-row" }, [
-    el("button", { class: "aps-btn aps-btn-primary", text: "保存密钥", disabled: isNew, onClick: async () => {
-      const val = keyInput.value.trim();
-      if (!val) return toast("错误: api_key 不能为空", true);
-      try {
-        const r = await api("/profiles/" + encodeURIComponent(p.profile_id) + "/api_key", {
-          method: "POST", body: JSON.stringify({ api_key: val }),
-        });
-        keyInput.value = "";
-        toast("密钥已保存" + " (" + r.masked + ")");
-        if (p.profile_id) renderEditor(p.profile_id);
-        refreshAll();
-      } catch (e) { toast("错误: " + e.message, true); }
-    } }),
+  keyRow.appendChild(el("div", { class: "aps-btn-row" }, [
     el("button", { class: "aps-btn", text: "清除密钥", disabled: isNew || !keySaved, onClick: async () => {
       try {
         await api("/profiles/" + encodeURIComponent(p.profile_id) + "/api_key", { method: "DELETE" });
-        toast("密钥已保存");
+        toast("密钥已清除");
         if (p.profile_id) renderEditor(p.profile_id);
       } catch (e) { toast("错误: " + e.message, true); }
     } }),
-  ]);
-  keyRow.appendChild(keyBtns);
-  if (isNew) keyRow.appendChild(el("small", { class: "aps-muted", text: "请先保存档案，系统生成 profile_id 后再保存 API Key。" }));
+  ]));
+  keyRow.appendChild(el("small", {
+    class: "aps-muted",
+    text: "留空表示不修改已保存的密钥；填写后点“保存”会随档案一起写入。",
+  }));
   wrap.appendChild(keyRow);
+
+  // 表单快照：能力探测会按已保存的配置覆盖式刷新编辑器，未保存的修改需要先提醒
+  const trackedControls = [
+    name, provider, baseUrl, model, protocol, reasoning, webSearch, unload,
+    visionUrl, visionModel, visionProfileId, timeout, temperature, topP,
+    freqPenalty, presPenalty, maxTokens, searchUrl, supportsVision, supportsFiles, keyInput,
+  ];
+  const formSnapshot = () => trackedControls
+    .map((c) => (c.type === "checkbox" ? String(c.checked) : c.value)).join("\u0000");
+  let initialSnapshot = formSnapshot();
+  const formDirty = () => formSnapshot() !== initialSnapshot;
 
   // 保存/删除/测试/探测
   const saveBtn = el("button", { class: "aps-btn aps-btn-primary", text: "保存", onClick: async () => {
@@ -433,14 +436,26 @@ function buildEditorForm(p) {
       supports_vision: supportsVision.checked,
       supports_files: supportsFiles.checked,
     };
+    const typedKey = keyInput.value.trim();
     try {
+      let profileId = p.profile_id;
       if (isNew) {
         const created = await api("/profiles", { method: "POST", body: JSON.stringify(payload) });
-        currentProfileId = created.profile_id;
+        profileId = created.profile_id;
+        currentProfileId = profileId;
       } else {
-        await api("/profiles/" + encodeURIComponent(p.profile_id), { method: "PUT", body: JSON.stringify(payload) });
+        await api("/profiles/" + encodeURIComponent(profileId), { method: "PUT", body: JSON.stringify(payload) });
       }
-      toast("已保存");
+      // 密钥必须等档案写入完成后才能定位 profile_id；新建档案时先建后写密钥，
+      // 表单里填过的密钥就不会再被随后的重渲染静默丢弃。
+      if (typedKey) {
+        await api("/profiles/" + encodeURIComponent(profileId) + "/api_key", {
+          method: "POST", body: JSON.stringify({ api_key: typedKey }),
+        });
+        keyInput.value = "";
+      }
+      initialSnapshot = formSnapshot();
+      toast(typedKey ? "已保存（含密钥）" : "已保存");
       refreshAll();
     } catch (e) { toast("错误: " + e.message, true); }
   } });
@@ -463,6 +478,7 @@ function buildEditorForm(p) {
   } });
 
   const probeBtn = el("button", { class: "aps-btn", text: "能力探测", onClick: async () => {
+    if (formDirty() && !confirm("档案有未保存的修改。能力探测按已保存的配置运行，完成后会用实测结果刷新本表单（含 API URL 与图片/文件支持勾选），未保存的修改将丢失。仍要继续吗？")) return;
     if (!confirm("能力探测会向当前模型发送最小文本、JSON、工具、图片和文件测试请求，并消耗少量 token。继续吗？")) return;
     probeBtn.disabled = true;
     probeBtn.textContent = "正在逐项实测…";
@@ -496,7 +512,7 @@ function renderCapabilities() {
     box.appendChild(el("p", { class: "aps-muted", text: "选择档案开始配置" }));
     return;
   }
-  api("/profiles/" + encodeURIComponent(currentProfileId))
+  return api("/profiles/" + encodeURIComponent(currentProfileId))
     .then((p) => {
       box.innerHTML = "";
       const caps = p.capabilities || {};
