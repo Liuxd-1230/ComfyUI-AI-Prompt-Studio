@@ -29,6 +29,7 @@ EXPECTED_ROUTE_PATHS = {
     ("POST", "/ai_prompt_studio/profiles/{profile_id}/probe"),
     ("POST", "/ai_prompt_studio/profiles/{profile_id}/test"),
     ("GET", "/ai_prompt_studio/capabilities"),
+    ("POST", "/ai_prompt_studio/models"),
     ("GET", "/ai_prompt_studio/log"),
     ("GET", "/ai_prompt_studio/settings"),
     ("POST", "/ai_prompt_studio/settings"),

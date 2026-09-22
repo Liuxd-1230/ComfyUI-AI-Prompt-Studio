@@ -377,6 +377,60 @@ def _probe_vision_service(profile: AIProfile, headers: Dict[str, str], timeout: 
     caps["checks"]["vision_service"] = _check(status, endpoint, ok, detail)
 
 
+def list_models(base_url: str, api_key: str = "", *,
+                timeout: float = DEFAULT_TIMEOUT,
+                vision_base_url: str = "") -> Dict[str, Any]:
+    """只读模型目录，供尚未保存的档案表单填写模型名。
+
+    探测要求档案已保存，而"模型名不能为空"的校验又要求先知道模型名——保存前
+    能查目录才不解开这个死结。本地服务常不校验密钥，所以 api_key 可为空；
+    原地址拿不到目录时实测 /v1（LM Studio 的管理 API 在根路径、推理 API 在
+    /v1），命中则采用 /v1。
+    """
+    def fetch(endpoint_base: str) -> Tuple[List[str], str, int, str]:
+        base = endpoint_base.rstrip("/")
+        if not base:
+            return [], "", 0, "base_url 为空"
+        status, payload, detail = _request_json(
+            "GET", f"{base}/models", _auth_headers(api_key), timeout=timeout)
+        models = ([_model_id(item) for item in _catalog_entries(payload)
+                   if _model_id(item)] if status == 200 else [])
+        if models or (urlparse(base).path or "").rstrip("/").endswith("/v1"):
+            return models, base, status, detail
+        candidate = f"{base}/v1"
+        c_status, c_payload, c_detail = _request_json(
+            "GET", f"{candidate}/models", _auth_headers(api_key), timeout=timeout)
+        if c_status == 200:
+            return [_model_id(item) for item in _catalog_entries(c_payload)
+                    if _model_id(item)], candidate, c_status, c_detail
+        return models, base, status, detail
+
+    models, endpoint, status, detail = fetch((base_url or "").strip())
+    result: Dict[str, Any] = {
+        "models": models, "base_url": endpoint, "http_status": status,
+        "error": None if status == 200 else (detail or "网络请求失败")[:200],
+    }
+    vision_base = (vision_base_url or "").strip().rstrip("/")
+    if vision_base and vision_base != endpoint:
+        v_models, v_endpoint, v_status, v_detail = fetch(vision_base)
+        result.update({
+            "vision_models": v_models, "vision_base_url": v_endpoint,
+            "vision_http_status": v_status,
+            "vision_error": None if v_status == 200
+            else (v_detail or "网络请求失败")[:200],
+        })
+    else:
+        result["vision_models"] = list(models)
+    return result
+
+
+def _auth_headers(api_key: str) -> Dict[str, str]:
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
 def probe_profile(profile: AIProfile, api_key: str,
                   timeout: float = DEFAULT_TIMEOUT, *,
                   exhaustive: bool = True,

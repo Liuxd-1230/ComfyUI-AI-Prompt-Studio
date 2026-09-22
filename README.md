@@ -44,7 +44,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 ## 快速开始
 
 1. 启动 ComfyUI，点左上角 **ComfyUI 菜单（Logo 下拉）→「AI Prompt Studio 设置工作台」**直接进入（打开原生 **Settings → AI Prompt Studio** 也会自动弹出，不用再点一次按钮）。
-2. 新建档案，选择 provider、API 根地址和模型；API Key 可以直接填在同一个表单里，点“保存”会先创建档案再写入密钥（密钥只保存在本机 `user/ai_prompt_studio/secrets.json`，不进前端和工作流 JSON）。保存后先点“测试”，再点“能力探测”。
+2. 新建档案，选择 provider、填 API 根地址；不知道模型名就先点模型行的 **“拉取模型”**——它按表单里当前的 URL 与密钥直接读上游 `/models` 目录（**不需要先保存档案**，原地址不是推理根时会自动实测 `/v1`），结果同时填进“模型”和“视觉模型”的下拉候选。API Key 可以直接填在同一个表单里，点“保存”会先创建档案再写入密钥（密钥只保存在本机 `user/ai_prompt_studio/secrets.json`，不进前端和工作流 JSON）。保存后先点“测试”，再点“能力探测”。
 3. “能力探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。多个档案可用“设为默认”指定节点留空时使用的那个（列表里带“默认”徽章）。
 4. 在节点图中放置 **AI Model Profile**，直接从“档案名称 [ID]”和该档案的模型目录下拉选择。
 5. 图像提示词放置 **Image Prompt Studio**，H3 放置 **MiniMax H3 Prompt Studio**。连接 `AI_PROFILE`，第一次填完整要求；成功后只填本轮修改意见。格式异常或硬规则失败时节点只自动修复一次。
@@ -132,7 +132,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 
 ## 后端路由（设置工作台）
 
-`/api/ai_prompt_studio/status` · `profiles`（GET/POST）· `profiles/{id}`（GET/PUT/DELETE）· `profiles/{id}/api_key`（POST/DELETE）· `profiles/{id}/default`（POST，设为默认档案）· `profiles/{id}/probe` · `profiles/{id}/test` · `capabilities` · `log` · `settings`（GET/POST，POST 按键合并，不清空其余设置）· `runtime` · `supplements`（GET/POST/PUT/DELETE/enabled）。ComfyUI 会自动注册 `/api` 前缀副本。
+`/api/ai_prompt_studio/status` · `profiles`（GET/POST）· `profiles/{id}`（GET/PUT/DELETE）· `profiles/{id}/api_key`（POST/DELETE）· `profiles/{id}/default`（POST，设为默认档案）· `profiles/{id}/probe` · `profiles/{id}/test` · `models`（POST，**无需先保存档案**，按表单里的 API URL/密钥只读模型目录，响应不含密钥、不写能力缓存）· `capabilities` · `log` · `settings`（GET/POST，POST 按键合并，不清空其余设置）· `runtime` · `supplements`（GET/POST/PUT/DELETE/enabled）。ComfyUI 会自动注册 `/api` 前缀副本。
 
 ## 开发与测试
 

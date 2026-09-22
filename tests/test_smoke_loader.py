@@ -264,6 +264,18 @@ def test_entering_the_ai_category_autopens_the_workbench():
     assert "workbenchAutoOpened = false" in arm, "行离开 DOM 后应重置，否则第二次进设置不再弹"
 
 
+def test_model_catalog_is_readable_before_the_profile_is_saved():
+    """模型名必填，而目录此前只有保存并探测后才填充——用户卡在不知道填什么。"""
+    from aps.server import routes
+
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    assert "拉取模型" in settings
+    assert 'api("/models"' in settings, "拉取模型应打独立的目录端点，而不是已存档案的 probe"
+    assert "base_url: base" in settings and "api_key: keyInput.value.trim()" in settings
+    assert "模型不能为空" in settings, "空模型应在提交前给出可操作的提示"
+    assert hasattr(routes, "handle_model_catalog")
+
+
 def test_settings_panel_can_set_the_default_profile():
     """面板此前只显示默认档案、不能设置它，而节点留空时用的正是这个档案。"""
     settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")

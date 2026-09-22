@@ -187,6 +187,7 @@
 - 完整探测会消耗少量 token，设置页点击前必须明确确认；“测试”只运行目录和两条最小文本协议测试。
 - 主模型 `vision/files` 与 Reference Analyzer 的 `vision_service` 分开；auto 协议按 `vision_chat/responses`、`files_chat/responses` 和 `function_tools_chat/responses` 选择真正通过探针的路径。
 - 探测完成会把 `supports_vision/supports_files` 回写为实测聚合结果；Profile/Key 变化或 probe 版本升级使缓存指纹失效。
+- **模型目录与能力探测分开**：`GET {base}/models` 只是填下拉框的元数据，不构成任何能力结论，因此可以脱离档案单独跑：`POST /models` 按请求体里的 API URL 与密钥读目录，不写档案、不写能力缓存、响应不含密钥（面板的“拉取模型”在保存之前就能用）。原地址拿不到目录时才实测 `/v1`，与探测的 base_url 自动纠正规则一致。
 - 因此面板里「支持图片输入/支持文件输入」只是**探测前的手动声明**：探测一旦跑完就以实测覆盖勾选（UI 显示支持而 Gateway 继续发送必失败的附件更糟）。两处 tooltip 与这条权威关系一致，改动前先看这里。
 
 ## D29. 0.2.2 工作台入口与本地运行时边界（2026-09-22）

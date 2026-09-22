@@ -414,3 +414,84 @@ def test_route_handlers(store):
     status = routes.handle_status(store)
     assert status["name"] == "AI Prompt Studio"
     assert status["ui_contract_version"] == "single-lane-ui-v2"
+
+
+def test_model_catalog_needs_no_saved_profile(monkeypatch, store):
+    """填表阶段就能读模型目录：模型名必填，而"有哪些模型"只有问过上游才知道。"""
+    seen = []
+
+    def fake_get(url, headers=None, timeout=None):
+        seen.append((url, dict(headers or {})))
+        return FakeResponse(200, {"data": [{"id": "model-a"}, {"id": "model-b"}]})
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    result = routes.handle_model_catalog(
+        {"base_url": "https://x.example/v1", "api_key": "sk-typed"}, store)
+    assert result["ok"] is True
+    assert result["models"] == ["model-a", "model-b"]
+    assert result["vision_models"] == result["models"]
+    assert store.list_profiles() == [], "读目录不得写档案"
+    assert "sk-typed" not in str(result)
+    assert seen[0][1]["Authorization"] == "Bearer sk-typed"
+    assert store.get_request_log(limit=1)[0]["kind"] == "models"
+
+
+def test_model_catalog_tries_v1_root_before_save(monkeypatch, store):
+    """本地服务的管理 API 在根路径、推理 API 在 /v1：拿不到目录时实测 /v1。"""
+    def fake_get(url, headers=None, timeout=None):
+        if url.endswith("/v1/models"):
+            return FakeResponse(200, {"data": [{"id": "gpt-oss-20b"}]})
+        return FakeResponse(404, {"error": {"message": "not found"}})
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    result = routes.handle_model_catalog({"base_url": "http://127.0.0.1:1234"}, store)
+    assert result["ok"] is True
+    assert result["models"] == ["gpt-oss-20b"]
+    assert result["base_url"] == "http://127.0.0.1:1234/v1"
+
+
+def test_model_catalog_reports_failure_instead_of_empty_list(monkeypatch, store):
+    def fake_get(url, headers=None, timeout=None):
+        return FakeResponse(401, {"error": {"message": "invalid api key"}})
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    result = routes.handle_model_catalog(
+        {"base_url": "https://x.example/v1", "api_key": "bad"}, store)
+    assert result["ok"] is False and result["models"] == []
+    assert "invalid api key" in result["error"]
+
+
+def test_model_catalog_falls_back_to_the_saved_key(monkeypatch, store):
+    store.create_profile({"profile_id": "cat1", "base_url": "https://x.example/v1",
+                          "model": "model-a"})
+    store.set_api_key("cat1", "sk-saved")
+    seen = []
+
+    def fake_get(url, headers=None, timeout=None):
+        seen.append(dict(headers or {}))
+        return FakeResponse(200, {"data": [{"id": "model-a"}]})
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    assert routes.handle_model_catalog(
+        {"base_url": "https://x.example/v1", "profile_id": "cat1"}, store)["ok"] is True
+    assert seen[0]["Authorization"] == "Bearer sk-saved"
+    with pytest.raises(KeyError):
+        routes.handle_model_catalog(
+            {"base_url": "https://x.example/v1", "profile_id": "nope"}, store)
+    with pytest.raises(ValueError):
+        routes.handle_model_catalog({"base_url": "  "}, store)
+
+
+def test_model_catalog_lists_a_separate_vision_endpoint(monkeypatch, store):
+    def fake_get(url, headers=None, timeout=None):
+        if url.startswith("https://vision.example"):
+            return FakeResponse(200, {"data": [{"key": "vis-a"}]})
+        return FakeResponse(200, {"data": [{"id": "txt-a"}]})
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    result = routes.handle_model_catalog(
+        {"base_url": "https://text.example/v1",
+         "vision_base_url": "https://vision.example/v1"}, store)
+    assert result["models"] == ["txt-a"]
+    assert result["vision_models"] == ["vis-a"]
+    assert result["vision_base_url"] == "https://vision.example/v1"

@@ -205,6 +205,32 @@ def handle_test(profile_id: str, store: ConfigStore) -> Dict[str, Any]:
     return {"ok": caps.get("auth_ok", False), "profile_id": profile_id, **caps}
 
 
+def handle_model_catalog(payload: Dict[str, Any], store: ConfigStore) -> Dict[str, Any]:
+    """填表阶段读取上游模型目录：不写档案、不写能力缓存、响应中不含密钥。
+
+    密钥取“表单里刚输入的优先，其次用已保存档案的”，所以换 key 时不必先保存
+    就能看到新 key 能访问哪些模型。
+    """
+    base_url = str(payload.get("base_url", "") or "").strip()
+    if not base_url:
+        raise ValueError("base_url 不能为空")
+    profile_id = str(payload.get("profile_id", "") or "").strip()
+    api_key = str(payload.get("api_key", "") or "").strip()
+    if not api_key and profile_id:
+        if store.get_profile(profile_id) is None:
+            raise KeyError(f"profile 不存在: {profile_id}")
+        api_key = store.get_api_key(profile_id) or ""
+    result = capability_probe.list_models(
+        base_url, api_key,
+        vision_base_url=str(payload.get("vision_base_url", "") or "").strip())
+    store.append_request_log({
+        "profile_id": profile_id or "-", "kind": "models",
+        "ok": not result["error"],
+        "detail": result["error"] or f"models={len(result['models'])}",
+    })
+    return {"ok": not result["error"], **result}
+
+
 def handle_log(store: ConfigStore) -> Dict[str, Any]:
     return {"log": store.get_request_log(limit=100)}
 
@@ -407,6 +433,9 @@ def register_routes() -> None:
         pid = request.query.get("profile_id") or None
         return await _run(request, lambda req, payload, st: handle_capabilities(pid, st))
 
+    async def r_model_catalog(request):
+        return await _run(request, lambda req, payload, st: handle_model_catalog(payload, st))
+
     async def r_log(request):
         return await _run(request, lambda req, payload, st: handle_log(st))
 
@@ -465,6 +494,7 @@ def register_routes() -> None:
     routes.post(f"{API_PREFIX}/profiles/{{profile_id}}/probe")(r_probe)
     routes.post(f"{API_PREFIX}/profiles/{{profile_id}}/test")(r_test)
     routes.get(f"{API_PREFIX}/capabilities")(r_capabilities)
+    routes.post(f"{API_PREFIX}/models")(r_model_catalog)
     routes.get(f"{API_PREFIX}/log")(r_log)
     routes.get(f"{API_PREFIX}/settings")(r_settings_get)
     routes.post(f"{API_PREFIX}/settings")(r_settings_set)

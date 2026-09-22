@@ -212,6 +212,7 @@ function buildPanel() {
     el("p", { text: "把节点串在提示词生成和图像/视频生成之间：" }),
     el("code", { text: "LLM 提示词输出 → LLM 后卸载 LM Studio（提示词透传） → 图像/视频节点的 prompt" }),
     el("p", { text: "model 填 LM Studio 的模型 key（例如 openai/gpt-oss-20b）；本机服务的 url 通常留空即可。" }),
+    el("p", { text: "不知道有哪些 key：填好 API URL 后点模型行的「拉取模型」，不必先保存档案就能列出上游目录。" }),
   ]));
 
   // two columns: profiles list + editor
@@ -415,9 +416,58 @@ function buildEditorForm(p) {
   wrap.appendChild(inputRow("名称", name, "档案名称"));
   wrap.appendChild(inputRow("提供商", provider, "deepseek=官方 API；openai_compatible=任意 OpenAI 兼容端点；local=本地服务"));
   wrap.appendChild(inputRow("API URL", baseUrl, "服务实际 API 根地址；OpenAI 兼容服务通常包含 /v1，例如 http://127.0.0.1:1234/v1"));
-  const modelRow = inputRow("模型", model, "探测成功后可从模型目录选择；仍允许填写代理端点的自定义模型名");
+  const modelRow = inputRow("模型", model, "可从模型目录选择；仍允许填写代理端点的自定义模型名");
   modelRow.appendChild(modelChoice.datalist);
+  const catalogNote = el("small", { class: "aps-muted" });
+  const catalogBtn = el("button", {
+    class: "aps-btn aps-btn-mini", text: "拉取模型",
+    title: "按当前表单里的 API URL 与密钥读取上游模型目录，不需要先保存档案；同时填充“视觉模型”候选",
+    onClick: () => fetchModelCatalog(),
+  });
+  modelRow.appendChild(catalogBtn);
+  modelRow.appendChild(catalogNote);
   wrap.appendChild(modelRow);
+
+  // 保存前就能问上游有哪些模型：模型名必填，而目录只有探测过才填充，
+  // 先保存再探测的次序会让人卡在一个还不知道该填什么的必填项上。
+  const fillModels = (choice, values) => {
+    choice.datalist.innerHTML = "";
+    for (const value of [...new Set([...(values || []), choice.input.value].filter(Boolean))]) {
+      choice.datalist.appendChild(el("option", { value }));
+    }
+  };
+  async function fetchModelCatalog() {
+    const base = baseUrl.value.trim();
+    if (!base) { catalogNote.textContent = "先填 API URL"; return; }
+    catalogBtn.disabled = true;
+    catalogBtn.textContent = "读取中…";
+    try {
+      const r = await api("/models", { method: "POST", body: JSON.stringify({
+        base_url: base,
+        vision_base_url: visionUrl.value.trim(),
+        api_key: keyInput.value.trim(),
+        profile_id: p.profile_id || "",
+      }) });
+      // 读取失败时保留上一次拿到的候选，只报这次的错
+      if (r.ok) {
+        fillModels(modelChoice, r.models);
+        fillModels(visionChoice, r.vision_models);
+      }
+      const count = (r.models || []).length;
+      const corrected = r.base_url && r.base_url !== base ? `，实际端点 ${r.base_url}` : "";
+      catalogNote.textContent = count
+        ? `已取回 ${count} 个模型${corrected}；直接在下拉框选择即可`
+        : `未取到模型目录：${r.error || "端点返回空目录"}${corrected}`;
+      if (count === 1 && !model.value.trim()) model.value = r.models[0];
+      toast(count ? `已取回 ${count} 个模型` : "未取到模型目录", !count);
+    } catch (e) {
+      catalogNote.textContent = "读取失败：" + e.message;
+      toast("读取失败: " + e.message, true);
+    } finally {
+      catalogBtn.disabled = false;
+      catalogBtn.textContent = "拉取模型";
+    }
+  }
   wrap.appendChild(inputRow("协议", protocol, "auto=按能力自动选择；responses=Responses API；chat_completions=Chat Completions"));
   wrap.appendChild(inputRow("推理", reasoning, "推理强度（映射到各协议实际参数）"));
   wrap.appendChild(inputRow("联网", webSearch, "联网策略：off/auto/always"));
@@ -485,6 +535,9 @@ function buildEditorForm(p) {
   const saveBtn = el("button", { class: "aps-btn aps-btn-primary", text: "保存", onClick: async () => {
     const problems = numberProblems(numericControls);
     if (problems.length) return toast("请先修正：" + problems.join("；"), true);
+    if (!model.value.trim()) {
+      return toast("模型不能为空：点「拉取模型」从上游目录选择，或直接填写模型名", true);
+    }
     const payload = {
       name: name.value, provider: provider.value, base_url: baseUrl.value,
       model: model.value, protocol: protocol.value, reasoning: reasoning.value,
