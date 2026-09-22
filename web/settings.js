@@ -20,6 +20,7 @@ let defaultProfileId = "";
 let profileRecords = [];
 let activePanelTab = "profiles";
 let panelReturnFocus = null;
+let workbenchAutoOpened = false;
 
 const STYLE_ID = "aps-settings-styles";
 
@@ -131,6 +132,22 @@ function closePanel() {
     panel.setAttribute("aria-hidden", "true");
   }
   panelReturnFocus?.focus?.();
+}
+
+// 原生设置面板只支持声明式的行，没有「某个分类对应一整页」的概念，
+// 所以进入 AI Prompt Studio 分类时由这一行自己把工作台弹出来。
+// 每次设置页会话只自动弹一次：这一行离开 DOM（关闭设置或切走分类）后才重新计。
+function armWorkbenchAutoOpen(row) {
+  if (workbenchAutoOpened) return;
+  workbenchAutoOpened = true;
+  const watcher = new MutationObserver(() => {
+    if (!document.body.contains(row)) {
+      workbenchAutoOpened = false;
+      watcher.disconnect();
+    }
+  });
+  watcher.observe(document.body, { childList: true });
+  setTimeout(openPanel, 0);
 }
 
 function buildPanel() {
@@ -837,13 +854,15 @@ app.registerExtension({
       id: "AI Prompt Studio.General.openWorkbench",
       name: "设置工作台",
       category: ["AI Prompt Studio", "常规", "设置工作台"],
-      tooltip: "打开模型档案、能力探测与 Markdown 资料；也可用左上角 ComfyUI 菜单里的同名命令。",
+      tooltip: "进入本分类即自动打开；也可用左上角 ComfyUI 菜单里的同名命令。",
       type() {
-        return el("button", {
+        const button = el("button", {
           class: "aps-native-settings-button",
           text: "打开 AI Prompt Studio 设置工作台",
           onClick: openPanel,
         });
+        armWorkbenchAutoOpen(button);
+        return button;
       },
     },
   ],

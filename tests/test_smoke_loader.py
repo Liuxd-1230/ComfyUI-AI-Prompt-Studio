@@ -252,6 +252,18 @@ def test_workbench_opens_from_the_comfyui_menu():
     assert "本地运行时" not in settings and "renderRuntime" not in settings
 
 
+def test_entering_the_ai_category_autopens_the_workbench():
+    """原生设置页只有声明式的行：进入 AI Prompt Studio 分类时由这一行自己弹窗。"""
+    settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")
+    row_factory = settings.split('id: "AI Prompt Studio.General.openWorkbench"', 1)[1]
+    assert "armWorkbenchAutoOpen(button)" in row_factory.split("return button;", 1)[0], \
+        "设置行未触发自动打开"
+    arm = settings.split("function armWorkbenchAutoOpen", 1)[1]
+    assert "if (workbenchAutoOpened) return;" in arm, "同一次设置会话应只自动弹一次"
+    assert "setTimeout(openPanel" in arm and "MutationObserver" in arm
+    assert "workbenchAutoOpened = false" in arm, "行离开 DOM 后应重置，否则第二次进设置不再弹"
+
+
 def test_settings_panel_can_set_the_default_profile():
     """面板此前只显示默认档案、不能设置它，而节点留空时用的正是这个档案。"""
     settings = (PROJECT_ROOT / "web" / "settings.js").read_text(encoding="utf-8")

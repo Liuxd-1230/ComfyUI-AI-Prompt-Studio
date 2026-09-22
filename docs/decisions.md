@@ -58,7 +58,7 @@
 
 ## D9. 设置工作台形态
 
-- ComfyUI **内嵌面板**（菜单按钮打开模态面板，vanilla JS 零构建），中文+英文双语、tooltip、密钥脱敏、API 测试、能力状态、runtime 状态、H3/ANIMA prompt 预览、验证报告、Character Bible JSON 预览、冲突与不确定字段显示（用户访谈确认）。
+- ComfyUI **内嵌面板**（模态面板，vanilla JS 零构建），纯中文文案（早期为中英双语，已删）、tooltip、密钥脱敏、API 测试、能力状态、H3/ANIMA prompt 预览、验证报告、Character Bible JSON 预览、冲突与不确定字段显示（用户访谈确认）。入口与"本地运行时不进面板"见 D29。
 
 ## D10. ANIMA 档案
 
@@ -187,3 +187,11 @@
 - 完整探测会消耗少量 token，设置页点击前必须明确确认；“测试”只运行目录和两条最小文本协议测试。
 - 主模型 `vision/files` 与 Reference Analyzer 的 `vision_service` 分开；auto 协议按 `vision_chat/responses`、`files_chat/responses` 和 `function_tools_chat/responses` 选择真正通过探针的路径。
 - 探测完成会把 `supports_vision/supports_files` 回写为实测聚合结果；Profile/Key 变化或 probe 版本升级使缓存指纹失效。
+- 因此面板里「支持图片输入/支持文件输入」只是**探测前的手动声明**：探测一旦跑完就以实测覆盖勾选（UI 显示支持而 Gateway 继续发送必失败的附件更糟）。两处 tooltip 与这条权威关系一致，改动前先看这里。
+
+## D29. 0.2.2 工作台入口与本地运行时边界（2026-09-22）
+
+- **入口是一条命令，不再只是设置页里的一行**：注册 `ai.promptstudio.openWorkbench` 并挂到左上角 ComfyUI 菜单（`menuCommands` 中的 id 必须同时出现在 `commands`，否则前端按 `extension.commands` 过滤时整条丢弃）。命令自动出现在 Settings → Keybindings，但我们**不预设默认组合键**——前端遇到键位冲突会抛错并在每次启动弹一条提示。
+- **进入原生 Settings 的 AI Prompt Studio 分类即自动弹出工作台**：官方 settings 机制只有声明式的行，没有"某个分类对应一整页"的概念，所以由 `AI Prompt Studio.General.openWorkbench` 那一行的自定义渲染器在自身被创建时调用 `openPanel()`（`setTimeout(…, 0)` 等前端完成分类渲染）。同一次渲染只弹一次：`workbenchAutoOpened` 守卫由 `MutationObserver` 在这一行离开 DOM（关闭设置页或切走分类）后重置。行内按钮与菜单命令保留为手动入口。D27 描述的"一次性 combo `idle`/`open` + `language` 设置项"已被此方案与纯中文面板取代。
+- **Esc 的归属**：工作台的 Escape 截断冒泡，从设置页打开时只关工作台，不把整个 ComfyUI 设置页一起关掉。
+- **本地运行时不进面板**：后端/URL/模型表单与六个操作按钮从面板移除，因为「跑本地服务」与「在 ComfyUI 里管理进程」是两件事：前者把服务作为 OpenAI 兼容端点按档案接入即可，后者属于 `APS_RuntimeControl` / `APS_UnloadModel` 节点。`/runtime` 路由与这些节点的行为不变。

@@ -1,5 +1,7 @@
 # Changelog
 
+- **进原生 Settings 的 AI Prompt Studio 分类即自动弹出工作台**：原生设置面板只有声明式的行、没有"某个分类对应一整页"的概念，所以从最下面的设置进来还要先点一次「打开设置工作台」按钮。现在这一行被渲染出来时自己把工作台弹出（`setTimeout(openPanel, 0)`，避开前端仍在构建分类 DOM 的时机），每次渲染只弹一次（`workbenchAutoOpened` 守卫，由 `MutationObserver` 在这一行离开 DOM——关闭设置页或切到别的分类——后重置，下一次进入分类会再弹）。按钮与菜单命令都保留为手动入口；工作台内按 Esc 只关自己，设置页保持打开。
+
 - **设置工作台改为菜单一键直达，面板不再内置"本地运行时"**：注册 ComfyUI 命令 `ai.promptstudio.openWorkbench` 并挂到左上角 ComfyUI 菜单（`menuCommands` 里的 id 必须同时出现在 `commands`，否则前端按 `extension.commands` 过滤时直接丢弃），一次点击即进工作台，不必先开原生 Settings 再点按钮；该命令自动出现在 Settings → Keybindings，用户可自行绑定快捷键（不预设组合键——前端遇到组合键冲突会抛错并在每次启动弹一条提示）。原生 Settings 里的入口保留。运行时后端/URL/模型与六个操作按钮从面板移除：本地模型用 `APS_RuntimeControl` / `APS_UnloadModel` 节点，或让本地服务直接以 OpenAI 兼容端点按档案接入；`/runtime` 路由与节点行为不变。顺带修好 Esc：工作台的 Escape 现在截断冒泡，从设置页打开工作台后按 Esc 只关工作台，不再把整个 ComfyUI 设置页一起关掉。
 
 - **Ref2VA 骨架把密度要求说给模型听**：`detailed_description` 的骨架占位只写“one or two English style sentences”，而校验器对整段（风格句 + 全部镜头行）的期望是 350–500 英文词——模型照骨架写十几词就稳定触发 `h3_ref_word_count` 警告，同一段在骨架文本、密度校验与风格开场校验三处各有一套期望。骨架现在明确“先 1–2 句英文风格句，随后写全部镜头行，整段目标 350–500 英文词”，与两个校验对齐；校验级别仍是 warning（建议，不硬失败）。

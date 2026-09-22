@@ -25,7 +25,7 @@
 - **Model Core + Markdown 参考**：目标模型的硬规则由仓库内不可编辑 Model Core 持有；用户 Markdown 通过节点默认收起的 **高级设置 · Prompt Supplements** 选择（`auto` 仅用于目标节点），作为带来源/hash 的低优先级参考，不能覆盖协议、Schema、锁定事实或 validator。单份资料最多 256 KiB，每次最多 8 份、总上下文最多 128 KiB；工作流只保存稳定 ID。`scope=node` 的 `node_ids` 可以填 ComfyUI 节点实例 ID（只匹配画布上那一个节点），也可以填整类节点的作用域名：`prompt.studio`、`h3.studio`、`llm.generate`、`reference.analyzer`、`storyboard.create`。
 - **统一操作策略**：CREATE、REFINE、格式修复、协议重试和参考观察由同一版本化 Operation Policy 接口提供。REFINE 只表达本轮增量并保留无关内容；修复只处理明确问题且最多一次。旧 operation 和 execution mode 下拉均已删除。
 - **机器输出契约**：JSON Schema、`<PROMPT>/<SUMMARY>` envelope、JSON-only 模式和 provider fallback 由统一 `OutputContract` 持有。支持原生 Structured Output 时发送机器 Schema；不支持时从同一 Schema 自动派生约束，不再手抄 JSON 示例。输出契约是最后一个 system 层，Markdown 资料不能覆盖它。
-- **前端入口**：不占用 ComfyUI Sidebar；点左上角 **ComfyUI 菜单（Logo 下拉）→「AI Prompt Studio 设置工作台」**一条命令直接进入（也可在 **Settings → AI Prompt Studio** 里打开）。命令同时可在 **Settings → Keybindings** 里自行绑定快捷键。API Key 不进原生 Settings，仍由工作台填写并只存服务端。Studio 会检查前后端版本；更新节点包后若看到“需重启”，请重启 ComfyUI，不要在新旧代码混用时执行。
+- **前端入口**：不占用 ComfyUI Sidebar。两条路径都不需要额外点按钮：点左上角 **ComfyUI 菜单（Logo 下拉）→「AI Prompt Studio 设置工作台」**一条命令直接进入；原生 **Settings → AI Prompt Studio** 一进入该分类也会自动弹出工作台（关闭设置页或切到别的分类后会再次触发；行内的按钮留作手动入口）。命令同时可在 **Settings → Keybindings** 里自行绑定快捷键。API Key 不进原生 Settings，仍由工作台填写并只存服务端。Studio 会检查前后端版本；更新节点包后若看到“需重启”，请重启 ComfyUI，不要在新旧代码混用时执行。
 
 ## 安装
 
@@ -43,7 +43,7 @@ pip install "pypdf>=4.0" "python-docx>=1.1"
 
 ## 快速开始
 
-1. 启动 ComfyUI，点左上角 **ComfyUI 菜单（Logo 下拉）→「AI Prompt Studio 设置工作台」**直接进入（原生 **Settings → AI Prompt Studio** 里也有同一入口）。
+1. 启动 ComfyUI，点左上角 **ComfyUI 菜单（Logo 下拉）→「AI Prompt Studio 设置工作台」**直接进入（打开原生 **Settings → AI Prompt Studio** 也会自动弹出，不用再点一次按钮）。
 2. 新建档案，选择 provider、API 根地址和模型；API Key 可以直接填在同一个表单里，点“保存”会先创建档案再写入密钥（密钥只保存在本机 `user/ai_prompt_studio/secrets.json`，不进前端和工作流 JSON）。保存后先点“测试”，再点“能力探测”。
 3. “能力探测”会明确提示并发送最小请求，消耗少量 token；完成后检查 Chat/Responses/JSON/工具/图片/文件勾选与失败详情。多个档案可用“设为默认”指定节点留空时使用的那个（列表里带“默认”徽章）。
 4. 在节点图中放置 **AI Model Profile**，直接从“档案名称 [ID]”和该档案的模型目录下拉选择。
